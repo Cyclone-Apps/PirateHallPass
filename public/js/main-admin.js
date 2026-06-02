@@ -3,7 +3,7 @@ import {
     upsertStudentData, listenToAllStudents, updateStudentRestrictions, 
     saveBellSchedule, fetchBellSchedules, setEmergencyState, 
     listenToEmergencyState, saveTimeOffset, listenToTimeOffset, setActiveDailySchedule,
-    listenToAllRestrictions, listenToDailyConfig
+    listenToAllRestrictions, listenToDailyConfig, saveAcademicCalendar, fetchAcademicCalendar
 } from "./modules/admin-engine.js";
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { schoolMapSVG } from "./map.js";
@@ -841,3 +841,191 @@ window.openSchedulePopup = function(student) {
     modal.appendChild(box);
     document.body.appendChild(modal);
 }
+
+// ==========================================
+// ACADEMIC CALENDAR BUILDER ENGINE (V3 - School Year & Vertical Weekdays)
+// ==========================================
+let currentAcademicStartYear = calculateCurrentAcademicYear(); // Tracks the start year of the session (e.g., 2025 for '25-26)
+let masterCalendarData = {};                                   // Memory cache of database mapping
+
+/**
+ * Automatically computes the correct academic start year based on today's date.
+ * (e.g., If today is June 2026, it falls under the 2025-26 session, returning 2025)
+ */
+function calculateCurrentAcademicYear() {
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth(); // 0 = January, 7 = August
+
+    // If today is August or later, the session starts this year. Otherwise, it started last year.
+    if (currentMonth >= 7) {
+        return currentYear;
+    } else {
+        return currentYear - 1;
+    }
+}
+
+/**
+ * Initializes and opens the calendar modal.
+ */
+async function openAcademicCalendarModal() {
+    masterCalendarData = await fetchAcademicCalendar();
+    currentAcademicStartYear = calculateCurrentAcademicYear(); // Snap back to current year when opened
+    renderVerticalAcademicCalendar();
+    document.getElementById("academic-cal-modal").classList.remove("hidden");
+}
+
+/**
+ * Builds and injects the 12-month vertical calendar grids (August -> July).
+ */
+function renderVerticalAcademicCalendar() {
+    const endYear = currentAcademicStartYear + 1;
+
+    // Set human-readable multi-year header (e.g., "2025-26")
+    const yearDisplay = document.getElementById("cal-year-display");
+    if (yearDisplay) yearDisplay.innerText = `${currentAcademicStartYear}-${String(endYear).slice(-2)}`;
+
+    const scrollArea = document.getElementById("academic-cal-scroll-area");
+    if (!scrollArea) return;
+
+    // Define the 12-month academic cycle
+    const academicMonths = [
+        { index: 7, year: currentAcademicStartYear, name: "August" },
+        { index: 8, year: currentAcademicStartYear, name: "September" },
+        { index: 9, year: currentAcademicStartYear, name: "October" },
+        { index: 10, year: currentAcademicStartYear, name: "November" },
+        { index: 11, year: currentAcademicStartYear, name: "December" },
+        { index: 0, year: endYear, name: "January" },
+        { index: 1, year: endYear, name: "February" },
+        { index: 2, year: endYear, name: "March" },
+        { index: 3, year: endYear, name: "April" },
+        { index: 4, year: endYear, name: "May" },
+        { index: 5, year: endYear, name: "June" },
+        { index: 6, year: endYear, name: "July" }
+    ];
+
+    let html = '';
+
+    // Loop through the mapped academic months
+    academicMonths.forEach(m => {
+        const daysInMonth = new Date(m.year, m.index + 1, 0).getDate();
+        const firstDayOfWeek = new Date(m.year, m.index, 1).getDay();
+        
+        // Calculate empty boxes for the first row of the month (excluding weekends)
+        let blanks = 0;
+        if (firstDayOfWeek > 0 && firstDayOfWeek < 6) {
+            blanks = firstDayOfWeek - 1; 
+        }
+
+        let monthGridHTML = `
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; flex-grow: 1;">
+                <div style="font-size:0.7rem; color:#888; text-align:center; margin-bottom:2px; font-weight:bold;">M</div>
+                <div style="font-size:0.7rem; color:#888; text-align:center; margin-bottom:2px; font-weight:bold;">T</div>
+                <div style="font-size:0.7rem; color:#888; text-align:center; margin-bottom:2px; font-weight:bold;">W</div>
+                <div style="font-size:0.7rem; color:#888; text-align:center; margin-bottom:2px; font-weight:bold;">Th</div>
+                <div style="font-size:0.7rem; color:#888; text-align:center; margin-bottom:2px; font-weight:bold;">F</div>
+        `;
+
+        // Inject blank alignment spaces
+        for (let i = 0; i < blanks; i++) {
+            monthGridHTML += `<div></div>`;
+        }
+
+        // Loop through every day of the month
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dow = new Date(m.year, m.index, day).getDay();
+            
+            // SKIP WEEKENDS (Sunday = 0, Saturday = 6)
+            if (dow === 0 || dow === 6) continue;
+            
+            const dateStr = `${m.year}-${String(m.index + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            
+            // Intelligent Defaults: Weekdays are 'F' (Full schedule)
+            let code = masterCalendarData[dateStr] || 'F';
+
+            // Visual Style Matrix
+            let bgColor = "#e8f5e9"; let color = "#2e7d32"; // F - Full
+            if (code === 'E') { bgColor = "#fff3e0"; color = "#ef6c00"; } // E - Early Out
+            if (code === 'L') { bgColor = "#e3f2fd"; color = "#1565c0"; } // L - Late Start
+            if (code === 'N') { bgColor = "#ffebee"; color = "#c62828"; } // N - No School
+
+            monthGridHTML += `
+                <div class="cal-day-cell" data-date="${dateStr}" data-code="${code}" style="background: ${bgColor}; color: ${color}; border: 1px solid ${color}55; border-radius: 4px; padding: 6px 0; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor: pointer; user-select: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <div style="font-size:0.65rem; color:#555; line-height: 1;">${day}</div>
+                    <div style="font-size: 1.1rem; font-weight:bold; line-height: 1; margin-top:3px;">${code}</div>
+                </div>
+            `;
+        }
+        monthGridHTML += `</div>`;
+
+        // Combine side-rotated "MONTH YEAR" title with the grid
+        html += `
+            <div style="display: flex; gap: 15px; background: white; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                <div style="writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-weight: 900; font-size: 0.95rem; color: #aaa; display: flex; align-items: center; justify-content: center; min-width: 25px; letter-spacing: 2px; border-right: 1px solid #eee; padding-left: 5px;">
+                    ${m.name.toUpperCase()} ${m.year}
+                </div>
+                ${monthGridHTML}
+            </div>
+        `;
+    });
+
+    scrollArea.innerHTML = html;
+
+    // Attach click triggers to individual weekday boxes to cycle the codes
+    document.querySelectorAll(".cal-day-cell").forEach(cell => {
+        cell.addEventListener("click", () => {
+            const date = cell.getAttribute("data-date");
+            let currentCode = cell.getAttribute("data-code");
+            
+            // Core Cycler Logic: F -> E -> L -> N -> back to F
+            const nextCodeMap = { 'F': 'E', 'E': 'L', 'L': 'N', 'N': 'F' };
+            masterCalendarData[date] = nextCodeMap[currentCode];
+            
+            renderVerticalAcademicCalendar(); 
+        });
+    });
+}
+
+// Unified Global Event Routing delegation for Calendar controls
+document.addEventListener("click", async (e) => {
+    
+    // Open / Close Modal
+    if (e.target.id === "btn-open-academic-cal-modal") openAcademicCalendarModal();
+    if (e.target.id === "close-academic-cal-modal") document.getElementById("academic-cal-modal").classList.add("hidden");
+
+    // Navigate Backward 1 Academic Year
+    if (e.target.id === "btn-cal-year-prev") {
+        currentAcademicStartYear--;
+        renderVerticalAcademicCalendar();
+    }
+    
+    // Navigate Forward 1 Academic Year
+    if (e.target.id === "btn-cal-year-next") {
+        currentAcademicStartYear++;
+        renderVerticalAcademicCalendar();
+    }
+    
+    // Commit current map to system/calendar
+    if (e.target.id === "btn-save-academic-cal") {
+        const btn = e.target;
+        const originalText = btn.innerHTML;
+        
+        btn.disabled = true;
+        btn.innerText = "⏳ Saving Calendar Data...";
+        
+        const success = await saveAcademicCalendar(masterCalendarData);
+        
+        btn.disabled = false;
+        if (success) {
+            btn.innerText = "✅ Saved Successfully!";
+            btn.style.backgroundColor = "#2e7d32";
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.backgroundColor = "var(--pirate-red)";
+            }, 2000);
+        } else {
+            alert("Error syncing academic calendar to Firestore.");
+            btn.innerHTML = originalText;
+        }
+    }
+});

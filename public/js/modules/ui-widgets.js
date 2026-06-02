@@ -37,10 +37,11 @@ export function renderHeader(user, role) {
     if (adminToolbar) {
         adminToolbar.className = "admin-toolbar"; 
         adminToolbar.innerHTML = `
-            <button id="btn-open-management" class="toolbar-btn" style="background-color: #0277bd; color: white; border: none;">👥 Student Management</button>
-            <button id="btn-open-bell-schedule" class="toolbar-btn" style="background-color: #4caf50; color: white; border: none;">⏱️ Bell Schedules</button>
             <button id="btn-emergency" class="danger-btn toolbar-btn" style="border: none;">🚨 Emergency Controls</button>
             <button id="btn-open-proxy-setup" class="toolbar-btn" style="background-color: #8e24aa; color: white; border: none;">💻 Open Pass As Student</button>
+            <button id="btn-open-management" class="toolbar-btn" style="background-color: #0277bd; color: white; border: none;">👥 Student Management</button>
+            <button id="btn-open-bell-schedule" class="toolbar-btn" style="background-color: #4caf50; color: white; border: none;">⏱️ Bell Schedules</button>
+            <button id="btn-open-academic-cal-modal" class="toolbar-btn" style="background-color: var(--pirate-red); color: white; border: none;">📅 Academic Calendar</button>
         `;
     }
     
@@ -111,7 +112,7 @@ export function renderPassList(passes, containerId, countId) {
 /**
  * UNIVERSAL AUTOCOMPLETE TOOL
  * Attaches a dynamic dropdown to any input field.
- * * @param {HTMLElement} inputElement - The search text box
+ * @param {HTMLElement} inputElement - The search text box
  * @param {HTMLElement} dropdownElement - The empty div for the dropdown list
  * @param {Array} studentList - The array of student objects from Firebase
  * @param {Function} onSelectCallback - A function to run when a student is clicked

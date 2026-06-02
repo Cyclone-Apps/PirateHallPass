@@ -1,6 +1,6 @@
 // js/modules/admin-engine.js
 import { db } from "../firebase-config.js";
-import { collection, doc, setDoc, getDocs, onSnapshot, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, doc, setDoc, getDoc, getDocs, onSnapshot, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const studentsRef = collection(db, "students");
 
@@ -182,6 +182,10 @@ export async function saveTimeOffset(offsetSeconds) {
     }
 }
 
+// Ensure getDoc is imported at the top of admin-engine.js!
+// import { collection, doc, setDoc, getDoc, ... } 
+
+
 /**
  * Listens for changes to the time offset globally (in SECONDS)
  */
@@ -194,4 +198,35 @@ export function listenToTimeOffset(callback) {
             callback(0);
         }
     });
+}
+
+/**
+ * Saves the compiled Academic Calendar mapping to Firestore
+ */
+export async function saveAcademicCalendar(calendarData) {
+    try {
+        const calDoc = doc(db, "system", "calendar");
+        // Using setDoc without merge: true ensures deleted or reset keys are cleaned up, 
+        // or keep merge: true if you want to preserve historical data across separate months.
+        await setDoc(calDoc, calendarData); 
+        return true;
+    } catch (error) {
+        console.error("Error saving calendar:", error);
+        return false;
+    }
+}
+
+/**
+ * Fetches the entire Academic Calendar dictionary from Firestore
+ */
+export async function fetchAcademicCalendar() {
+    try {
+        const calDoc = doc(db, "system", "calendar");
+        const snap = await getDoc(calDoc);
+        if (snap.exists()) return snap.data();
+        return {};
+    } catch (error) {
+        console.error("Error fetching calendar:", error);
+        return {};
+    }
 }

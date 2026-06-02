@@ -18,7 +18,12 @@
 
     <main id="screen-dashboard" class="dashboard-container" style="display: none;">
         
-        <section id="admin-toolbar-widget"></section>
+        <section id="admin-toolbar-widget">
+            <!-- Academic Calendar launcher integrated directly into the admin screen toolbar ribbon -->
+            <button id="btn-open-academic-cal-modal" class="toolbar-btn" style="background: var(--pirate-red); color: white; padding: 8px 15px; border-radius: 4px; font-weight: bold; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; margin: 5px;">
+                📅 Academic Calendar
+            </button>
+        </section>
 
         <section id="stats-ribbon-widget" class="stats-ribbon"></section>
 
@@ -45,7 +50,7 @@
         <div style="background: white; padding: 30px; border-radius: 8px; width: 95%; max-width: 1000px; height: 90vh; display: flex; flex-direction: column;">
             
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">
-                <h1 style="margin: 0; color: var(--pirate-red);">Student Management</h1>
+                <h1 style="margin: 0; color: var(--pirate-red);">Student & System Management</h1>
                 <span id="close-management-modal" style="cursor: pointer; font-size: 2rem;">✖</span>
             </div>
             
@@ -75,7 +80,7 @@
                     <input type="text" id="search-student" placeholder="Search by name or ID..." style="width: 100%; padding: 10px; font-size: 1.1rem; border: 1px solid #ced4da; border-radius: 4px;">
                 </div>
                 
-                <div id="admin-student-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;">
+                <div id="admin-student-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-bottom: 30px;">
                 </div>
 
             </div>
@@ -224,7 +229,7 @@
         </div>
     </div>
 
-<div id="proxy-setup-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div id="proxy-setup-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000;">
         <div style="background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 450px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); position: relative;">
             <span id="close-proxy-setup" style="position: absolute; top: 15px; right: 20px; cursor: pointer; font-size: 1.5rem; font-weight: bold; color: #666;">&times;</span>
             <h3 style="margin-top: 0; color: #0277bd; margin-bottom: 10px;">💻 Open Pass As Student</h3>
@@ -260,6 +265,39 @@
         
         <div style="height: 80vh; max-width: 95vw; aspect-ratio: 2360 / 1640; margin: 0 auto; background: black; border-radius: 20px; padding: 15px; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
             <iframe id="proxy-iframe" src="" style="width: 100%; height: 100%; border: none;"></iframe>
+        </div>
+    </div>
+
+    <!-- STANDALONE ACADEMIC CALENDAR MODAL -->
+    <div id="academic-cal-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: #f4f6f9; border-radius: 8px; width: 95%; max-width: 600px; height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            
+            <!-- FIXED HEADER -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 20px 25px; background: white; border-bottom: 2px solid #ddd; z-index: 2;">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <h2 style="margin: 0; color: var(--pirate-red);">Academic Calendar</h2>
+                    <div style="display: flex; align-items: center; background: #eee; padding: 4px 10px; border-radius: 6px; gap: 10px;">
+                        <button id="btn-cal-year-prev" style="border:none; background:none; cursor:pointer; font-size: 1.2rem; font-weight:bold; color: #555;">◀</button>
+                        <!-- Formatted as multi-year term matching school cycles -->
+                        <span id="cal-year-display" style="font-weight:bold; font-size:1.1rem; color: #333;">2025-26</span>
+                        <button id="btn-cal-year-next" style="border:none; background:none; cursor:pointer; font-size: 1.2rem; font-weight:bold; color: #555;">▶</button>
+                    </div>
+                </div>
+                <span id="close-academic-cal-modal" style="cursor: pointer; font-size: 2rem; line-height: 1; color: #666;">✖</span>
+            </div>
+            
+            <!-- SCROLLABLE BODY (All 12 Months: August through July) -->
+            <div id="academic-cal-scroll-area" style="overflow-y: auto; padding: 20px 25px; flex-grow: 1; display: flex; flex-direction: column; gap: 15px;">
+                <!-- Calendar grids are dynamically injected here via JS -->
+            </div>
+
+            <!-- FIXED FOOTER -->
+            <div style="padding: 15px 25px; background: white; border-top: 2px solid #ddd; z-index: 2;">
+                <button id="btn-save-academic-cal" style="width: 100%; background: var(--pirate-red); color: white; border: none; padding: 14px; border-radius: 6px; font-size: 1.2rem; font-weight: bold; cursor: pointer; transition: background 0.2s;">
+                    💾 Save Academic Calendar
+                </button>
+            </div>
+
         </div>
     </div>
 
