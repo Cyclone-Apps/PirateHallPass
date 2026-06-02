@@ -163,6 +163,7 @@ document.getElementById("btn-sync-students").addEventListener("click", async () 
 
     const studentMap = {};
 
+    // 1. IMPORT EMAILS (Keeping your existing parseCSV for this since it worked fine)
     if (emailFile) {
         const emailText = await readAsText(emailFile);
         const emailData = parseCSV(emailText);
@@ -174,31 +175,37 @@ document.getElementById("btn-sync-students").addEventListener("click", async () 
             const fName = row.FLName ? String(row.FLName).trim() : "";
             studentMap[sId].studentId = sId;
             studentMap[sId].fullName = fName;
-            // FIX: Add displayName so fetchAllStudents() populates your Proxy Dropdown!
-            studentMap[sId].displayName = fName;
+            studentMap[sId].displayName = fName; 
             studentMap[sId].email = row.Email ? String(row.Email).trim() : "";
             studentMap[sId].grade = row.Grade ? String(row.Grade).trim() : "";
         });
     }
 
+    // 2. IMPORT SCHEDULES USING ABSOLUTE INDICES (Bulletproof)
     if (scheduleFile) {
         const schedText = await readAsText(scheduleFile);
-        const schedData = parseCSV(schedText);
-        schedData.forEach(row => {
-            const sId = row.StudentID ? String(row.StudentID).trim() : null;
-            if (!sId) return;
+        const rows = schedText.split(/\r?\n/); // Split into individual lines
+        
+        // Start loop at i = 1 to skip the header row completely
+        for (let i = 1; i < rows.length; i++) {
+            const rowStr = rows[i].trim();
+            if (!rowStr) continue;
+
+            const cols = rowStr.split(","); // Split the line by commas
+            
+            const sId = cols[0] ? cols[0].trim() : null; // Index 0: StudentID
+            if (!sId) continue;
 
             if (!studentMap[sId]) {
-                const fName = row.StudentFirstName ? String(row.StudentFirstName).trim() : "";
-                const lName = row.StudentLastName ? String(row.StudentLastName).trim() : "";
+                const lName = cols[1] ? cols[1].trim() : ""; // Index 1: LastName
+                const fName = cols[2] ? cols[2].trim() : ""; // Index 2: FirstName
                 const combinedName = `${fName} ${lName}`.trim();
                 
                 studentMap[sId] = {
                     studentId: sId,
                     fullName: combinedName,
-                    // FIX: Add displayName so fetchAllStudents() populates your Proxy Dropdown!
                     displayName: combinedName,
-                    grade: row.Grade ? String(row.Grade).trim() : "",
+                    grade: cols[4] ? cols[4].trim() : "",    // Index 4: Grade
                     schedule: {}
                 };
             }
@@ -206,36 +213,75 @@ document.getElementById("btn-sync-students").addEventListener("click", async () 
                 studentMap[sId].schedule = {};
             }
 
-            // Trim spaces and map exact properties needed for the UI widget (courseName & room)
-            const period = row.Period ? String(row.Period).trim() : null;
+            const period = cols[7] ? cols[7].trim() : null;  // Index 7: Period
+            
             if (period) {
-                studentMap[sId].schedule[period] = {
-                    courseName: row.CourseName ? String(row.CourseName).trim() : "",
-                    room: (row.Room || row.RoomNumber || "").toString().trim(),
-                    teacher: row.Teacher1 ? String(row.Teacher1).trim() : ""
+                const courseName = cols[9] ? cols[9].trim() : "";  // Index 9: CourseName
+                const daysMet = cols[11] ? cols[11].trim() : "";   // Index 11: DaysMet
+                
+                // Grab Teacher 1. If Teacher 2 exists (like Mr. Burrow), combine them!
+                let teacherName = cols[13] ? cols[13].trim() : ""; // Index 13: Teacher1
+                if (cols[14] && cols[14].trim()) {                 // Index 14: Teacher2
+                    teacherName += `, ${cols[14].trim()}`;
+                }
+                
+                const realRoom = cols[18] ? cols[18].trim() : "";  // Index 18: Room
+                
+                const courseWithDays = daysMet && daysMet !== "123456" ? `${courseName} (${daysMet})` : courseName;
+
+                // The clean raw object for the future Rotation Engine
+                const rawClassObject = {
+                    courseName: courseName,
+                    room: realRoom,
+                    teacher: teacherName,
+                    daysMet: daysMet
                 };
+
+                if (studentMap[sId].schedule[period]) {
+                    // CONFLICT DETECTED! Combine strings for today's UI
+                    studentMap[sId].schedule[period].courseName += ` / ${courseWithDays}`;
+                    
+                    if (realRoom && !studentMap[sId].schedule[period].room.includes(realRoom)) {
+                        studentMap[sId].schedule[period].room += ` / ${realRoom}`;
+                    }
+                    if (teacherName && !studentMap[sId].schedule[period].teacher.includes(teacherName)) {
+                        studentMap[sId].schedule[period].teacher += ` / ${teacherName}`;
+                    }
+                    
+                    // Push the raw class into the array for the future Rotation engine!
+                    studentMap[sId].schedule[period].allClasses.push(rawClassObject);
+                } else {
+                    // First class found for this period
+                    studentMap[sId].schedule[period] = {
+                        courseName: courseWithDays,
+                        room: realRoom,
+                        teacher: teacherName,
+                        allClasses: [rawClassObject] // Create the array!
+                    };
+                }
             }
-        });
+        }
     }
     
-    // ... (The rest of your sync/upload code stays exactly the same) ...
-
-    const totalStudents = Object.keys(studentMap).length;
-    statusTxt.innerText = `🚀 Uploading ${totalStudents} students...`;
+    // --- FINAL UPLOAD TO FIREBASE ---
+    statusTxt.innerText = "⏳ Uploading to database...";
     
     let successCount = 0;
-    for (const sId in studentMap) {
+    const studentKeys = Object.keys(studentMap);
+    
+    for (const sId of studentKeys) {
         const success = await upsertStudentData(sId, studentMap[sId]);
         if (success) successCount++;
     }
 
-    statusTxt.innerText = `✅ Sync Complete! Updated ${successCount} students.`;
+    if (successCount === studentKeys.length) {
+        statusTxt.innerText = `✅ Successfully synced ${successCount} students!`;
+    } else {
+        statusTxt.innerText = `⚠️ Synced ${successCount} out of ${studentKeys.length} students. Check console.`;
+    }
     
-    setTimeout(() => {
-        document.getElementById("file-schedule").value = "";
-        document.getElementById("file-email").value = "";
-        statusTxt.innerText = "";
-    }, 4000);
+    document.getElementById("file-schedule").value = "";
+    document.getElementById("file-email").value = "";
 });
 
 
