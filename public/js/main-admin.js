@@ -3,7 +3,7 @@ import {
     upsertStudentData, listenToAllStudents, updateStudentRestrictions, 
     saveBellSchedule, fetchBellSchedules, setEmergencyState, 
     listenToEmergencyState, saveTimeOffset, listenToTimeOffset, setActiveDailySchedule,
-    listenToAllRestrictions
+    listenToAllRestrictions, listenToDailyConfig
 } from "./modules/admin-engine.js";
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { schoolMapSVG } from "./map.js";
@@ -58,7 +58,6 @@ document.addEventListener("click", async (e) => {
     if (e.target.id === "close-bell-schedule-modal") {
         document.getElementById("bell-schedule-modal").classList.add("hidden");
     }
-    
     
     // --- VIRTUAL KIOSK CONTROLS ---
     const proxySetupModal = document.getElementById("proxy-setup-modal");
@@ -185,28 +184,27 @@ document.getElementById("btn-sync-students").addEventListener("click", async () 
     // 2. IMPORT SCHEDULES USING ABSOLUTE INDICES (Bulletproof)
     if (scheduleFile) {
         const schedText = await readAsText(scheduleFile);
-        const rows = schedText.split(/\r?\n/); // Split into individual lines
+        const rows = schedText.split(/\r?\n/); 
         
-        // Start loop at i = 1 to skip the header row completely
         for (let i = 1; i < rows.length; i++) {
             const rowStr = rows[i].trim();
             if (!rowStr) continue;
 
-            const cols = rowStr.split(","); // Split the line by commas
+            const cols = rowStr.split(","); 
             
-            const sId = cols[0] ? cols[0].trim() : null; // Index 0: StudentID
+            const sId = cols[0] ? cols[0].trim() : null; 
             if (!sId) continue;
 
             if (!studentMap[sId]) {
-                const lName = cols[1] ? cols[1].trim() : ""; // Index 1: LastName
-                const fName = cols[2] ? cols[2].trim() : ""; // Index 2: FirstName
+                const lName = cols[1] ? cols[1].trim() : ""; 
+                const fName = cols[2] ? cols[2].trim() : ""; 
                 const combinedName = `${fName} ${lName}`.trim();
                 
                 studentMap[sId] = {
                     studentId: sId,
                     fullName: combinedName,
                     displayName: combinedName,
-                    grade: cols[4] ? cols[4].trim() : "",    // Index 4: Grade
+                    grade: cols[4] ? cols[4].trim() : "", 
                     schedule: {}
                 };
             }
@@ -214,23 +212,21 @@ document.getElementById("btn-sync-students").addEventListener("click", async () 
                 studentMap[sId].schedule = {};
             }
 
-            const period = cols[7] ? cols[7].trim() : null;  // Index 7: Period
+            const period = cols[7] ? cols[7].trim() : null; 
             
             if (period) {
-                const courseName = cols[9] ? cols[9].trim() : "";  // Index 9: CourseName
-                const daysMet = cols[11] ? cols[11].trim() : "";   // Index 11: DaysMet
+                const courseName = cols[9] ? cols[9].trim() : ""; 
+                const daysMet = cols[11] ? cols[11].trim() : ""; 
                 
-                // Grab Teacher 1. If Teacher 2 exists (like Mr. Burrow), combine them!
-                let teacherName = cols[13] ? cols[13].trim() : ""; // Index 13: Teacher1
-                if (cols[14] && cols[14].trim()) {                 // Index 14: Teacher2
+                let teacherName = cols[13] ? cols[13].trim() : ""; 
+                if (cols[14] && cols[14].trim()) {                 
                     teacherName += `, ${cols[14].trim()}`;
                 }
                 
-                const realRoom = cols[18] ? cols[18].trim() : "";  // Index 18: Room
+                const realRoom = cols[18] ? cols[18].trim() : ""; 
                 
                 const courseWithDays = daysMet && daysMet !== "123456" ? `${courseName} (${daysMet})` : courseName;
 
-                // The clean raw object for the future Rotation Engine
                 const rawClassObject = {
                     courseName: courseName,
                     room: realRoom,
@@ -239,7 +235,6 @@ document.getElementById("btn-sync-students").addEventListener("click", async () 
                 };
 
                 if (studentMap[sId].schedule[period]) {
-                    // CONFLICT DETECTED! Combine strings for today's UI
                     studentMap[sId].schedule[period].courseName += ` / ${courseWithDays}`;
                     
                     if (realRoom && !studentMap[sId].schedule[period].room.includes(realRoom)) {
@@ -249,22 +244,19 @@ document.getElementById("btn-sync-students").addEventListener("click", async () 
                         studentMap[sId].schedule[period].teacher += ` / ${teacherName}`;
                     }
                     
-                    // Push the raw class into the array for the future Rotation engine!
                     studentMap[sId].schedule[period].allClasses.push(rawClassObject);
                 } else {
-                    // First class found for this period
                     studentMap[sId].schedule[period] = {
                         courseName: courseWithDays,
                         room: realRoom,
                         teacher: teacherName,
-                        allClasses: [rawClassObject] // Create the array!
+                        allClasses: [rawClassObject] 
                     };
                 }
             }
         }
     }
     
-    // --- FINAL UPLOAD TO FIREBASE ---
     statusTxt.innerText = "⏳ Uploading to database...";
     
     let successCount = 0;
@@ -337,7 +329,7 @@ listenToAllRestrictions((restrictionsMap) => {
     mergeAndRender();
 });
 
-// 3. The newly updated Render Function (Now with Icons!)
+// 3. Render Function (With Decoupled Restrictions & Icons)
 function renderAdminStudentList(students) {
     const container = document.getElementById("admin-student-list");
     if (!container) return;
@@ -347,7 +339,6 @@ function renderAdminStudentList(students) {
 
     students.forEach(student => {
         const card = document.createElement("div");
-        // Added position: relative so we can pin the icons to the top right corner!
         card.style.cssText = "position: relative; background: white; padding: 15px; border-radius: 8px; border: 1px solid #ced4da; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.1s;";
         card.onmouseover = () => card.style.transform = "scale(1.02)";
         card.onmouseout = () => card.style.transform = "scale(1)";
@@ -384,7 +375,6 @@ function renderAdminStudentList(students) {
             }
         }
 
-        // Added padding-right to the text so it doesn't overlap the new icons
         card.innerHTML = `
             <div style="padding-right: 65px;"> 
                 <strong style="font-size: 1.1rem; color: var(--pirate-red);">${student.fullName || "Unknown"} (${student.studentId})</strong>
@@ -400,16 +390,14 @@ function renderAdminStudentList(students) {
             ${restrictionsHtml}
         `;
 
-        // Click event ONLY on the restriction icon now, not the whole card!
         card.querySelector(".action-restriction").addEventListener("click", (e) => {
-            e.stopPropagation(); // Prevents click from bubbling up
+            e.stopPropagation(); 
             openRestrictionModal(student);
         });
 
-        // Click event for the schedule icon
         card.querySelector(".action-schedule").addEventListener("click", (e) => {
             e.stopPropagation();
-            alert(`We will build the Schedule popup for ${student.fullName} next!`); 
+            window.openSchedulePopup(student); // Hooked up properly!
         });
 
         container.appendChild(card);
@@ -470,10 +458,7 @@ async function openRestrictionModal(student) {
 
 function loadModalMap() {
     const container = document.getElementById("full-map-container");
-    if (!container) {
-        console.error("🚨 Missing #full-map-container in admin.html! Cannot load the map.");
-        return; 
-    }
+    if (!container) return; 
     
     if (!container.querySelector("svg")) {
         container.innerHTML = schoolMapSVG;
@@ -527,7 +512,6 @@ function updateRoomDisplay() {
     document.getElementById("input-restricted-rooms").value = selectedRooms.join(", ");
 }
 
-// Listen for manual typing
 document.getElementById("input-restricted-rooms").addEventListener("input", (e) => {
     const rawText = e.target.value;
     selectedRooms = rawText.split(",").map(s => s.trim()).filter(s => s.length > 0);
@@ -539,7 +523,6 @@ document.getElementById("btn-clear-rooms").addEventListener("click", () => {
     updateRoomDisplay();
     applyMapHighlights();
 });
-
 
 // Peer Autocomplete Search Logic
 const peerSearchInput = document.getElementById("peer-search-input");
@@ -618,13 +601,17 @@ document.getElementById("btn-save-restrictions").addEventListener("click", async
 
     const restrictions = {
         periods: periods,
-        rooms: selectedRooms,
+        rooms: selectedRooms, 
         noContact: selectedPeers 
     };
 
-    const success = await updateStudentRestrictions(sId, restrictions);
+    // Extract historical states from cache to execute accurate bidirectional differential tracking
+    const existingStudentObj = allStudentsCache.find(s => s.studentId === sId);
+    const oldPeers = existingStudentObj?.restrictions?.noContact || [];
+
+    const success = await updateStudentRestrictions(sId, restrictions, oldPeers);
     if (success) {
-        alert("Restrictions saved successfully!");
+        alert("Restrictions saved successfully across all student accounts!");
         document.getElementById("restriction-modal").classList.add("hidden");
     } else {
         alert("Error saving restrictions.");
@@ -795,3 +782,62 @@ document.getElementById("btn-toggle-global-lockdown").addEventListener("click", 
 document.getElementById("btn-modify-area-lockdown").addEventListener("click", () => {
     alert("Area Lockdown mapping requires the Time Engine to be completed first. Moving to Time Engine task next!");
 });
+
+// Global configuration trackers used to compute current/next class periods
+window.globalTimeOffsetSeconds = 0;
+window.activeDailyScheduleName = "HS - Regular";
+window.globalBellSchedulesCache = {};
+
+// Track system time offset modifications
+listenToTimeOffset((offset) => window.globalTimeOffsetSeconds = parseInt(offset) || 0);
+
+// Track active campus schedule variations
+listenToDailyConfig((config) => window.activeDailyScheduleName = config?.activeSchedule || "HS - Regular");
+
+// Cache schedule maps on initialization for popup lookups
+fetchBellSchedules().then(scheds => window.globalBellSchedulesCache = scheds || {});
+
+window.openSchedulePopup = function(student) {
+    const existingModal = document.getElementById("student-schedule-popup-modal");
+    if (existingModal) existingModal.remove();
+
+    const modal = document.createElement("div");
+    modal.id = "student-schedule-popup-modal";
+    modal.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999; font-family: sans-serif;";
+
+    const box = document.createElement("div");
+    box.style.cssText = "background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); max-height: 80vh; overflow-y: auto;";
+
+    let html = `<h3 style="margin-top: 0; color: var(--pirate-red); border-bottom: 2px solid #eee; padding-bottom: 10px;">📋 Full Schedule: ${student.fullName}</h3>`;
+    const sched = student.schedule || {};
+
+    // Safely sort periods numerically (1, 2, 3...)
+    const periods = Object.keys(sched).sort((a, b) => {
+        const numA = parseInt(a);
+        const numB = parseInt(b);
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        return a.localeCompare(b);
+    });
+
+    if (periods.length === 0) {
+        html += `<div style="padding: 10px; color: #777;">No schedule data found for this student.</div>`;
+    } else {
+        periods.forEach(p => {
+            html += `
+            <div style="background: #f8f9fa; border-left: 4px solid var(--pirate-silver); padding: 10px; margin-bottom: 8px; border-radius: 4px;">
+                <strong style="color: #333;">Period ${p}:</strong> ${sched[p].courseName}<br>
+                <div style="font-size: 0.85rem; color: #555; margin-top: 2px;">Room: ${sched[p].room || "N/A"} | Teacher: ${sched[p].teacher || "N/A"}</div>
+            </div>`;
+        });
+    }
+
+    const closeBtn = document.createElement("button");
+    closeBtn.innerText = "Close";
+    closeBtn.style.cssText = "background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; float: right; margin-top: 10px; font-weight: bold;";
+    closeBtn.onclick = () => modal.remove();
+
+    box.innerHTML = html;
+    box.appendChild(closeBtn);
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+}

@@ -1,16 +1,17 @@
 // js/modules/student-ui.js
 import { schoolMapSVG } from "../map.js"; 
 
+// Keep a global reference to the student's profile so the 1-second interval can read it!
+window.currentStudentProfile = null;
+
 export function renderStudentIdleScreen() {
     const container = document.getElementById("kiosk-main-widget");
     if (!container) return;
     
     container.style.backgroundColor = ""; 
 
-    // Safely grab the student's full name from the global user object!
     let displayName = "Pirate";
     if (window.currentUser && window.currentUser.displayName) {
-        // Uses their exact full name
         displayName = window.currentUser.displayName;
     }
 
@@ -27,103 +28,188 @@ export function renderStudentIdleScreen() {
 }
 
 export function renderStudentSidebar(studentProfile = null) {
+    window.currentStudentProfile = studentProfile; // Store for dynamic time updates!
+    
     const container = document.getElementById("kiosk-sidebar-widget");
     if (!container) return;
 
-    let scheduleHtml = `<p style="color: #666; font-style: italic; font-size: 0.85rem;">Schedule not available.</p>`;
     let fullScheduleRows = "";
 
-    // Standard high school bell schedule times (Periods 1-9)
-    const standardTimes = {
-        "1": { start: "8:15 AM", end: "9:00 AM" },
-        "2": { start: "9:05 AM", end: "9:50 AM" },
-        "3": { start: "9:55 AM", end: "10:40 AM" },
-        "4": { start: "10:45 AM", end: "11:30 AM" },
-        "5": { start: "11:35 AM", end: "12:20 PM" },
-        "6": { start: "12:25 PM", end: "1:10 PM" },
-        "7": { start: "1:15 PM", end: "2:00 PM" },
-        "8": { start: "2:05 PM", end: "2:50 PM" },
-        "9": { start: "2:55 PM", end: "3:40 PM" }
-    };
-
+    // Generate the Full Schedule Data for the Popup Modal
     if (studentProfile && studentProfile.schedule) {
         const scheduleData = studentProfile.schedule;
-        let itemsHtml = "";
+        
+        // Safely sort periods numerically
+        const periods = Object.keys(scheduleData).sort((a, b) => {
+            const numA = parseInt(a);
+            const numB = parseInt(b);
+            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+            return a.localeCompare(b);
+        });
 
-        // Build the Current/Next list AND the Full Schedule Popup list simultaneously
-        for (let p = 1; p <= 9; p++) {
-            const periodKey = String(p);
-            if (scheduleData[periodKey]) {
-                const classInfo = scheduleData[periodKey];
-                const className = classInfo.courseName || "Class";
-                const roomNum = classInfo.room || "TBA";
-                const times = standardTimes[periodKey] || { start: "—", end: "—" };
+        periods.forEach(p => {
+            const classInfo = scheduleData[p];
+            const className = classInfo.courseName || "Class";
+            const roomNum = classInfo.room || "TBA";
+            const teacher = classInfo.teacher || "N/A";
 
-                // Build the Widget View (Compact 1-line format)
-                itemsHtml += `
-                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px dashed #eee; padding-bottom: 2px;">
-                        <span><strong>P${p}:</strong> ${className}</span>
-                        <span style="color: #666; font-family: monospace; font-size: 0.75rem; margin-left: 8px;">Rm ${roomNum}</span>
-                    </div>
-                `;
-
-                // Build the Popup View (Full Details)
-                fullScheduleRows += `
-                    <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee;">
-                        <span style="font-weight: bold; width: 60px; color: #0277bd;">Per ${p}</span>
-                        <span style="flex: 1; text-align: left; padding-left: 10px; font-weight: 500;">${className}</span>
-                        <span style="width: 120px; text-align: right; color: #555;">Rm ${roomNum} <br><span style="font-size: 0.75rem; color: #888;">${times.start} - ${times.end}</span></span>
-                    </div>
-                `;
-            }
-        }
-
-        if (itemsHtml) {
-            scheduleHtml = `
-                <div class="student-schedule-widget" style="padding: 5px 0;">
-                    ${itemsHtml}
+            fullScheduleRows += `
+                <div style="background: #f8f9fa; border-left: 4px solid var(--pirate-silver); padding: 10px; margin-bottom: 8px; border-radius: 4px;">
+                    <strong style="color: #333;">Period ${p}:</strong> ${className}<br>
+                    <div style="font-size: 0.85rem; color: #555; margin-top: 2px;">Rm: ${roomNum} | Teacher: ${teacher}</div>
                 </div>
             `;
-        }
+        });
     }
 
+    // Render the Sidebar with the Fieldset, Legend Title, and Student Name moved down
     container.innerHTML = `
-        <div class="kiosk-card" style="padding: 15px; margin-bottom: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div>
-                    <h2 style="font-size: 1.1rem; margin-top: 0; margin-bottom: 3px; color: #333; font-weight: bold;">${studentProfile?.fullName || "Student Profile"}</h2>
-                    <p style="font-size: 0.8rem; color: #777; margin-bottom: 12px; margin-top: 0;">Grade ${studentProfile?.grade || "10"}</p>
-                </div>
-                <button id="btn-open-full-schedule" style="background: #f0f8ff; border: 1px solid #bbdefb; border-radius: 4px; padding: 4px 8px; font-size: 1.2rem; cursor: pointer; color: #0277bd;" title="View Full Schedule">📋</button>
+        <fieldset style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 15px; margin-bottom: 15px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box;">
+            
+            <legend style="font-weight: bold; color: #444; padding: 0 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px;">
+                Schedule
+            </legend>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0;">
+                <span style="color: #333; font-size: 1.15rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${studentProfile?.fullName || "Student"}
+                </span>
+                <button id="btn-open-full-schedule" style="background: white; border: 1px solid #ced4da; border-radius: 4px; padding: 4px 8px; font-size: 1.1rem; cursor: pointer; transition: 0.2s;" title="View Full Schedule" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">📅</button>
             </div>
             
-            <h3 style="font-size: 0.9rem; margin-top: 5px; margin-bottom: 8px; color: var(--pirate-red); border-bottom: 2px solid var(--pirate-red); padding-bottom: 3px; font-weight: bold;">📅 Today's Schedule</h3>
-            ${scheduleHtml}
-        </div>
+            <div id="dynamic-schedule-container" style="margin-top: 5px;">
+                <p style="color: #888; font-size: 0.85rem; text-align: center; margin: 5px 0; font-style: italic;">Syncing clock...</p>
+            </div>
+
+        </fieldset>
     `;
 
-    // Ensure the Full Schedule Modal exists in the HTML
+    // Ensure the Full Schedule Modal exists in the DOM
     if (!document.getElementById("full-schedule-modal")) {
         const modalDiv = document.createElement("div");
         modalDiv.id = "full-schedule-modal";
         modalDiv.className = "hidden";
-        modalDiv.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 3000;";
+        modalDiv.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 9999;";
         modalDiv.innerHTML = `
-            <div style="background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); position: relative; max-height: 80vh; display: flex; flex-direction: column;">
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0277bd; padding-bottom: 10px; margin-bottom: 10px;">
-                    <h3 style="margin: 0; color: #0277bd;">📋 Full Schedule</h3>
-                    <span id="close-full-schedule" style="cursor: pointer; font-size: 1.5rem; color: #666; font-weight: bold;">&times;</span>
+            <div style="background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); position: relative; max-height: 80vh; display: flex; flex-direction: column;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px;">
+                    <h3 style="margin: 0; color: var(--pirate-red);">📋 Full Schedule</h3>
+                    <span id="close-full-schedule" style="cursor: pointer; font-size: 1.5rem; color: #666; font-weight: bold; line-height: 1;">&times;</span>
                 </div>
                 <div id="full-schedule-content" style="overflow-y: auto; flex-grow: 1; padding-right: 5px;"></div>
             </div>
         `;
         document.body.appendChild(modalDiv);
+
+        // Bind the Close button
+        document.getElementById("close-full-schedule").addEventListener("click", () => {
+            modalDiv.classList.add("hidden");
+        });
     }
 
-    // Fill the popup with the rows we just built
+    // Fill the popup with the rows we built
     const contentBox = document.getElementById("full-schedule-content");
-    if (contentBox) contentBox.innerHTML = fullScheduleRows || "<p>No schedule data found.</p>";
+    if (contentBox) contentBox.innerHTML = fullScheduleRows || "<p style='color: #777;'>No schedule data found.</p>";
+
+    // Bind the Open button
+    document.getElementById("btn-open-full-schedule").addEventListener("click", () => {
+        document.getElementById("full-schedule-modal").classList.remove("hidden");
+    });
 }
+
+/**
+ * 1-SECOND INTERVAL HOOK: Dynamically calculates Current/Next classes.
+ * Treats Passing Periods as the start of the next class!
+ */
+window.updateStudentScheduleWidget = function(timeMetrics) {
+    const container = document.getElementById("dynamic-schedule-container");
+    if (!container) return;
+
+    const profile = window.currentStudentProfile;
+    if (!profile || !profile.schedule) {
+        container.innerHTML = `<p style="color: #666; font-size: 0.85rem; text-align: center; margin: 5px 0;">Schedule unavailable.</p>`;
+        return;
+    }
+
+    // 1. Calculate precise local time with global offset applied
+    let now = new Date();
+    if (window.globalTimeOffsetSeconds) {
+        now = new Date(now.getTime() + window.globalTimeOffsetSeconds * 1000);
+    }
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const currentTimeString = `${hours}:${minutes}`;
+
+    // 2. Safely extract layout and times from global caches
+    const activeName = window.activeDailyScheduleName || "HS - Regular";
+    const times = (window.globalBellSchedulesCache && window.globalBellSchedulesCache[activeName]) ? window.globalBellSchedulesCache[activeName] : {};
+    
+    // Attempt to pull layout order from periods configured in the times object
+    const layout = Object.keys(times).length > 0 
+        ? Object.keys(times).sort((a, b) => parseInt(a) - parseInt(b) || a.localeCompare(b))
+        : ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+
+    let currentPeriod = null;
+    let nextPeriod = null;
+    const sched = profile.schedule;
+
+    // A. Detect if we are actively INSIDE a class
+    for (let i = 0; i < layout.length; i++) {
+        const p = layout[i];
+        if (times[p] && times[p].start && times[p].end) {
+            if (currentTimeString >= times[p].start && currentTimeString <= times[p].end) {
+                currentPeriod = p;
+                nextPeriod = layout[i + 1] || null;
+                break;
+            }
+        }
+    }
+
+    // B. Detect if we are in a PASSING PERIOD (Treat upcoming class as "Current")
+    if (!currentPeriod) {
+        for (let i = 0; i < layout.length; i++) {
+            const p = layout[i];
+            if (times[p] && times[p].start && currentTimeString < times[p].start) {
+                currentPeriod = p; // Promote the upcoming class to Current!
+                nextPeriod = layout[i + 1] || null;
+                break;
+            }
+        }
+    }
+
+    // Render logic
+    let html = '';
+    
+    if (currentPeriod && sched[currentPeriod]) {
+        html += `
+            <div style="margin-bottom: 10px;">
+                <div style="font-size: 0.7rem; color: #2e7d32; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;">📍 Current</div>
+                <div style="background: #e8f5e9; border-left: 3px solid #4caf50; padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; line-height: 1.3;">
+                    <strong style="color: #1b5e20;">P${currentPeriod}:</strong> ${sched[currentPeriod].courseName}<br>
+                    <span style="color: #555;">Room: ${sched[currentPeriod].room || "N/A"}</span>
+                </div>
+            </div>`;
+    }
+
+    if (nextPeriod && sched[nextPeriod]) {
+        html += `
+            <div>
+                <div style="font-size: 0.7rem; color: #1565c0; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;">➡️ Next</div>
+                <div style="background: #e3f2fd; border-left: 3px solid #2196f3; padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; line-height: 1.3;">
+                    <strong style="color: #0d47a1;">P${nextPeriod}:</strong> ${sched[nextPeriod].courseName}<br>
+                    <span style="color: #555;">Room: ${sched[nextPeriod].room || "N/A"}</span>
+                </div>
+            </div>`;
+    }
+
+    if (!html) {
+         html = `<p style="color: #777; font-style: italic; font-size: 0.85rem; margin: 5px 0; text-align: center;">Outside active schedule.</p>`;
+    }
+
+    container.innerHTML = html;
+};
+
+// ... (Rest of your recent travels, map modal, active/waiting screens go here exactly as they were) ...
 
 export function renderRecentTravelsSidebar(recentTravels) {
     const container = document.getElementById("kiosk-sidebar-widget");

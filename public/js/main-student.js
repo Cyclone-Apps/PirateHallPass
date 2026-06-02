@@ -106,19 +106,11 @@ async function initStudentApp(user, role) {
         const timeMetrics = evaluateCurrentTime(activeSchedulePeriods);
         window.currentTimeState = timeMetrics; // Save globally so pass generation can read it
 
-        // Visual Indicator Update
-        const statusRibbon = document.getElementById("student-schedule-status-bar");
-        if (statusRibbon) {
-            if (timeMetrics.isPassing) {
-                statusRibbon.innerHTML = `🏃‍♂️ <strong>Passing Period</strong> &bull; Next up: <strong>Period ${timeMetrics.nextPeriod}</strong> (${timeMetrics.minutesLeft}m left)`;
-                statusRibbon.style.background = "#e3f2fd";
-                statusRibbon.style.color = "#0d47a1";
-            } else if (timeMetrics.currentPeriod) {
-                statusRibbon.innerHTML = `⏰ <strong>Period ${timeMetrics.currentPeriod}</strong> &bull; ${timeMetrics.minutesLeft} minutes remaining`;
-                statusRibbon.style.background = "#f5f5f5";
-                statusRibbon.style.color = "#333";
-            }
+        // Update the new Fieldset Schedule Widget dynamically!
+        if (typeof window.updateStudentScheduleWidget === "function") {
+            window.updateStudentScheduleWidget(timeMetrics);
         }
+        
     }, 1000);
     // ==========================================================
 

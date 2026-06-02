@@ -1,6 +1,6 @@
 // js/modules/admin-engine.js
 import { db } from "../firebase-config.js";
-import { collection, doc, setDoc, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, doc, setDoc, getDocs, onSnapshot, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const studentsRef = collection(db, "students");
 
@@ -22,11 +22,28 @@ export async function upsertStudentData(studentId, studentData) {
 /**
  * Updates JUST the restriction fields for a specific student in a dedicated decoupled collection.
  */
-export async function updateStudentRestrictions(studentId, restrictions) {
+export async function updateStudentRestrictions(studentId, restrictions, oldPeers = []) {
     try {
-        // Decoupled: Restrictions now live in their own collection, completely independent!
+        // 1. Save primary restrictions to the dedicated collection
         const restrictionDoc = doc(db, "restrictions", studentId);
         await setDoc(restrictionDoc, restrictions);
+
+        const newPeers = restrictions.noContact || [];
+
+        // 2. Mirror System: Find newly added peers and append this student to their lists!
+        const addedPeers = newPeers.filter(p => !oldPeers.includes(p));
+        for (const peerId of addedPeers) {
+            const peerDoc = doc(db, "restrictions", peerId);
+            await setDoc(peerDoc, { noContact: arrayUnion(studentId) }, { merge: true });
+        }
+
+        // 3. Mirror System: Find removed peers and scrub this student from their lists!
+        const removedPeers = oldPeers.filter(p => !newPeers.includes(p));
+        for (const peerId of removedPeers) {
+            const peerDoc = doc(db, "restrictions", peerId);
+            await setDoc(peerDoc, { noContact: arrayRemove(studentId) }, { merge: true });
+        }
+
         return true;
     } catch (error) {
         console.error("Error saving restrictions:", error);
