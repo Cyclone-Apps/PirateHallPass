@@ -222,9 +222,22 @@
             </div>
 
             <div style="display: flex; flex-direction: column; gap: 15px;">
-                <button id="btn-toggle-global-lockdown" class="danger-btn" style="padding: 15px; font-size: 1.2rem; font-weight: bold; width: 100%; border-radius: 6px; cursor: pointer;">
-                    🔒 Lock Down All Rooms
-                </button>
+                
+                <div style="text-align: left; background: #f9f9f9; padding: 12px; border-radius: 6px; border: 1px solid #ddd;">
+                    <span style="font-size: 0.85rem; color: #666; display: block; margin-bottom: 12px; line-height: 1.4;">
+                        ℹ️ <strong>Quiet Lockdown:</strong> Only hides menus/schedules on teacher interfaces.<br>
+                        ⚠️ <strong>Loud Lockdown:</strong> Forces full-screen alert overrides on both student kiosks and teacher boards.
+                    </span>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <button id="btn-toggle-quiet-lockdown" class="danger-btn" style="padding: 15px; font-size: 1.1rem; width: 100%; border-radius: 6px; cursor: pointer; background: #616161; border: none; color: white;">
+                            🤫 Quiet Lock Down All Rooms
+                        </button>
+                        
+                        <button id="btn-toggle-loud-lockdown" class="danger-btn" style="padding: 15px; font-size: 1.1rem; font-weight: bold; width: 100%; border-radius: 6px; cursor: pointer; background: var(--pirate-red); border: none; color: white;">
+                            🚨 Loud Lock Down All Rooms
+                        </button>
+                    </div>
+                </div>
 
                 <button id="btn-modify-area-lockdown" class="secondary-btn" style="padding: 15px; font-size: 1.2rem; font-weight: bold; width: 100%; border: 2px solid #f57f17; color: #f57f17; border-radius: 6px; background: #fffde7; cursor: pointer;">
                     🗺️ Lock Down by Area

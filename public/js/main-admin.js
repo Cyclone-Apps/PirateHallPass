@@ -797,7 +797,7 @@ document.addEventListener("click", async (e) => {
 // ==========================================
 // EMERGENCY MANAGEMENT ENGINE
 // ==========================================
-let currentEmergencyState = { globalLockdown: false, lockedAreas: [] };
+let currentEmergencyState = { globalLockdown: false, quietLockdown: false, lockedAreas: [] };
 
 listenToEmergencyState((state) => {
     currentEmergencyState = state;
@@ -805,32 +805,72 @@ listenToEmergencyState((state) => {
     const title = document.getElementById("emergency-status-title");
     const msg = document.getElementById("emergency-status-msg");
     const box = document.getElementById("emergency-status-box");
-    const btnGlobal = document.getElementById("btn-toggle-global-lockdown");
+    
+    const btnLoud = document.getElementById("btn-toggle-loud-lockdown");
+    const btnQuiet = document.getElementById("btn-toggle-quiet-lockdown");
 
     if (state.globalLockdown) {
+        // LOUD LOCKDOWN ACTIVE
         box.style.background = "#ffebee"; // Light Red
         box.style.borderColor = "var(--pirate-red)";
         title.style.color = "var(--pirate-red)";
-        title.innerText = "🚨 SYSTEM IN LOCK DOWN";
-        msg.innerText = "All rooms are currently in LOCK DOWN. Press the Remove Lockdown button below.";
+        title.innerText = "🚨 LOUD LOCK DOWN ACTIVE";
+        msg.innerText = "All rooms are in LOUD LOCK DOWN. Visible to both Students and Teachers.";
         
-        btnGlobal.innerText = "🔓 Remove All Room Lockdown";
-        btnGlobal.style.backgroundColor = "#2e7d32"; // Green to remove
-    } else {
+        btnLoud.innerText = "🔓 Remove Loud Lockdown";
+        btnLoud.style.backgroundColor = "#2e7d32"; 
+        btnQuiet.style.display = "none"; // Hide alternative choice when active
+    } 
+    else if (state.quietLockdown) {
+        // QUIET LOCKDOWN ACTIVE
+        box.style.background = "#fff3cd"; // Warning Orange/Yellow
+        box.style.borderColor = "#ffa000";
+        title.style.color = "#b78103";
+        title.innerText = "🤫 QUIET LOCK DOWN ACTIVE";
+        msg.innerText = "All rooms are in QUIET LOCK DOWN. Visible ONLY to Teachers.";
+        
+        btnQuiet.innerText = "🔓 Remove Quiet Lockdown";
+        btnQuiet.style.backgroundColor = "#2e7d32"; 
+        btnLoud.style.display = "none"; // Hide alternative choice when active
+    } 
+    else {
+        // STANDARD NORMAL OPERATION
         box.style.background = "#e8f5e9"; // Light Green
         box.style.borderColor = "#4caf50";
         title.style.color = "#2e7d32";
-        title.innerText = "✅ No Current System Restrictions";
-        msg.innerText = "The building is operating normally.";
+        title.innerText = "✅ System Operating Normally";
+        msg.innerText = "The building is operating normal.";
         
-        btnGlobal.innerText = "🔒 Lock Down All Rooms";
-        btnGlobal.style.backgroundColor = "var(--pirate-red)"; 
+        // Reset Loud Button
+        btnLoud.style.display = "block";
+        btnLoud.innerText = "🚨 Loud Lock Down All Rooms";
+        btnLoud.style.backgroundColor = "var(--pirate-red)";
+        
+        // Reset Quiet Button
+        btnQuiet.style.display = "block";
+        btnQuiet.innerText = "🤫 Quiet Lock Down All Rooms";
+        btnQuiet.style.backgroundColor = "#616161"; // Dark Gray neutral
     }
 });
 
-document.getElementById("btn-toggle-global-lockdown").addEventListener("click", async () => {
+// Event Handler for Loud Lockdown
+document.getElementById("btn-toggle-loud-lockdown").addEventListener("click", async () => {
     const newState = !currentEmergencyState.globalLockdown;
-    await setEmergencyState({ globalLockdown: newState });
+    // Force quiet lockdown off if turning loud lockdown on
+    await setEmergencyState({ 
+        globalLockdown: newState,
+        quietLockdown: newState ? false : currentEmergencyState.quietLockdown 
+    });
+});
+
+// Event Handler for Quiet Lockdown
+document.getElementById("btn-toggle-quiet-lockdown").addEventListener("click", async () => {
+    const newState = !currentEmergencyState.quietLockdown;
+    // Force loud lockdown off if turning quiet lockdown on
+    await setEmergencyState({ 
+        quietLockdown: newState,
+        globalLockdown: newState ? false : currentEmergencyState.globalLockdown
+    });
 });
 
 document.getElementById("btn-modify-area-lockdown").addEventListener("click", () => {

@@ -8,6 +8,7 @@ window.currentStudentProfile = null;
 window.menuData = window.menuData || { today: "🔄 Loading...", tomorrow: "🔄 Loading..." };
 window.showingTomorrow = window.showingTomorrow || false;
 window.currentRotationDayText = window.currentRotationDayText || "🔄 Loading Day...";
+window.currentAdminAnnouncementText = window.currentAdminAnnouncementText || "";
 
 export function renderStudentIdleScreen() {
     const container = document.getElementById("kiosk-main-widget");
@@ -67,9 +68,18 @@ export function renderStudentSidebar(studentProfile = null) {
         });
     }
 
-    // Render the Sidebar with both live Schedule and Menu widgets
+    // Render the Sidebar with the Message Center, Schedule, and Meal Menu fieldsets
     container.innerHTML = `
-        <fieldset style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 5px 15px 15px 15px; margin-bottom: 8px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box;">
+        <fieldset id="admin-messages-widget" style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 5px 15px 10px 15px; margin-bottom: 8px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box; transition: all 0.3s ease;">
+            <legend style="font-weight: bold; color: #444; padding: 0 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px;">
+                📢 Message Center
+            </legend>
+            <div id="admin-messages-container" style="font-size: 0.95rem; color: #444; line-height: 1.4; margin-top: 5px;">
+                ${window.currentAdminAnnouncementText ? `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>` : "<p style='color: #888; font-style: italic; margin: 5px 0; text-align: center;'>Loading announcements...</p>"}
+            </div>
+        </fieldset>
+
+        <fieldset style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 15px; margin-bottom: 15px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box;">
             <legend style="font-weight: bold; color: #444; padding: 0 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px;">
                 Schedule
             </legend>
@@ -86,9 +96,9 @@ export function renderStudentSidebar(studentProfile = null) {
             </div>
         </fieldset>
 
-        <fieldset style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 5px 15px 15px 15px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box;">
+        <fieldset style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 15px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box;">
             <legend style="font-weight: bold; color: #444; padding: 0 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px;">
-                🍽️ Menus
+                🍽️ Menus (<span id="menu-rotation-display">${window.currentRotationDayText}</span>)
             </legend>
             
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0;">
@@ -137,6 +147,11 @@ export function renderStudentSidebar(studentProfile = null) {
     document.getElementById("btn-open-full-schedule").addEventListener("click", () => {
         document.getElementById("full-schedule-modal").classList.remove("hidden");
     });
+
+    // ✨ GUARANTEE: Force checking emergency status every time sidebar redraws
+    if (typeof window.updateEmergencyUI === "function") {
+        window.updateEmergencyUI();
+    }
 }
 
 /**
@@ -188,8 +203,6 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
 
     container.innerHTML = html;
 };
-
-// ... (Rest of your recent travels, map modal, active/waiting screens go here exactly as they were) ...
 
 export function renderRecentTravelsSidebar(recentTravels) {
     const container = document.getElementById("kiosk-sidebar-widget");
@@ -340,6 +353,9 @@ export function renderStudentActiveScreen(pass) {
 
 // --- MEAL MENU ENGINE & PARSERS --- //
 
+window.menuData = { today: "Loading...", tomorrow: "Loading..." };
+window.showingTomorrow = false;
+
 window.toggleMenuDay = function() {
     window.showingTomorrow = !window.showingTomorrow;
     window.updateMenuUI();
@@ -364,37 +380,63 @@ window.updateMenuUI = function() {
 };
 
 /**
- * Splits Firestore string by <br> and formats B- and L- prefixes.
- * Guarantees Breakfast is always sorted and displayed before Lunch.
+ * Splits Firestore string by <br> and formats B- and L- prefixes
  */
 function parseMenuData(menuStr) {
     if (!menuStr) return "<div style='color: #666;'>Menu data unavailable.</div>";
     
     const parts = menuStr.split('<br>');
-    let breakfastHtml = '';
-    let lunchHtml = '';
-    let otherHtml = '';
+    let html = '';
     
     parts.forEach(part => {
         let cleanPart = part.trim();
-        if (!cleanPart) return;
-
-        // Check for Breakfast
         if (cleanPart.toUpperCase().startsWith('B-')) {
-            breakfastHtml += `<div style="margin-bottom: 8px;"><strong style="color: var(--pirate-red);">Breakfast:</strong> <span style="color: black;">${cleanPart.substring(2).trim()}</span></div>`;
+            html += `<div style="margin-bottom: 8px;"><strong style="color: var(--pirate-red);">Breakfast:</strong> <span style="color: black;">${cleanPart.substring(2).trim()}</span></div>`;
         } 
-        // Check for Lunch
         else if (cleanPart.toUpperCase().startsWith('L-')) {
-            lunchHtml += `<div style="margin-bottom: 8px;"><strong style="color: var(--pirate-red);">Lunch:</strong> <span style="color: black;">${cleanPart.substring(2).trim()}</span></div>`;
+            html += `<div style="margin-bottom: 8px;"><strong style="color: var(--pirate-red);">Lunch:</strong> <span style="color: black;">${cleanPart.substring(2).trim()}</span></div>`;
         } 
-        // Anything else fallback
         else {
-            otherHtml += `<div style="margin-bottom: 8px; color: black;">${cleanPart}</div>`;
+            html += `<div style="margin-bottom: 8px; color: black;">${cleanPart}</div>`;
         }
     });
     
-    return breakfastHtml + lunchHtml + otherHtml;
+    return html;
 }
+
+// --- EMERGENCY UI ENGINE --- //
+window.updateEmergencyUI = function() {
+    const announcementWidget = document.getElementById("admin-messages-widget");
+    const announcementContainer = document.getElementById("admin-messages-container");
+    
+    if (!announcementWidget || !announcementContainer) return; // Exit if sidebar hasn't drawn yet
+
+    if (window.currentLoudLockdown) {
+        announcementWidget.style.background = "#ffebee"; 
+        announcementWidget.style.borderColor = "var(--pirate-red)";
+        
+        announcementContainer.innerHTML = `
+            <div style="text-align: center; font-weight: 900; color: var(--pirate-red); font-size: 1.1rem; padding: 5px 0; animation: blinker 1.5s linear infinite;">
+                🚨 EMERGENCY LOCKDOWN ACTIVE 🚨
+            </div>
+            <p style="color: #c62828; margin: 5px 0 0 0; font-size: 0.85rem; text-align: center; font-weight: bold;">
+                Please remain in your classroom until cleared by administration.
+            </p>
+            <style>
+                @keyframes blinker { 50% { opacity: 0.2; } }
+            </style>
+        `;
+    } else {
+        // Restore standard aesthetics
+        announcementWidget.style.background = "white";
+        announcementWidget.style.borderColor = "var(--pirate-silver)";
+        
+        // Ensure standard announcements return
+        announcementContainer.innerHTML = window.currentAdminAnnouncementText 
+            ? `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>`
+            : `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
+    }
+};
 
 /**
  * Real-time connection hook that subscribes to system/daily_info
@@ -404,6 +446,7 @@ export function initializeRotationDayEngine(db, onSnapshot, doc) {
 
     onSnapshot(doc(db, "system", "daily_info"), (docSnap) => {
         const schedRotationEl = document.getElementById("schedule-rotation-display");
+        const menuRotationEl = document.getElementById("menu-rotation-display");
         
         if (docSnap.exists()) {
             const data = docSnap.data();
@@ -411,16 +454,31 @@ export function initializeRotationDayEngine(db, onSnapshot, doc) {
             // Save to memory
             window.currentRotationDayText = data.rotationDay || "Regular Day";
             
-            // Update Schedule Widget header
-            if (schedRotationEl) schedRotationEl.innerText = window.currentRotationDayText;
+            // Save Announcements to Memory
+            window.currentAdminAnnouncementText = data.announcements || "";
             
-            // Parse and store to global memory variables
+            const announcementContainer = document.getElementById("admin-messages-container");
+            const adminWidget = document.getElementById("admin-messages-widget");
+            
+            // Safety guard checking if widget exists and isn't actively displaying a red loud lockdown alert
+            if (announcementContainer && adminWidget && !adminWidget.style.background.includes("ffebee")) {
+                announcementContainer.innerHTML = window.currentAdminAnnouncementText 
+                    ? `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>`
+                    : `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
+            }
+            
+            // Update BOTH locations on the screen
+            if (schedRotationEl) schedRotationEl.innerText = window.currentRotationDayText;
+            if (menuRotationEl) menuRotationEl.innerText = window.currentRotationDayText;
+            
+            // Parse the data and store it globally
             window.menuData.today = parseMenuData(data.lunchMenu);
             window.menuData.tomorrow = parseMenuData(data.tomorrowMenu);
             
         } else {
             window.currentRotationDayText = "Regular Schedule";
             if (schedRotationEl) schedRotationEl.innerText = window.currentRotationDayText;
+            if (menuRotationEl) menuRotationEl.innerText = window.currentRotationDayText;
             
             window.menuData.today = "<div style='color: #666;'>Menu data unavailable.</div>";
             window.menuData.tomorrow = "<div style='color: #666;'>Menu data unavailable.</div>";
@@ -429,6 +487,11 @@ export function initializeRotationDayEngine(db, onSnapshot, doc) {
         // Push the update to the UI immediately
         if (typeof window.updateMenuUI === "function") {
             window.updateMenuUI();
+        }
+
+        // Check and apply emergency color filters right after updating data templates
+        if (typeof window.updateEmergencyUI === "function") {
+            window.updateEmergencyUI();
         }
     });
 }

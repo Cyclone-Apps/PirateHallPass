@@ -135,7 +135,8 @@ export function listenToEmergencyState(callback) {
         if (docSnap.exists()) {
             callback(docSnap.data());
         } else {
-            callback({ globalLockdown: false, lockedAreas: [] });
+            // Added quietLockdown to the default fallback state
+            callback({ globalLockdown: false, quietLockdown: false, lockedAreas: [] });
         }
     });
 }

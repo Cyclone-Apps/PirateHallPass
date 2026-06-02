@@ -42,13 +42,43 @@ initAuthListener("teacher", async (user, role) => {
         
         if (banner) {
             if (state.globalLockdown) {
+                // 🔴 1. LOUD LOCKDOWN EMERGENCY ACTIVE
                 banner.classList.remove("hidden");
+                banner.style.backgroundColor = "#c62828"; // Emergency Red
+                banner.style.color = "white";
+                banner.style.padding = "15px";
+                banner.style.textAlign = "center";
+                banner.innerHTML = "🚨 <strong>LOUD LOCKDOWN ACTIVE</strong> - Lock doors, turn off lights, and seek cover immediately! 🚨";
+                
                 // Turns the entire Message Center box red
-                if (ribbon) ribbon.classList.add("lockdown-mode"); 
+                if (ribbon) {
+                    ribbon.classList.add("lockdown-mode"); 
+                    ribbon.classList.remove("quiet-lockdown-mode");
+                }
+            } else if (state.quietLockdown) {
+                // 🟠 2. QUIET LOCKDOWN EMERGENCY ACTIVE
+                banner.classList.remove("hidden");
+                banner.style.backgroundColor = "#ef6c00"; // Alert Orange / Amber
+                banner.style.color = "white";
+                banner.style.padding = "15px";
+                banner.style.textAlign = "center";
+                banner.innerHTML = "⚠️ <strong>QUIET LOCKDOWN ACTIVE</strong> - Lock classroom doors. Continue teaching, but NO hall passes permitted. ⚠️";
+                
+                // Style the message center widget for caution
+                if (ribbon) {
+                    ribbon.classList.add("lockdown-mode"); 
+                    ribbon.classList.add("quiet-lockdown-mode");
+                }
             } else {
+                // 🟢 3. NO EMERGENCY STATUS ACTIVE
                 banner.classList.add("hidden");
+                banner.innerHTML = "";
+                
                 // Returns the Message Center to normal white/gray
-                if (ribbon) ribbon.classList.remove("lockdown-mode");
+                if (ribbon) {
+                    ribbon.classList.remove("lockdown-mode");
+                    ribbon.classList.remove("quiet-lockdown-mode");
+                }
             }
         }
     });

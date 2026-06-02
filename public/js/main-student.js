@@ -107,6 +107,20 @@ async function initStudentApp(user, role) {
         activeSchedulePeriods = todayScheduleInfo.periods;
     }
 
+    // 🚨 STUDENT EMERGENCY ENGINE 🚨
+    // Listens directly to the Firestore settings document
+    onSnapshot(doc(db, "settings", "emergencyState"), (docSnap) => {
+        const state = docSnap.exists() ? docSnap.data() : { globalLockdown: false, quietLockdown: false };
+        
+        // 1. Save to global memory so it survives sidebar redraws!
+        window.currentLoudLockdown = state.globalLockdown;
+        
+        // 2. Trigger the visual update instantly if the UI is ready
+        if (typeof window.updateEmergencyUI === "function") {
+            window.updateEmergencyUI();
+        }
+    });
+
     // Start a continuous 1-second interval to evaluate current time metrics
     setInterval(() => {
         if (!activeSchedulePeriods) return;
