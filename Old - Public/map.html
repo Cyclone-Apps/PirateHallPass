@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Postville CSD - High School Floor Plan Engine</title>
+    <style>
+        :root {
+            --primary: #0d47a1;
+            --blocked: #c62828;
+            --selected: #2e7d32;
+            --bg-light: #f4f6f9;
+        }
+
+        body { font-family: -apple-system, sans-serif; background-color: var(--bg-light); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+
+        .control-sidebar { width: 320px; background: white; padding: 25px; box-shadow: 3px 0 15px rgba(0,0,0,0.05); z-index: 10; display: flex; flex-direction: column; gap: 20px; }
+        h2 { margin-top: 0; color: var(--primary); font-weight: 800; font-size: 1.4rem; }
+        
+        .selection-card { background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid var(--primary); }
+        .selection-value { font-size: 1.4rem; font-weight: 900; color: var(--primary); margin-top: 5px; }
+
+        .map-viewport { flex: 1; padding: 20px; display: flex; justify-content: center; align-items: center; background: #eaedf2; overflow: auto; }
+        .map-canvas-container { background-color: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.08); border-radius: 12px; border: 1px solid #dcdfe4; padding: 20px; width: 100%; height: 100%; overflow: auto;}
+
+        /* The Grid */
+        svg.floorplan-svg { min-width: 1600px; min-height: 1200px; display: block; margin: auto;}
+        
+        /* Interactive Zones */
+        .zone-box { fill: #ffffff; stroke: #b0bec5; stroke-width: 2; cursor: pointer; transition: 0.15s; }
+        .corridor-box { fill: #eceff1; stroke: #90a4ae; stroke-width: 2; cursor: pointer; transition: 0.15s; }
+        .parking-box { fill: #f5f5f5; stroke: #e0e0e0; stroke-dasharray: 10,10; stroke-width: 2; pointer-events: none; }
+
+        body.student-mode .zone-box:hover:not(.blocked), body.student-mode .corridor-box:hover:not(.blocked) { fill: #e8f5e9; stroke: var(--selected); stroke-width: 3; }
+        body.admin-mode .zone-box:hover, body.admin-mode .corridor-box:hover { fill: #ffebee; stroke: var(--blocked); stroke-width: 3; }
+
+        .zone-box.selected { fill: #c8e6c9 !important; stroke: var(--selected) !important; stroke-width: 3; }
+        .zone-box.blocked, .corridor-box.blocked { fill: url(#hazard-stripes) !important; stroke: var(--blocked) !important; stroke-width: 3; cursor: not-allowed; }
+
+        .lbl-room { font-size: 14px; font-weight: bold; fill: #1a237e; pointer-events: none; }
+        .lbl-large { font-size: 24px; font-weight: 900; fill: #455a64; pointer-events: none; letter-spacing: 2px;}
+        .blocked + text { fill: #c62828 !important; font-weight: 900; }
+        .selected + text { fill: #1b5e20 !important; }
+    </style>
+</head>
+<body class="student-mode" id="app-body">
+
+    <div class="control-sidebar">
+        <h2>📍 Postville HS Map</h2>
+        <div class="selection-card">
+            <div style="font-size: 0.8rem; color: #555; text-transform: uppercase; font-weight: bold;">Destination</div>
+            <div class="selection-value" id="ui-room-display">None</div>
+        </div>
+        <label style="background:#ffebee; padding:15px; border-radius:8px; border:1px solid #ffcdd2; color:#c62828; font-weight:bold; cursor:pointer; display:flex; gap:10px;">
+            <input type="checkbox" id="checkbox-admin"> 🚨 Admin Lockdown Mode
+        </label>
+        <p style="font-size:0.85rem; color:#666;">Verified against official Postville CSD building master specifications.</p>
+    </div>
+
+    <div class="map-viewport">
+        <div class="map-canvas-container">
+            <svg class="floorplan-svg" viewBox="-50 -20 1650 1200">
+                <defs>
+                    <pattern id="hazard-stripes" width="20" height="20" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                        <line x1="0" y1="0" x2="0" y2="20" stroke="#ffebee" stroke-width="20" />
+                        <line x1="10" y1="0" x2="10" y2="20" stroke="#ef9a9a" stroke-width="10" />
+                    </pattern>
+                </defs>
+
+                <rect class="parking-box" x="120" y="250" width="648" height="300" rx="8" />
+                <text class="lbl-large" x="444" y="410" text-anchor="middle" style="fill:#bdbdbd;">OUTSIDE / PARKING</text>
+
+                <g class="map-node" data-id="Room 112"><rect class="zone-box" x="0" y="0" width="120" height="250" rx="4"/><text class="lbl-room" x="60" y="130" text-anchor="middle">112</text></g>
+                
+                <g class="map-node" data-id="100 Hallway"><rect class="corridor-box" x="120" y="100" width="768" height="50" rx="4"/><text class="lbl-room" x="504" y="130" text-anchor="middle">100 HALLWAY</text></g>
+
+                <g class="map-node" data-id="Room 110"><rect class="zone-box" x="120" y="0" width="120" height="100" rx="4"/><text class="lbl-room" x="180" y="55" text-anchor="middle">110</text></g>
+                <g class="map-node" data-id="Room 108"><rect class="zone-box" x="240" y="0" width="120" height="100" rx="4"/><text class="lbl-room" x="300" y="55" text-anchor="middle">108</text></g>
+                <g class="map-node" data-id="Room 106"><rect class="zone-box" x="360" y="0" width="120" height="100" rx="4"/><text class="lbl-room" x="420" y="55" text-anchor="middle">106</text></g>
+                <g class="map-node" data-id="Room 104"><rect class="zone-box" x="480" y="0" width="120" height="100" rx="4"/><text class="lbl-room" x="540" y="55" text-anchor="middle">104</text></g>
+                <g class="map-node" data-id="Room 102"><rect class="zone-box" x="600" y="0" width="120" height="100" rx="4"/><text class="lbl-room" x="660" y="55" text-anchor="middle">102</text></g>
+                <g class="map-node" data-id="Room 100B"><rect class="zone-box" x="720" y="0" width="48" height="100" rx="4"/><text class="lbl-room" x="744" y="55" text-anchor="middle">100B</text></g>
+                <g class="map-node" data-id="Room 100"><rect class="zone-box" x="768" y="0" width="120" height="100" rx="4"/><text class="lbl-room" x="828" y="55" text-anchor="middle">100</text></g>
+
+                <g class="map-node" data-id="HS Office"><rect class="zone-box" x="888" y="0" width="150" height="50" rx="4"/><text class="lbl-room" x="963" y="30" text-anchor="middle">HS Office</text></g>
+                <g class="map-node" data-id="Main Entrance"><path class="zone-box" d="M 888,50 L 1038,50 L 1038,150 L 938,150 L 938,100 L 888,100 Z" /><text class="lbl-room" x="975" y="85" text-anchor="middle">Entrance</text></g>
+
+                <g class="map-node" data-id="Room 107"><rect class="zone-box" x="120" y="150" width="130" height="100" rx="4"/><text class="lbl-room" x="185" y="205" text-anchor="middle">107</text></g>
+                <g class="map-node" data-id="Hallway Down 1"><rect class="corridor-box" x="250" y="150" width="50" height="100" rx="4"/></g>
+                <g class="map-node" data-id="Room 103"><rect class="zone-box" x="300" y="150" width="180" height="100" rx="4"/><text class="lbl-room" x="390" y="205" text-anchor="middle">103</text></g>
+                <g class="map-node" data-id="Room 101"><rect class="zone-box" x="480" y="150" width="180" height="100" rx="4"/><text class="lbl-room" x="570" y="205" text-anchor="middle">101</text></g>
+                <g class="map-node" data-id="Custodial"><rect class="zone-box" x="660" y="150" width="84" height="100" rx="4"/><text class="lbl-room" x="702" y="205" text-anchor="middle">Cust.</text></g>
+                <g class="map-node" data-id="Mechanical"><rect class="zone-box" x="744" y="150" width="84" height="100" rx="4"/><text class="lbl-room" x="786" y="205" text-anchor="middle">Mech.</text></g>
+                
+                <g class="map-node" data-id="Girls Restroom 100s"><rect class="zone-box" x="828" y="150" width="60" height="50" rx="4"/><text class="lbl-room" x="858" y="180" text-anchor="middle">G-RR</text></g>
+                <g class="map-node" data-id="Boys Restroom 100s"><rect class="zone-box" x="828" y="200" width="60" height="50" rx="4"/><text class="lbl-room" x="858" y="230" text-anchor="middle">B-RR</text></g>
+
+                <g class="map-node" data-id="Room 109"><rect class="zone-box" x="0" y="250" width="250" height="100" rx="4"/><text class="lbl-room" x="125" y="305" text-anchor="middle">109</text></g>
+                <g class="map-node" data-id="Room 105"><rect class="zone-box" x="300" y="250" width="90" height="100" rx="4"/><text class="lbl-room" x="345" y="305" text-anchor="middle">105</text></g>
+
+                <g class="map-node" data-id="Main Vertical Hall"><rect class="corridor-box" x="888" y="100" width="50" height="700" rx="4"/></g>
+
+                <g class="map-node" data-id="Room 200"><rect class="zone-box" x="768" y="250" width="120" height="100" rx="4"/><text class="lbl-room" x="828" y="305" text-anchor="middle">200</text></g>
+                <g class="map-node" data-id="Room 202"><rect class="zone-box" x="768" y="350" width="120" height="100" rx="4"/><text class="lbl-room" x="828" y="405" text-anchor="middle">202</text></g>
+                <g class="map-node" data-id="Mechanical 2"><rect class="zone-box" x="768" y="450" width="120" height="100" rx="4"/><text class="lbl-room" x="828" y="505" text-anchor="middle">Mech</text></g>
+
+                <g class="map-node" data-id="District Office"><rect class="zone-box" x="938" y="150" width="120" height="150" rx="4"/><text class="lbl-room" x="998" y="230" text-anchor="middle">Dist. Off.</text></g>
+                <g class="map-node" data-id="Room 201A"><rect class="zone-box" x="938" y="300" width="120" height="50" rx="4"/><text class="lbl-room" x="998" y="330" text-anchor="middle">201A</text></g>
+                <g class="map-node" data-id="Room 201"><rect class="zone-box" x="938" y="350" width="120" height="100" rx="4"/><text class="lbl-room" x="998" y="405" text-anchor="middle">201</text></g>
+                
+                <g class="map-node" data-id="Restroom 200s"><rect class="zone-box" x="938" y="450" width="120" height="100" rx="4"/><text class="lbl-room" x="998" y="505" text-anchor="middle">RR</text></g>
+                
+                <g class="map-node" data-id="Cross Corridor Block"><rect class="corridor-box" x="888" y="550" width="340" height="30" rx="4"/></g>
+
+                <g class="map-node" data-id="Gym Lobby"><rect class="zone-box" x="1058" y="450" width="170" height="100" rx="4"/><text class="lbl-room" x="1143" y="505" text-anchor="middle">Gym Lobby</text></g>
+
+                <g class="map-node" data-id="Girls Locker Room"><rect class="zone-box" x="938" y="580" width="240" height="100" rx="4"/><text class="lbl-room" x="1058" y="635" text-anchor="middle">Girls Locker Room</text></g>
+                <g class="map-node" data-id="Locker Room Mid Corridor"><rect class="corridor-box" x="938" y="680" width="240" height="20" rx="2"/></g>
+                <g class="map-node" data-id="Boys Locker Room"><rect class="zone-box" x="938" y="700" width="240" height="100" rx="4"/><text class="lbl-room" x="1058" y="755" text-anchor="middle">Boys Locker Room</text></g>
+
+                <g class="map-node" data-id="300 Hallway"><rect class="corridor-box" x="160" y="650" width="728" height="50" rx="4"/><text class="lbl-room" x="524" y="680" text-anchor="middle">300 HALLWAY</text></g>
+
+                <g class="map-node" data-id="Room 312"><rect class="zone-box" x="100" y="550" width="150" height="100" rx="4"/><text class="lbl-room" x="175" y="605" text-anchor="middle">312</text></g>
+                <g class="map-node" data-id="Room 310"><rect class="zone-box" x="250" y="550" width="95" height="100" rx="4"/><text class="lbl-room" x="297.5" y="605" text-anchor="middle">310</text></g>
+                <g class="map-node" data-id="Room 308"><rect class="zone-box" x="345" y="550" width="85" height="100" rx="4"/><text class="lbl-room" x="387.5" y="605" text-anchor="middle">308</text></g>
+                <g class="map-node" data-id="Room 306"><rect class="zone-box" x="430" y="550" width="85" height="100" rx="4"/><text class="lbl-room" x="472.5" y="605" text-anchor="middle">306</text></g>
+                <g class="map-node" data-id="Room 304"><rect class="zone-box" x="515" y="550" width="85" height="100" rx="4"/><text class="lbl-room" x="557.5" y="605" text-anchor="middle">304</text></g>
+                <g class="map-node" data-id="Room 302"><rect class="zone-box" x="600" y="550" width="85" height="100" rx="4"/><text class="lbl-room" x="642.5" y="605" text-anchor="middle">302</text></g>
+                <g class="map-node" data-id="Room 300C"><rect class="zone-box" x="685" y="550" width="90" height="100" rx="4"/><text class="lbl-room" x="730" y="605" text-anchor="middle">300C</text></g>
+                <g class="map-node" data-id="Room 300B"><rect class="zone-box" x="775" y="550" width="64" height="100" rx="4"/><text class="lbl-room" x="807" y="605" text-anchor="middle">300B</text></g>
+                <g class="map-node" data-id="Room 300A"><rect class="zone-box" x="839" y="550" width="49" height="100" rx="4"/><text class="lbl-room" x="863.5" y="605" text-anchor="middle">300A</text></g>
+
+                <g class="map-node" data-id="Restroom 300s"><rect class="zone-box" x="100" y="650" width="60" height="150" rx="4"/><text class="lbl-room" x="130" y="730" text-anchor="middle">RR</text></g>
+                <g class="map-node" data-id="Exit Hall 300s"><rect class="corridor-box" x="160" y="650" width="25" height="150" rx="2"/></g>
+                <g class="map-node" data-id="Mechanical 3"><rect class="zone-box" x="185" y="700" width="65" height="100" rx="4"/><text class="lbl-room" x="217.5" y="755" text-anchor="middle">Mech</text></g>
+                
+                <g class="map-node" data-id="Room 313"><rect class="zone-box" x="250" y="700" width="95" height="100" rx="4"/><text class="lbl-room" x="297.5" y="755" text-anchor="middle">313</text></g>
+                <g class="map-node" data-id="Room 311"><rect class="zone-box" x="345" y="700" width="85" height="100" rx="4"/><text class="lbl-room" x="387.5" y="755" text-anchor="middle">311</text></g>
+                <g class="map-node" data-id="Room 309"><rect class="zone-box" x="430" y="700" width="85" height="100" rx="4"/><text class="lbl-room" x="472.5" y="755" text-anchor="middle">309</text></g>
+                <g class="map-node" data-id="Room 307"><rect class="zone-box" x="515" y="700" width="85" height="100" rx="4"/><text class="lbl-room" x="557.5" y="755" text-anchor="middle">307</text></g>
+                <g class="map-node" data-id="Room 305"><rect class="zone-box" x="600" y="700" width="85" height="100" rx="4"/><text class="lbl-room" x="642.5" y="755" text-anchor="middle">305</text></g>
+                <g class="map-node" data-id="Room 303"><rect class="zone-box" x="685" y="700" width="90" height="100" rx="4"/><text class="lbl-room" x="730" y="755" text-anchor="middle">303</text></g>
+                <g class="map-node" data-id="Room 301"><rect class="zone-box" x="775" y="700" width="64" height="100" rx="4"/><text class="lbl-room" x="807" y="755" text-anchor="middle">301</text></g>
+                <g class="map-node" data-id="Guidance"><rect class="zone-box" x="839" y="700" width="49" height="100" rx="4"/><text class="lbl-room" x="863.5" y="755" text-anchor="middle">Guid.</text></g>
+
+                <g class="map-node" data-id="Gym Vertical Hall"><rect class="corridor-box" x="1178" y="580" width="50" height="220" rx="4"/></g>
+
+                <g class="map-node" data-id="Main Gym"><rect class="zone-box" x="1228" y="250" width="270" height="450" rx="4"/><text class="lbl-large" x="1363" y="485" text-anchor="middle">MAIN GYM</text></g>
+
+                <g class="map-node" data-id="Band Room"><rect class="zone-box" x="1228" y="700" width="90" height="100" rx="4"/><text class="lbl-room" x="1273" y="755" text-anchor="middle">Band</text></g>
+                <g class="map-node" data-id="Vocal Music"><rect class="zone-box" x="1318" y="700" width="90" height="100" rx="4"/><text class="lbl-room" x="1363" y="755" text-anchor="middle">Vocal</text></g>
+                <g class="map-node" data-id="NICC"><rect class="zone-box" x="1408" y="700" width="90" height="100" rx="4"/><text class="lbl-room" x="1453" y="755" text-anchor="middle">NICC</text></g>
+
+                <g class="map-node" data-id="Fine Arts Corridor"><rect class="corridor-box" x="685" y="800" width="813" height="40" rx="4"/><text class="lbl-room" x="1091" y="825" text-anchor="middle">CENTRAL CORRIDOR</text></g>
+
+                <g class="map-node" data-id="Room 400"><rect class="zone-box" x="685" y="840" width="154" height="120" rx="4"/><text class="lbl-room" x="762" y="905" text-anchor="middle">400 Weight Rm</text></g>
+                <g class="map-node" data-id="Room 401"><rect class="zone-box" x="839" y="840" width="389" height="120" rx="4"/><text class="lbl-room" x="1033" y="905" text-anchor="middle">401 Weight Rm</text></g>
+                <g class="map-node" data-id="Auditorium"><rect class="zone-box" x="1228" y="840" width="270" height="260" rx="4"/><text class="lbl-large" x="1363" y="980" text-anchor="middle">AUDITORIUM</text></g>
+
+            </svg>
+        </div>
+    </div>
+
+    <script>
+        const nodes = document.querySelectorAll('.map-node');
+        const uiRoomDisplay = document.getElementById('ui-room-display');
+        const adminToggle = document.getElementById('checkbox-admin');
+        const appBody = document.getElementById('app-body');
+
+        adminToggle.addEventListener('change', (e) => {
+            nodes.forEach(n => n.querySelector(['rect', 'path']).classList.remove('selected'));
+            if (e.target.checked) {
+                appBody.className = "admin-mode";
+                uiRoomDisplay.innerText = "ADMIN MODE";
+                uiRoomDisplay.style.color = "#c62828";
+            } else {
+                appBody.className = "student-mode";
+                uiRoomDisplay.innerText = "None";
+                uiRoomDisplay.style.color = "var(--primary)";
+            }
+        });
+
+        nodes.forEach(node => {
+            node.addEventListener('click', function() {
+                const shapes = this.querySelectorAll('rect, path');
+                const roomId = this.getAttribute('data-id');
+
+                shapes.forEach(rect => {
+                    if (adminToggle.checked) {
+                        rect.classList.toggle('blocked');
+                        return;
+                    }
+
+                    if (rect.classList.contains('blocked')) {
+                        alert(`Access Restricted: ${roomId} is locked by administration.`);
+                        return;
+                    }
+
+                    nodes.forEach(n => n.querySelectorAll('rect, path').forEach(s => s.classList.remove('selected')));
+                    rect.classList.add('selected');
+                    uiRoomDisplay.innerText = roomId;
+                });
+            });
+        });
+    </script>
+</body>
+</html>

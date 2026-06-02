@@ -1,0 +1,259 @@
+/* css/components.css */
+
+/* Layout Containers */
+.columns-container {
+  display: flex;
+  gap: 20px;
+  margin-top: 20px;
+  width: 100%;
+}
+
+.dashboard-column {
+  flex: 1;
+  background: white;
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.dashboard-column h2 {
+  font-size: 1.2rem;
+  border-bottom: 2px solid var(--pirate-silver);
+  padding-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge {
+  background: var(--pirate-silver);
+  color: var(--text-dark);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+}
+
+/* Toolbars */
+.teacher-toolbar, .admin-toolbar {
+  display: flex;
+  gap: 15px;
+  background: white;
+  padding: 15px 20px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-top: 20px;
+}
+
+/* Buttons */
+.toolbar-btn {
+  background-color: var(--pirate-silver);
+  color: var(--text-dark);
+  border: none;
+  padding: 12px 15px;
+  border-radius: var(--radius);
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 1rem;
+  transition: all 0.2s;
+  flex: 1;
+}
+
+.toolbar-btn:hover {
+  filter: brightness(0.95);
+}
+
+.primary-btn {
+  background-color: var(--pirate-red);
+  color: white;
+}
+
+.primary-btn:hover {
+  background-color: #d11610;
+}
+
+.danger-btn {
+  background-color: black;
+  color: white;
+}
+
+/* Inputs */
+.search-input {
+  flex: 2;
+  padding: 12px;
+  border: 2px solid var(--pirate-silver);
+  border-radius: var(--radius);
+  font-size: 1rem;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--pirate-red);
+}
+
+/* css/components.css (Add to bottom) */
+
+/* Modal Overlay & Popup */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  padding: 25px;
+  border-radius: var(--radius);
+  width: 90%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.2rem;
+  font-weight: bold;
+  border-bottom: 2px solid var(--pirate-silver);
+  padding-bottom: 10px;
+}
+
+.close-modal {
+  cursor: pointer;
+  color: var(--pirate-red);
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-group input, .form-group select {
+  padding: 10px;
+  border: 2px solid var(--pirate-silver);
+  border-radius: 5px;
+  font-size: 1rem;
+}
+
+.form-group input:focus, .form-group select:focus {
+  outline: none;
+  border-color: var(--pirate-red);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ========================================= */
+/* INTERACTIVE MAP STYLES                    */
+/* ========================================= */
+.zone-box {
+    fill: #ffffff; 
+    stroke: #ced4da;
+    stroke-width: 1px;
+}
+
+.corridor-box {
+    fill: #eaedf2; 
+    stroke: #ced4da;
+    stroke-width: 1px;
+}
+
+.parking-box {
+    fill: #e0e0e0; 
+    stroke: #bdbdbd;
+    stroke-width: 1px;
+}
+
+.lbl-room { font-family: sans-serif; font-size: 14px; fill: #495057; }
+.lbl-large { font-family: sans-serif; font-size: 32px; font-weight: bold; fill: #ced4da; }
+
+.map-node {
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+}
+
+.map-node:hover .zone-box {
+    fill: #ffcdd2;
+    stroke: var(--pirate-red);
+    stroke-width: 3px;
+}
+
+.map-node.selected .zone-box {
+    fill: var(--pirate-red);
+    stroke: #b71c1c;
+    stroke-width: 4px;
+}
+
+/* ========================================= */
+/* ADMIN MAP OVERRIDES (Allows Hallway Clicks)*/
+/* ========================================= */
+#full-map-container .map-node {
+    cursor: pointer;
+}
+
+#full-map-container .map-node:hover .zone-box,
+#full-map-container .map-node:hover .corridor-box {
+    fill: #ffcdd2 !important; /* Light red/pink hover effect */
+    stroke: var(--pirate-red) !important;
+    stroke-width: 3px !important;
+}
+
+/* ==========================================
+   Message Center Ribbon
+   ========================================== */
+.message-center-ribbon {
+    border: 2px solid var(--pirate-silver);
+    border-radius: var(--radius);
+    padding: 15px 20px;
+    margin: 20px 20px 0 20px; /* Pushes it away from the edges by 20px */
+    background-color: white;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+}
+
+.message-center-ribbon legend {
+    font-weight: bold;
+    color: var(--text-dark);
+    padding: 0 10px;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* When lockdown is active, the entire box turns red */
+.message-center-ribbon.lockdown-mode {
+    background-color: var(--pirate-red);
+    border-color: var(--pirate-red);
+    color: white;
+}
+
+.message-center-ribbon.lockdown-mode legend {
+    color: var(--pirate-red);
+}
+
+/* Make sure the text banner itself is transparent so the red fieldset shows through */
+.alert-banner {
+    color: white;
+    text-align: center;
+    font-size: 1.2rem;
+    font-weight: bold;
+    padding: 10px;
+}

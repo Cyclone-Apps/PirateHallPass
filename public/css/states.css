@@ -1,0 +1,36 @@
+/* css/states.css */
+
+/* Pass Card Base */
+.pass-card {
+  padding: 15px;
+  border-radius: var(--radius);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 6px solid var(--pirate-silver); /* Default side border */
+  background: white;
+}
+
+/* State: Good Standing / Active Pass */
+.state-good {
+  border-left-color: #4caf50; /* Green */
+  background-color: #f1f8e9;
+}
+
+/* State: Watch for Issues / Tardy / Pending */
+.state-watch {
+  border-left-color: #ffeb3b; /* Yellow */
+  background-color: #fffde7;
+}
+
+/* State: Restricted / Rejected Pass */
+.state-restricted {
+  border-left-color: var(--pirate-red); /* Pirate Red */
+  background-color: #ffebee;
+}
+
+/* Utility State Text Colors */
+.text-good { color: #2e7d32; font-weight: bold; }
+.text-watch { color: #f57f17; font-weight: bold; }
+.text-restricted { color: var(--pirate-red); font-weight: bold; }

@@ -1,0 +1,81 @@
+/* css/style.css */
+:root {
+  --pirate-red: #ef1a14;
+  --pirate-silver: #ced0d0;
+  --text-dark: #1a1a1a;
+  --text-light: #ffffff;
+  --bg-color: #f4f6f9;
+  
+  --shadow: 0 4px 10px rgba(0,0,0,0.1);
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-dark);
+}
+
+/* Global Header */
+#global-header {
+  background-color: var(--pirate-red);
+  color: var(--text-light);
+  padding: 15px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.header-logo { 
+  display: flex; 
+  align-items: center; 
+  gap: 15px; 
+}
+
+/* NEW: Controls the logo size */
+.school-logo {
+  height: 40px; 
+  width: auto;
+  object-fit: contain;
+}
+.header-user { display: flex; align-items: center; gap: 15px; }
+
+.role-badge {
+  background: var(--pirate-silver);
+  color: var(--text-dark);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+/* Login Screen */
+#screen-login {
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: var(--pirate-silver);
+}
+
+.panel {
+  background: white;
+  padding: 40px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.google-btn {
+  background-color: var(--pirate-red);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  font-size: 1.1rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  margin-top: 20px;
+}

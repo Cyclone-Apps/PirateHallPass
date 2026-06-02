@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pirate Hall Pass - Student</title>
+    <style>
+        :root {
+            --primary-color: #0d47a1; 
+            --accent-color: #f57f17;   
+            --secondary-color: #cfd8dc;
+            --text-dark: #212121;
+            --bg-light: #f4f6f9;
+            --shadow: 0 4px 15px rgba(0,0,0,0.08);
+            --radius: 12px;
+        }
+
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg-light); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        header { background-color: var(--primary-color); color: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.15); z-index: 10; }
+        header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: 0.5px; }
+        .live-clock-container { text-align: right; }
+        #header-time { font-size: 1.5rem; font-weight: 900; color: #fff; line-height: 1.1; }
+
+        .kiosk-grid { display: grid; grid-template-columns: 1.6fr 1fr; flex: 1; height: calc(100vh - 65px); overflow: hidden; }
+
+        /* LEFT SIDE: STUDENT APP FLOW */
+        .kiosk-main { padding: 30px; display: flex; flex-direction: column; justify-content: center; align-items: center; overflow-y: auto; background: #ffffff; border-right: 2px solid #e0e0e0; position: relative;}
+        .kiosk-card { width: 100%; max-width: 550px; background: #ffffff; border-radius: var(--radius); padding: 40px; box-shadow: var(--shadow); border: 1px solid #eaedf2; text-align: center; box-sizing: border-box; }
+
+        /* RIGHT SIDE: INFORMATION WIDGETS */
+        .kiosk-sidebar { background-color: #fafbfc; padding: 25px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; box-sizing: border-box; }
+        .announcement-box { background: #fff3e0; border-left: 5px solid var(--accent-color); padding: 15px 20px; border-radius: var(--radius); box-shadow: var(--shadow); min-height: 80px;}
+        
+        /* SCHEDULE WIDGET */
+        .schedule-widget { background: white; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid #eaedf2; overflow: hidden; display: flex; flex-direction: column; }
+        .schedule-header { display: flex; background: var(--primary-color); color: white; border-bottom: 2px solid #093170; align-items: stretch;}
+        .rotation-block { padding: 15px; background: #093170; display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 110px; border-right: 1px solid #002255;}
+        .rotation-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.85; margin-bottom: 3px; font-weight: bold;}
+        .rotation-value { font-size: 1.5rem; font-weight: 900; }
+        .upcoming-title { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; padding: 15px; text-transform: uppercase; letter-spacing: 1px;}
+        
+        .icon-btn { background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; padding: 0 15px; transition: transform 0.2s; display: flex; align-items: center; justify-content: center;}
+        .icon-btn:hover { transform: scale(1.1); }
+
+        .schedule-list { padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .schedule-item { display: flex; flex-direction: column; padding: 12px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid var(--secondary-color); }
+        .schedule-item.current-period { border-left-color: var(--accent-color); background: #fff3e0; }
+        .sched-item-header { display: flex; justify-content: space-between; font-weight: 900; font-size: 1rem; color: #333; margin-bottom: 4px;}
+        .sched-item-time { font-family: monospace; font-size: 0.95rem; color: #666; font-weight: bold;}
+        .sched-item-class { font-size: 0.85rem; color: var(--primary-color); font-weight: bold; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #ddd;}
+
+        /* LUNCH MENU WIDGET */
+        .menu-widget { background: white; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid #eaedf2; overflow: hidden; display: flex; flex-direction: column; }
+        .menu-header { background: #388e3c; color: white; padding: 12px 15px; font-weight: bold; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;}
+        .menu-content { padding: 15px; font-size: 0.95rem; color: #444; line-height: 1.4; font-weight: bold;}
+
+        /* Forms & Buttons */
+        .google-btn { background-color: #ffffff; color: #444; border: 2px solid #e0e0e0; padding: 15px 30px; border-radius: 8px; font-weight: bold; font-size: 1.2rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 100%; }
+        .pass-btn { background-color: var(--primary-color); color: white; border: none; padding: 15px 25px; border-radius: 8px; font-size: 1.2rem; font-weight: bold; cursor: pointer; width: 100%; margin-top: 15px; box-shadow: 0 4px 10px rgba(13,71,161,0.25); transition: 0.2s;}
+        .pass-btn:disabled { background-color: #90caf9; cursor: not-allowed; box-shadow: none; }
+        .pass-btn-return { background-color: #d32f2f; box-shadow: 0 4px 10px rgba(211,47,47,0.25); }
+
+        /* Map Selector Button */
+        .map-select-btn { background: #e3f2fd; color: var(--primary-color); border: 2px solid #90caf9; padding: 20px; border-radius: 8px; font-size: 1.2rem; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 20px; display: flex; flex-direction: column; align-items: center; gap: 5px;}
+        .selected-room-text { font-size: 1.8rem; font-weight: 900; color: #1565c0; }
+
+        /* Pending Handoff Panel Styling */
+        .handoff-panel { width: 100%; max-width: 600px; padding: 40px; border-radius: var(--radius); text-align: center; color: white; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .bg-normal { background-color: #2e7d32 !important; }
+        .bg-denied { background-color: #c62828 !important; }
+        
+        .names-display { text-align: center; border-bottom: 3px solid rgba(255,255,255,0.3); padding-bottom: 15px; margin-bottom: 25px; }
+        .primary-name { font-size: 2.8rem; font-weight: 800; line-height: 1.1; color: white; }
+        .secondary-name { font-size: 1.3rem; opacity: 0.9; font-weight: bold; color: white; margin-top: 5px; }
+        
+        .btn-handoff { background: white; color: var(--text-dark); border: none; padding: 15px; border-radius: 8px; font-size: 1.2rem; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 15px;}
+        .btn-handoff.reject { background: transparent; color: white; border: 2px solid white; box-shadow: none; }
+
+        /* Active Timer Styles */
+        .active-pass-container { background: #fff8e1; border: 3px solid var(--accent-color); padding: 30px; border-radius: var(--radius); width: 100%; max-width: 550px; text-align: center; box-shadow: var(--shadow);}
+        .huge-timer { font-size: 5rem; font-weight: 900; color: #e65100; margin: 15px 0; font-family: monospace; letter-spacing: -2px; line-height: 1;}
+
+        .hidden { display: none !important; }
+
+        /* ---------------- MODAL OVERLAYS ---------------- */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; justify-content: center; align-items: center; }
+        
+        #map-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 1000; display: flex; flex-direction: column; }
+        .map-header { background: #f8f9fa; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e0e0e0; }
+        .map-header h2 { margin: 0; color: var(--primary-color); }
+        .close-map-btn { background: #c62828; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1.1rem; }
+        
+        .map-viewport { flex: 1; display: flex; justify-content: center; align-items: center; background: #eaedf2; overflow: hidden; padding: 20px; box-sizing: border-box;}
+        .map-canvas-container { background-color: #ffffff; box-shadow: var(--shadow); border-radius: 12px; padding: 10px; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; box-sizing: border-box;}
+        
+        svg.floorplan-svg { width: 100%; height: 100%; display: block; }
+        .zone-box { fill: #ffffff; stroke: #b0bec5; stroke-width: 2; cursor: pointer; transition: 0.15s; }
+        .corridor-box { fill: #eceff1; stroke: #90a4ae; stroke-width: 2; pointer-events: none; } 
+        .parking-box { fill: #f5f5f5; stroke: #e0e0e0; stroke-dasharray: 10,10; stroke-width: 2; pointer-events: none; }
+
+        .zone-box:hover { fill: #e8f5e9; stroke: var(--selected-color); stroke-width: 3; }
+        .zone-box.selected { fill: #c8e6c9 !important; stroke: var(--selected-color) !important; stroke-width: 3; }
+        
+        .lbl-room { font-size: 14px; font-weight: bold; fill: #1a237e; pointer-events: none; }
+        .lbl-large { font-size: 24px; font-weight: 900; fill: #455a64; pointer-events: none; letter-spacing: 2px;}
+        .selected + text { fill: #1b5e20 !important; }
+        
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Pirate Hall Pass</h1>
+    <div class="live-clock-container">
+        <div id="header-time">00:00:00 AM</div>
+    </div>
+</header>
+
+<div class="kiosk-grid">
+  <main class="kiosk-main">
+        
+        <div id="screen-auth" class="kiosk-card">
+            <h2 style="font-size: 1.8rem; margin-top: 0; color: var(--primary-color);">Student Sign In</h2>
+            <p style="color: #666; margin-bottom: 30px;">Authenticate with your official school Google account.</p>
+            <button id="btn-student-login" class="google-btn">Sign In with Google</button>
+        </div>
+
+        <div id="screen-request" class="kiosk-card hidden">
+            <h2 id="welcome-student-name" style="margin-top: 0; color: var(--primary-color);">Hello Student</h2>
+            <p style="color: #666; margin-bottom: 25px;">Select your destination and hand this iPad to your teacher.</p>
+            
+            <button class="map-select-btn" onclick="openMapModal()">
+                <span>📍 Tap to Choose Destination</span>
+                <span class="selected-room-text" id="display-selected-room">None Selected</span>
+            </button>
+            
+            <button id="btn-submit-request" class="pass-btn" disabled>🚀 Request Pass</button>
+            <button id="btn-cancel-auth" style="background: none; border: none; color: #777; margin-top: 20px; cursor: pointer; text-decoration: underline;">Sign Out</button>
+        </div>
+
+        <div id="screen-handoff" class="handoff-panel bg-normal hidden">
+            <div id="handoff-header-text" style="text-transform: uppercase; font-weight: bold; letter-spacing: 2px; margin-bottom: 10px; font-size: 0.9rem;">Teacher Authorization Required</div>
+            <div class="names-display">
+                <div class="primary-name" id="handoff-student-name">Student Name</div>
+                <div class="secondary-name" id="handoff-destination">To: Restroom</div>
+            </div>
+            
+            <div id="handoff-denied-reason" class="hidden" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold;"></div>
+
+            <button id="btn-accept" class="btn-handoff">✅ Approve Pass</button>
+            <button id="btn-reject" class="btn-handoff reject">❌ Reject Pass</button>
+            
+            <button id="btn-acknowledge" class="btn-handoff hidden" style="color: #c62828;">Acknowledge Restriction</button>
+        </div>
+
+        <div id="screen-active-pass" class="active-pass-container hidden">
+            <h2 style="font-size: 1.8rem; font-weight: 800; margin: 0 0 5px 0; color: var(--primary-color);" id="active-student-name">Student Name</h2>
+            <div style="font-size: 1.3rem; font-weight: bold; color: #555; background: #ffe082; display: inline-block; padding: 6px 20px; border-radius: 20px; margin-bottom: 15px;" id="active-destination">Room</div>
+            <p style="margin: 0; color: #777; font-size: 0.95rem; font-weight: bold; text-transform: uppercase;">Time Elapsed</p>
+            <div class="huge-timer" id="live-pass-timer">00:00</div>
+            <div id="external-office-reminder" class="hidden" style="color: #c62828; font-weight: 800; background: #ffcdd2; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.95rem;">
+                ⚠️ Stop at the Main Office before leaving the building!
+            </div>
+            <button id="btn-return-pass" class="pass-btn pass-btn-return">📥 Tap to Check-In & Return</button>
+        </div>
+
+        <div id="screen-tardy-pass" class="active-pass-container hidden" style="border-color: #c62828; background: #ffebee;">
+            <div style="background: #c62828; color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; display: inline-block; margin-bottom: 10px; text-transform: uppercase;">Incoming Tardy Pass</div>
+            <h2 style="font-size: 1.8rem; font-weight: 800; margin: 0 0 5px 0; color: #c62828;" id="tardy-student-name">Student Name</h2>
+            <div style="font-size: 1.1rem; font-weight: bold; color: #b71c1c; margin-bottom: 15px;" id="tardy-sender-name">Issued by: Teacher</div>
+            
+            <p style="margin: 0; color: #c62828; font-size: 0.95rem; font-weight: bold; text-transform: uppercase;">Elapsed Tardy Time</p>
+            <div class="huge-timer" id="tardy-live-timer" style="color: #c62828;">00:00</div>
+            
+            <div style="color: #c62828; font-weight: 800; background: rgba(198,40,40,0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.85rem; border: 1px solid #c62828;">
+                ⚠️ NOTE: Do not press accept/clear yourself. If you press accept, the teacher will not see that you are excused, and they have been instructed to count you as an unexcused tardy.
+            </div>
+            
+            <button id="btn-validate-tardy" class="pass-btn" style="background-color: #c62828; border: 2px solid white;">👩‍🏫 Teacher Validation Tap</button>
+        </div>
+
+        <div id="screen-review-pass" class="handoff-panel hidden" style="background-color: #424242;">
+            <div id="review-header-text" style="text-transform: uppercase; font-weight: bold; letter-spacing: 2px; margin-bottom: 10px; font-size: 0.9rem; color: white;">Incoming Pass</div>
+            <div class="names-display">
+                <div class="primary-name" id="review-purpose" style="color: white;">Make-up Test</div>
+                <div class="secondary-name" id="review-sender" style="color: #ccc;">From: Teacher</div>
+            </div>
+            <div style="font-size: 1.2rem; margin-bottom: 25px; font-weight: bold; color: white;">
+                Requested Leave Time: <span id="review-time" style="color: var(--accent-color);">10:00 AM</span><br>
+                Duration: <span id="review-duration" style="color: var(--accent-color);">10 Mins</span>
+            </div>
+            <button id="btn-accept-incoming" class="btn-handoff" style="background-color: white; color: black; font-weight: bold;">Start Pass Now</button>
+            <button onclick="renderRequestScreen()" class="btn-handoff reject" style="margin-top: 10px;">Close & Keep in Messages</button>
+        </div>
+
+    </main>
+
+    <aside class="kiosk-sidebar">
+        <div class="announcement-box" id="messages-container">
+            <h4 style="margin: 0 0 8px 0; color: #e65100; text-transform: uppercase; font-size: 0.85rem;">📨 Messages & Alerts</h4>
+            
+            <div id="admin-message-area" class="hidden" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid rgba(0,0,0,0.1);">
+                <p id="announcement-text" style="margin: 0 0 10px 0; color: #4e342e; font-weight: 600;"></p>
+                <button onclick="window.acknowledgeAdminMessage()" style="background: #e65100; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">Acknowledge</button>
+            </div>
+
+            <div id="incoming-passes-area"></div>
+        </div>
+        
+        <div class="schedule-widget">
+            <div class="schedule-header">
+                <div class="rotation-block">
+                    <span class="rotation-label">Rotation Day</span>
+                    <span class="rotation-value" id="rotation-value-display">Day 1</span>
+                </div>
+                <div class="upcoming-title">Upcoming Schedule</div>
+                <button class="icon-btn" onclick="window.openFullScheduleModal()" title="View Full Schedule">📅</button>
+            </div>
+            <div class="schedule-list" id="schedule-list-display">
+                <div class="schedule-item">Loading schedule...</div>
+            </div>
+        </div>
+
+<div class="menu-widget" style="background: white; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid #eaedf2; overflow: hidden; display: flex; flex-direction: column;">
+    <div class="meal-tabs" style="display: flex; height: 48px; background: #ced0d0; align-items: center;">
+        <button id="tab-today" onclick="switchMealTab('today')" style="flex: 1; height: 100%; padding: 12px; font-weight: bold; border: none; cursor: pointer; background: #ef1a14; color: white; font-size: 1rem; transition: 0.2s;">Today's Menu</button>
+        <button id="tab-tomorrow" onclick="switchMealTab('tomorrow')" style="flex: 1; height: 100%; padding: 12px; font-weight: bold; border: none; cursor: pointer; background: #ced0d0; color: #444; font-size: 1rem; transition: 0.2s;">Tomorrow's Menu</button>
+        <a href="https://calendar.google.com/calendar/embed?src=postville.k12.ia.us_500jtlgkca5rfjv1qq310d7c2o%40group.calendar.google.com&ctz=America%2FChicago" target="_blank" title="Open Full Google Calendar" style="width: 48px; height: 100%; display: flex; align-items: center; justify-content: center; text-decoration: none; background: #ced0d0; color: #444; font-size: 1.2rem; border-left: 1px solid #b0b2b2; transition: 0.2s;" onmouseover="this.style.background='#b0b2b2'" onmouseout="this.style.background='#ced0d0'">
+            📅
+        </a>
+    </div>
+    <div class="menu-content" id="meal-display-today" style="padding: 15px; font-size: 0.95rem; color: #444; line-height: 1.4; font-weight: bold;">Loading today's menu...</div>
+    <div class="menu-content" id="meal-display-tomorrow" style="padding: 15px; font-size: 0.95rem; color: #444; line-height: 1.4; font-weight: bold; display: none;">Loading tomorrow's menu...</div>
+</div>
+
+    </aside>
+</div>
+
+<div id="modal-full-schedule" class="modal-overlay hidden">
+    <div style="background:white; border-radius:12px; width:90%; max-width:550px; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+        <div style="background:var(--primary-color); color:white; padding:20px; display:flex; justify-content:space-between; align-items:center;">
+            <h2 style="margin:0; font-size:1.4rem;">📅 My Full Schedule</h2>
+            <button onclick="document.getElementById('modal-full-schedule').classList.add('hidden')" style="background:none;border:none;color:white;font-size:2rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <div id="full-schedule-content" style="padding:20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:12px;">
+            </div>
+    </div>
+</div>
+
+<div id="map-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 1000; display: flex; flex-direction: column;">
+    <div class="map-header">
+        <h2>📍 Select Destination</h2>
+        <button class="close-map-btn" onclick="closeMapModal()">Cancel</button>
+    </div>
+    <div class="map-viewport">
+        <div class="map-canvas-container" id="student-map-container">
+            
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
+    import { getFirestore, collection, query, where, onSnapshot, updateDoc, doc, serverTimestamp, setDoc, getDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js";
+    import { schoolMapSVG } from './map.js';
+
+    const firebaseConfig = { apiKey: "AIzaSyDR8iJZ7Cor9oQZkcHLWFCrHdxu2ibPtdQ", authDomain: "pirate-hall-pass.firebaseapp.com", projectId: "pirate-hall-pass" };
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+    const urlParams = new URLSearchParams(window.location.search);
+    const proxyName = urlParams.get('proxyName');
+    const proxyEmail = urlParams.get('proxyEmail');
+    const isProxyMode = !!proxyName; // Evaluates to true if a proxy name is present
+
+    let currentUser = null;
+    let currentPassData = null;
+    let currentStudentProfile = null;
+    let timerInterval = null;
+    let activePassUnsubscribe = null;
+    
+    // UI & Routing Variables
+    let selectedRoomId = null;
+    let selectedRoomCorridor = null;
+    let systemLockedZones = [];
+    
+    // Time Engine Variables
+    let activeScheduleType = "Regular";
+    let activeBellSchedule = {};
+    let currentPeriodId = null;
+
+    document.getElementById('student-map-container').innerHTML = schoolMapSVG;
+
+    setInterval(() => {
+        document.getElementById('header-time').innerText = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }, 1000);
+
+onSnapshot(doc(db, "system", "messages"), (docSnap) => {
+        document.getElementById('announcement-text').innerText = docSnap.exists() && docSnap.data().broadcastMessage ? docSnap.data().broadcastMessage : "No active alerts.";
+    });
+
+    onSnapshot(doc(db, "system", "lockdown"), (docSnap) => {
+        systemLockedZones = (docSnap.exists() && docSnap.data().activeBlocks) ? docSnap.data().activeBlocks : [];
+    });
+
+// -------- 🍽️ MEAL FORMATTING HELPER --------
+    function formatMeals(rawStr) {
+        if (!rawStr) return "No meals scheduled.";
+        return rawStr
+            .replace(/B-/g, '<span style="color:#ef1a14; font-weight:bold; font-size:1.05rem;">Breakfast </span>')
+            .replace(/L-/g, '<br><span style="color:#ef1a14; font-weight:bold; font-size:1.05rem;">Lunch </span>')
+            .replace(/^<br>/, ''); // Cleans up a leading line break if breakfast isn't present
+    }
+
+// -------- 🔄 GLOBAL MEAL TAB SWITCHER --------
+    window.switchMealTab = function(tab) {
+        // Swap tab button background and text colors
+        document.getElementById('tab-today').style.background = (tab === 'today') ? '#ef1a14' : '#ced0d0';
+        document.getElementById('tab-today').style.color = (tab === 'today') ? 'white' : '#444';
+        
+        document.getElementById('tab-tomorrow').style.background = (tab === 'tomorrow') ? '#ef1a14' : '#ced0d0';
+        document.getElementById('tab-tomorrow').style.color = (tab === 'tomorrow') ? 'white' : '#444';
+
+        // Swap out the displayed text context area
+        document.getElementById('meal-display-today').style.display = (tab === 'today') ? 'block' : 'none';
+        document.getElementById('meal-display-tomorrow').style.display = (tab === 'tomorrow') ? 'block' : 'none';
+    };
+
+// -------- 📅 LIVE GOOGLE CALENDAR SYNC --------
+    onSnapshot(doc(db, "system", "daily_info"), (docSnap) => {
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            
+            // Update Rotation Day
+            if (data.rotationDay) {
+                document.getElementById('rotation-value-display').innerText = data.rotationDay;
+            }
+            
+            // Update Meals (Today & Tomorrow)
+            if (data.lunchMenu !== undefined) {
+                document.getElementById('meal-display-today').innerHTML = formatMeals(data.lunchMenu);
+            }
+            if (data.tomorrowMenu !== undefined) {
+                document.getElementById('meal-display-tomorrow').innerHTML = formatMeals(data.tomorrowMenu);
+            }
+        }
+    });
+
+    window.openMapModal = function() { document.getElementById('map-modal').classList.remove('hidden'); }
+    window.closeMapModal = function() { document.getElementById('map-modal').classList.add('hidden'); }
+
+    document.querySelectorAll('.map-node').forEach(node => {
+        node.addEventListener('click', function() {
+            if (!this.querySelector('.zone-box')) return; 
+            document.querySelectorAll('.zone-box').forEach(z => z.classList.remove('selected'));
+            this.querySelector('.zone-box').classList.add('selected');
+            selectedRoomId = this.getAttribute('data-id');
+            selectedRoomCorridor = this.getAttribute('data-corridor') || "None";
+            document.getElementById('display-selected-room').innerText = selectedRoomId;
+            document.getElementById('btn-submit-request').disabled = false;
+            setTimeout(() => { closeMapModal(); }, 300);
+        });
+    });
+
+    // -------- ⏱️ TIME & SCHEDULE ENGINE --------
+    
+    async function initTimeEngine() {
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        
+        try {
+            const calSnap = await getDoc(doc(db, "system", "calendar"));
+            if (calSnap.exists() && calSnap.data().days) {
+                const dayCode = calSnap.data().days[todayStr] || 'F'; 
+                if (dayCode === 'E') activeScheduleType = 'Early Out';
+                else if (dayCode === 'L') activeScheduleType = 'Late Start';
+                else if (dayCode === 'N') activeScheduleType = 'No School';
+                else activeScheduleType = 'Regular';
+            }
+        } catch (e) { console.error(e); }
+
+        if (activeScheduleType !== 'No School') {
+            try {
+                const schedSnap = await getDoc(doc(db, "bell_schedules", activeScheduleType));
+                if (schedSnap.exists()) activeBellSchedule = schedSnap.data();
+            } catch (e) { console.error(e); }
+        }
+        
+        updateScheduleUI();
+        setInterval(updateScheduleUI, 60000); 
+    }
+
+    function formatTime(timeStr) {
+        if (!timeStr) return '';
+        let [h, m] = timeStr.split(':');
+        h = parseInt(h);
+        let ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return `${h}:${m} ${ampm}`;
+    }
+
+    function getPeriodName(id) {
+        const names = { "1":"Period 1", "2":"Period 2", "3":"Period 3", "4":"Advisory", "5":"Period 5", "6A_Lunch":"6A Lunch", "6B_Class":"6B Class", "6A_Class":"6A Class", "6B_Lunch":"6B Lunch", "7":"Period 7", "8":"Period 8", "9":"Period 9" };
+        return names[id] || `Period ${id}`;
+    }
+
+    function updateScheduleUI() {
+        if (activeScheduleType === 'No School') {
+            document.getElementById('schedule-list-display').innerHTML = '<div class="schedule-item">No School Today</div>';
+            return;
+        }
+
+        let periods = [];
+        for (const [id, times] of Object.entries(activeBellSchedule)) {
+            if (times.start && times.end) {
+                periods.push({ id, name: getPeriodName(id), start: times.start, end: times.end });
+            }
+        }
+        periods.sort((a, b) => a.start.localeCompare(b.start));
+
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+
+        let displayPeriods = [];
+        let foundCurrent = false;
+
+        for (let i = 0; i < periods.length; i++) {
+            let p = periods[i];
+            let sMins = parseInt(p.start.split(':')[0]) * 60 + parseInt(p.start.split(':')[1]);
+            let eMins = parseInt(p.end.split(':')[0]) * 60 + parseInt(p.end.split(':')[1]);
+            p.isCurrent = false;
+
+            if (currentMins >= sMins && currentMins <= eMins) {
+                p.isCurrent = true;
+                foundCurrent = true;
+                currentPeriodId = p.id;
+                displayPeriods.push(p);
+            } else if (!foundCurrent && currentMins < sMins) {
+                p.isCurrent = true; 
+                foundCurrent = true;
+                currentPeriodId = p.id;
+                displayPeriods.push(p);
+            } else if (foundCurrent && displayPeriods.length < 3) {
+                displayPeriods.push(p);
+            }
+        }
+
+        if (displayPeriods.length === 0) {
+            if (periods.length > 0 && currentMins < parseInt(periods[0].start.split(':')[0])*60) {
+                displayPeriods = periods.slice(0, 3); 
+            } else {
+                document.getElementById('schedule-list-display').innerHTML = '<div class="schedule-item">School is over for the day</div>';
+                currentPeriodId = null;
+                return;
+            }
+        }
+
+        let html = '';
+        displayPeriods.forEach(p => {
+            let classInfo = '';
+            if (currentStudentProfile && currentStudentProfile.schedule && currentStudentProfile.schedule[p.id]) {
+                const classData = currentStudentProfile.schedule[p.id];
+                classInfo = `<div class="sched-item-class">${classData.courseName} (Rm ${classData.room}) - ${classData.teacher}</div>`;
+            }
+
+            html += `
+                <div class="schedule-item ${p.isCurrent ? 'current-period' : ''}">
+                    <div class="sched-item-header">
+                        <span>${p.name}</span>
+                        ${p.isCurrent ? '<span style="color:var(--accent-color); font-size:0.8rem;">CURRENT</span>' : ''}
+                    </div>
+                    <div class="sched-item-time">${formatTime(p.start)} - ${formatTime(p.end)}</div>
+                    ${classInfo}
+                </div>
+            `;
+        });
+        document.getElementById('schedule-list-display').innerHTML = html;
+    }
+
+    // Modal to view entire day's schedule
+    window.openFullScheduleModal = function() {
+        const container = document.getElementById('full-schedule-content');
+        
+        if (activeScheduleType === 'No School') {
+            container.innerHTML = '<div style="text-align:center; padding:20px; font-weight:bold; color:#666;">No School Today</div>';
+        } else {
+            let periods = [];
+            for (const [id, times] of Object.entries(activeBellSchedule)) {
+                if (times.start && times.end) periods.push({ id, name: getPeriodName(id), start: times.start, end: times.end });
+            }
+            periods.sort((a, b) => a.start.localeCompare(b.start));
+            
+            let html = '';
+            periods.forEach(p => {
+                let classInfo = '<div style="font-size:0.9rem; color:#888; font-style:italic;">Free Period / Unassigned</div>';
+                if (currentStudentProfile && currentStudentProfile.schedule && currentStudentProfile.schedule[p.id]) {
+                    const c = currentStudentProfile.schedule[p.id];
+                    classInfo = `<div style="font-size:0.95rem; color:var(--primary-color); font-weight:bold;">${c.courseName} (Rm ${c.room}) - ${c.teacher}</div>`;
+                }
+                html += `
+                    <div style="padding:15px; border:1px solid #e0e0e0; border-radius:8px; background:#f8f9fa;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                            <strong style="color:#333; font-size:1.05rem;">${p.name}</strong>
+                            <span style="font-family:monospace; color:#666; font-weight:bold;">${formatTime(p.start)} - ${formatTime(p.end)}</span>
+                        </div>
+                        ${classInfo}
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+        document.getElementById('modal-full-schedule').classList.remove('hidden');
+    }
+
+    initTimeEngine();
+
+    // -------- 🧑‍🎓 STUDENT APP FLOW --------
+
+    document.getElementById('btn-student-login').addEventListener('click', async () => { signInWithPopup(auth, provider); });
+    document.getElementById('btn-cancel-auth').addEventListener('click', () => { signOut(auth); });
+
+    onAuthStateChanged(auth, async (user) => {
+        if (user && user.email.endsWith('@postville.k12.ia.us')) {
+            currentUser = user;
+            
+            // Determine whose profile and passes we should be listening to
+            const targetEmail = isProxyMode ? proxyEmail : user.email;
+            
+            try {
+                // Fetch the targeted student's schedule (not the Admin's)
+                const pSnap = await getDoc(doc(db, "students", targetEmail));
+                if (pSnap.exists()) {
+                    currentStudentProfile = pSnap.data();
+                    updateScheduleUI(); 
+                }
+            } catch(e){ console.error(e); }
+
+            if (activePassUnsubscribe) activePassUnsubscribe();
+            
+            // Update the query in onAuthStateChanged to look like this:
+            const q = query(
+                collection(db, "passes"), 
+                where("studentEmail", "==", targetEmail), 
+                where("status", "in", ["pending", "active", "auto_denied", "pending_student"])
+            );
+            
+            activePassUnsubscribe = onSnapshot(q, (snapshot) => {
+                const incomingBox = document.getElementById('incoming-passes-area');
+                incomingBox.innerHTML = ''; // Clear old notifications
+
+                if (!snapshot.empty) {
+                    currentPassData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+                    
+                    if (currentPassData.type === 'tardy' && currentPassData.status === 'active') {
+                        // TARDY PASS: Auto-load, skip messages
+                        hideAllScreens();
+                        document.getElementById('screen-tardy-pass').classList.remove('hidden');
+                        document.getElementById('tardy-student-name').innerText = currentPassData.studentDisplayName.split(' ')[0];
+                        document.getElementById('tardy-sender-name').innerText = `Issued by: ${currentPassData.senderName}`;
+                        
+                        // Use existing timer interval logic
+                        clearInterval(timerInterval);
+                        timerInterval = setInterval(() => {
+                            if (!currentPassData.acceptedAt) return;
+                            const elapsed = Math.floor((Date.now() - currentPassData.acceptedAt.toDate().getTime()) / 1000);
+                            const m = Math.floor(elapsed / 60); const s = elapsed % 60;
+                            document.getElementById('tardy-live-timer').innerText = `${m<10?"0"+m:m}:${s<10?"0"+s:s}`;
+                        }, 1000);
+                    } 
+                    else if (currentPassData.status === 'pending_student') {
+                        // INCOMING REQUEST/REQUIRED: Render alert in Messages Box
+                        renderRequestScreen(); // Keep map open in background
+                        const isReq = currentPassData.type === 'required';
+                        incomingBox.innerHTML = `
+                            <div style="background: ${isReq ? '#424242' : '#e3f2fd'}; color: ${isReq ? 'white' : '#0d47a1'}; padding: 10px; border-radius: 6px; border: 2px solid ${isReq ? '#212121' : '#90caf9'}; margin-top: 10px; cursor: pointer; text-align: center; font-weight: bold;" onclick="window.openIncomingPass('${currentPassData.id}')">
+                                🔔 Tap to view ${isReq ? 'REQUIRED' : 'Requested'} Pass from ${currentPassData.senderName}
+                            </div>
+                        `;
+                    }
+                    else if (currentPassData.status === "pending" || currentPassData.status === "auto_denied") {
+                        renderHandoffScreen();
+                    } 
+                    else if (currentPassData.status === "active") {
+                        renderActivePass();
+                    }
+                } else {
+                    currentPassData = null; renderRequestScreen();
+                }
+            });
+        } else {
+            handleUserSignedOut();
+        }
+    });
+
+    function handleUserSignedOut() {
+        currentUser = null; currentPassData = null; selectedRoomId = null; currentStudentProfile = null;
+        document.getElementById('display-selected-room').innerText = "None Selected";
+        document.getElementById('btn-submit-request').disabled = true;
+        updateScheduleUI(); 
+        hideAllScreens(); document.getElementById('screen-auth').classList.remove('hidden');
+    }
+
+    function hideAllScreens() {
+        // Hide the authentication screen so it doesn't stack when logged in
+        if (document.getElementById('screen-auth')) document.getElementById('screen-auth').classList.add('hidden');
+        
+        if (document.getElementById('screen-request')) document.getElementById('screen-request').classList.add('hidden');
+        if (document.getElementById('screen-active-pass')) document.getElementById('screen-active-pass').classList.add('hidden');
+        if (document.getElementById('screen-handoff')) document.getElementById('screen-handoff').classList.add('hidden');
+        
+        // Add the two new teacher-initiated screens to the cleanup function
+        if (document.getElementById('screen-tardy-pass')) document.getElementById('screen-tardy-pass').classList.add('hidden');
+        if (document.getElementById('screen-review-pass')) document.getElementById('screen-review-pass').classList.add('hidden');
+    }
+
+    function renderRequestScreen() {
+        hideAllScreens();
+        
+        // Use proxy name if in Virtual Pass mode, otherwise use the logged-in user's name
+        const displayFirstName = isProxyMode ? proxyName.split(' ')[0] : currentUser.displayName.split(' ')[0];
+        
+        document.getElementById('welcome-student-name').innerText = `Hello, ${displayFirstName}`;
+        document.getElementById('screen-request').classList.remove('hidden');
+    }
+
+    document.getElementById('btn-submit-request').addEventListener('click', async () => {
+        if (!currentUser || !selectedRoomId) return;
+        
+        // Check if the pass is being launched via Admin Proxy Mode
+        const urlParams = new URLSearchParams(window.location.search);
+        const proxyName = urlParams.get('proxyName');
+        const proxyEmail = urlParams.get('proxyEmail');
+        const isProxyMode = !!proxyName;
+
+        const isTargetBlocked = systemLockedZones.includes(selectedRoomId) || systemLockedZones.includes(selectedRoomCorridor);
+        
+        let activeTeacher = "Unknown Teacher";
+        if (currentStudentProfile && currentPeriodId && currentStudentProfile.schedule[currentPeriodId]) {
+            activeTeacher = currentStudentProfile.schedule[currentPeriodId].teacher;
+        }
+
+        const passData = {
+            // If in Proxy Mode, use URL parameter data; otherwise fall back to authenticated student
+            studentEmail: isProxyMode ? proxyEmail : currentUser.email,
+            studentDisplayName: isProxyMode ? proxyName : currentUser.displayName,
+            destination: selectedRoomId,
+            status: isTargetBlocked ? "auto_denied" : "pending",
+            requestedAt: serverTimestamp(),
+            teacherName: activeTeacher,    
+            period: currentPeriodId || "Outside Class"
+        };
+        
+        // Inject attribution tracking if generated by an admin proxy
+        if (isProxyMode) {
+            passData.createdBy = currentUser.displayName || "Admin";
+        }
+        
+        if (isTargetBlocked) {
+            passData.denialReason = `System Restriction: Route to ${selectedRoomId} is currently locked by Administration.`;
+        }
+
+        try { await setDoc(doc(collection(db, "passes")), passData); } catch (err) { console.error(err); }
+    });
+
+    function renderHandoffScreen() {
+        hideAllScreens();
+        const screen = document.getElementById('screen-handoff');
+        screen.classList.remove('hidden');
+        
+        document.getElementById('handoff-student-name').innerText = currentPassData.studentDisplayName;
+        document.getElementById('handoff-destination').innerText = `To: ${currentPassData.destination}`;
+        
+        const btnAccept = document.getElementById('btn-accept');
+        const btnReject = document.getElementById('btn-reject');
+        const btnAcknowledge = document.getElementById('btn-acknowledge');
+        const headerText = document.getElementById('handoff-header-text');
+        const reasonBox = document.getElementById('handoff-denied-reason');
+
+        if (currentPassData.status === "auto_denied") {
+            screen.className = "handoff-panel bg-denied";
+            headerText.innerText = "🚨 SYSTEM DENIED 🚨";
+            reasonBox.innerText = currentPassData.denialReason;
+            reasonBox.classList.remove('hidden');
+            
+            btnAccept.classList.add('hidden');
+            btnReject.classList.add('hidden');
+            btnAcknowledge.classList.remove('hidden');
+        } else {
+            screen.className = "handoff-panel bg-normal";
+            headerText.innerText = "Teacher Authorization Required";
+            reasonBox.classList.add('hidden');
+            
+            btnAccept.classList.remove('hidden');
+            btnReject.classList.remove('hidden');
+            btnAcknowledge.classList.add('hidden');
+        }
+    }
+
+    document.getElementById('btn-accept').addEventListener('click', async () => {
+        if (!currentPassData) return;
+        await updateDoc(doc(db, "passes", currentPassData.id), { status: "active", acceptedAt: serverTimestamp() });
+    });
+
+    document.getElementById('btn-reject').addEventListener('click', async () => {
+        if (!currentPassData) return;
+        await updateDoc(doc(db, "passes", currentPassData.id), { status: "rejected", rejectedAt: serverTimestamp() });
+    });
+
+    document.getElementById('btn-acknowledge').addEventListener('click', async () => {
+        if (!currentPassData) return;
+        await updateDoc(doc(db, "passes", currentPassData.id), { status: "cancelled" });
+    });
+
+    function renderActivePass() {
+        hideAllScreens();
+        document.getElementById('screen-active-pass').classList.remove('hidden');
+        document.getElementById('active-student-name').innerText = currentPassData.studentDisplayName.split(' ')[0];
+        document.getElementById('active-destination').innerText = currentPassData.destination;
+
+        // Change return button text if pass was initiated by a teacher
+        const returnBtn = document.getElementById('btn-return-pass');
+        if (currentPassData.initiatedBy === 'teacher') {
+            returnBtn.innerText = "📥 Tap to Check-In";
+        } else {
+            returnBtn.innerText = "📥 Tap to Check-In & Return";
+        }
+
+        // --- NEW LOGIC FOR EXTERNAL DESTINATIONS ---
+        const externalLocations = ["Nurse", "Library", "Elementary Office/Other"];
+        if (externalLocations.includes(currentPassData.destination)) {
+            document.getElementById('external-office-reminder').classList.remove('hidden');
+        } else {
+            document.getElementById('external-office-reminder').classList.add('hidden');
+        }
+
+        clearInterval(timerInterval);
+        function updateTimer() {
+            if (!currentPassData.acceptedAt) return;
+            const elapsed = Math.floor((Date.now() - currentPassData.acceptedAt.toDate().getTime()) / 1000);
+            const m = Math.floor(elapsed / 60); const s = elapsed % 60;
+            document.getElementById('live-pass-timer').innerText = `${m<10?"0"+m:m}:${s<10?"0"+s:s}`;
+        }
+        timerInterval = setInterval(updateTimer, 1000); updateTimer();
+    }
+
+    document.getElementById('btn-return-pass').addEventListener('click', async () => {
+        if (!currentPassData) return;
+        const isTeacherInitiated = currentPassData.initiatedBy === 'teacher';
+        const teacherName = currentPassData.senderName || "your teacher";
+        const passId = currentPassData.id;
+        
+        await updateDoc(doc(db, "passes", passId), { status: "returned", returnedAt: serverTimestamp() });
+        
+        if (isTeacherInitiated) {
+            // Typo is fixed here:
+            alert(`You will need to make a new pass yourself and have ${teacherName} tap on accept when you are ready to return.`);
+        }
+    });
+
+// Admin Broadcast Acknowledge Function
+    window.acknowledgeAdminMessage = async function() {
+        try {
+            // Write to a new collection to track compliance
+            await addDoc(collection(db, "acknowledgements"), {
+                studentEmail: currentUser.email,
+                studentName: currentUser.displayName,
+                acknowledgedAt: serverTimestamp(),
+                message: document.getElementById('announcement-text').innerText
+            });
+            document.getElementById('admin-message-area').classList.add('hidden');
+        } catch (e) { console.error("Error logging ack", e); }
+    }
+
+    // Pass rendering logic mapping
+    window.openIncomingPass = function(passId) {
+        if (!currentPassData || currentPassData.id !== passId) return;
+        hideAllScreens();
+        document.getElementById('screen-review-pass').classList.remove('hidden');
+        
+        if (currentPassData.type === 'required') {
+            document.getElementById('screen-review-pass').style.backgroundColor = '#424242';
+            document.getElementById('review-header-text').innerText = "🚨 REQUIRED PASS";
+        } else {
+            document.getElementById('screen-review-pass').style.backgroundColor = '#0d47a1';
+            document.getElementById('review-header-text').innerText = "INCOMING REQUEST";
+        }
+
+        document.getElementById('review-purpose').innerText = currentPassData.destination;
+        document.getElementById('review-sender').innerText = `From: ${currentPassData.senderName}`;
+
+        // Parse Dynamic Time and Date
+        let timeDisplay = "";
+        if (currentPassData.timeMode === 'available') timeDisplay = "When Available";
+        else if (currentPassData.timeMode === 'period') timeDisplay = `Period ${currentPassData.period}`;
+        else timeDisplay = currentPassData.requestedLeaveTime || "Now";
+
+        let dateDisplay = currentPassData.date ? currentPassData.date + " | " : "";
+        document.getElementById('review-time').innerText = dateDisplay + timeDisplay;
+        
+        document.getElementById('review-duration').innerText = currentPassData.duration;
+    }
+
+    document.getElementById('btn-accept-incoming').addEventListener('click', async () => {
+        if (!currentPassData) return;
+        try {
+            await updateDoc(doc(db, "passes", currentPassData.id), {
+                status: "active",
+                acceptedAt: serverTimestamp()
+            });
+        } catch (err) { console.error(err); }
+    });
+
+    document.getElementById('btn-validate-tardy').addEventListener('click', async () => {
+        if (!currentPassData) return;
+        try {
+            await updateDoc(doc(db, "passes", currentPassData.id), {
+                status: "returned",
+                returnedAt: serverTimestamp()
+            });
+        } catch (err) { console.error(err); }
+    });
+
+</script>
+</body>
+</html>

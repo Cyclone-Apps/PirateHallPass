@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pirate Hall Pass - Student</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/states.css">
+    <link rel="stylesheet" href="css/student.css"> </head>
+<body id="student-body">
+    
+    <header id="global-header"></header>
+
+    <main id="screen-dashboard" class="kiosk-grid" style="display: none;">
+        
+        <div id="kiosk-main-widget" class="kiosk-main">
+            </div>
+
+        <aside id="kiosk-sidebar-widget" class="kiosk-sidebar">
+            </aside>
+
+    </main>
+
+    <main id="screen-login" class="kiosk-main" style="display: flex;">
+        <div class="kiosk-card panel">
+            <h2 style="color: var(--pirate-red); margin-top: 0;">Student Sign In</h2>
+            <p style="color: #666; margin-bottom: 30px;">Authenticate with your official school Google account.</p>
+            <button id="btn-google-login" class="google-btn">Sign In with Google</button>
+        </div>
+    </main>
+
+    <div id="map-modal-container"></div>
+    <div id="schedule-modal-container"></div>
+<div id="student-schedule-status-bar" style="padding: 12px; border-radius: 6px; text-align: center; font-size: 1.1rem; margin-bottom: 15px; font-weight: 500; transition: all 0.3s ease;">⏳ Synchronizing Time Engine...</div>
+    <script type="module" src="js/main-student.js"></script>
+</body>
+</html>
