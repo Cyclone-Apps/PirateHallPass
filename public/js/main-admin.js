@@ -5,11 +5,11 @@ import {
     listenToEmergencyState, saveTimeOffset, listenToTimeOffset, setActiveDailySchedule,
     listenToAllRestrictions, listenToDailyConfig, saveAcademicCalendar, fetchAcademicCalendar
 } from "./modules/admin-engine.js";
+import { db } from "./firebase-config.js";
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { schoolMapSVG } from "./map.js";
 import { initializeTimeEngine } from "./modules/time-engine.js";
-
-// --- NEW IMPORTS ADDED HERE ---
+import { doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { fetchAllStudents } from "./modules/pass-engine.js";
 import { renderHeader, setupStudentAutocomplete } from "./modules/ui-widgets.js";
 
@@ -59,6 +59,60 @@ document.addEventListener("click", async (e) => {
         document.getElementById("bell-schedule-modal").classList.add("hidden");
     }
     
+    // --- Google Calendar Setup Routing (Modular Style) ---
+    if (e.target.id === "btn-open-gcal-modal") {
+        try {
+            // Using modular getDoc and doc matching your schema
+            const docRef = doc(db, "system", "settings");
+            const configSnap = await getDoc(docRef);
+            
+            if (configSnap.exists()) {
+                const data = configSnap.data();
+                document.getElementById("input-gcal-apikey").value = data.calendarApiKey || "";
+                document.getElementById("input-gcal-rotation-id").value = data.rotationCalId || "";
+                document.getElementById("input-gcal-menu-id").value = data.lunchCalId || "";
+            }
+        } catch (err) { console.error("Error pulling calendar config:", err); }
+        
+        document.getElementById("gcal-config-modal").classList.remove("hidden");
+    }
+
+    if (e.target.id === "close-gcal-config-modal") {
+        document.getElementById("gcal-config-modal").classList.add("hidden");
+    }
+
+    if (e.target.id === "btn-save-gcal-config") {
+        const btn = e.target;
+        btn.disabled = true;
+        btn.innerText = "⏳ Saving Integrations...";
+
+        // Using your exact database keys
+        const configObj = {
+            calendarApiKey: document.getElementById("input-gcal-apikey").value.trim(),
+            rotationCalId: document.getElementById("input-gcal-rotation-id").value.trim(),
+            lunchCalId: document.getElementById("input-gcal-menu-id").value.trim()
+        };
+
+        try {
+            // Modular setDoc to system/settings
+            const docRef = doc(db, "system", "settings");
+            await setDoc(docRef, configObj, { merge: true });
+            
+            btn.innerText = "✅ Saved Successfully!";
+            btn.style.backgroundColor = "#2e7d32";
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerText = "💾 Save Configurations";
+                btn.style.backgroundColor = "#0277bd";
+                document.getElementById("gcal-config-modal").classList.add("hidden");
+            }, 1500);
+        } catch (error) {
+            alert("Error saving API configuration to Firestore: " + error.message);
+            btn.disabled = false;
+            btn.innerText = "💾 Save Configurations";
+        }
+    }
+
     // --- VIRTUAL KIOSK CONTROLS ---
     const proxySetupModal = document.getElementById("proxy-setup-modal");
     const proxyEmulatorModal = document.getElementById("proxy-emulator-modal");

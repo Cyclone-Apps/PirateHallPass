@@ -20,8 +20,12 @@
         
         <section id="admin-toolbar-widget">
             <!-- Academic Calendar launcher integrated directly into the admin screen toolbar ribbon -->
-            <button id="btn-open-academic-cal-modal" class="toolbar-btn" style="background: var(--pirate-red); color: white; padding: 8px 15px; border-radius: 4px; font-weight: bold; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; margin: 5px;">
+            <button id="btn-open-academic-cal-modal" class="primary-btn" style="background: var(--pirate-red); color: white; padding: 10px 15px; border-radius: 4px; font-weight: bold; border: none; cursor: pointer; margin-right: 10px;">
                 📅 Academic Calendar
+            </button>
+
+            <button id="btn-open-gcal-modal" class="primary-btn" style="background: #0277bd; color: white; padding: 10px 15px; border-radius: 4px; font-weight: bold; border: none; cursor: pointer;">
+                ⚙️ Google Calendar Setup
             </button>
         </section>
 
@@ -300,6 +304,33 @@
 
         </div>
     </div>
+
+    <div id="gcal-config-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div style="background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 500px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); position: relative;">
+        <span id="close-gcal-config-modal" style="position: absolute; top: 15px; right: 20px; cursor: pointer; font-size: 1.5rem; font-weight: bold; color: #666;">&times;</span>
+        <h3 style="margin-top: 0; color: #0277bd; margin-bottom: 15px;">🔗 Google Cloud Calendar Integrations</h3>
+        
+        <div style="display: flex; flex-direction: column; gap: 15px;">
+            <div>
+                <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem;">Google Cloud API Key:</label>
+                <input type="password" id="input-gcal-apikey" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+            </div>
+            <div>
+                <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem;">Rotation Calendar ID:</label>
+                <input type="text" id="input-gcal-rotation-id" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" placeholder="e.g., c_xxxxxxxxxx@group.calendar.google.com">
+            </div>
+            <div>
+                <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem;">Meal Menu Calendar ID:</label>
+                <input type="text" id="input-gcal-menu-id" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" placeholder="e.g., c_xxxxxxxxxx@group.calendar.google.com">
+            </div>
+            
+            <button id="btn-save-gcal-config" style="width: 100%; background: #0277bd; color: white; border: none; padding: 12px; font-size: 1rem; font-weight: bold; border-radius: 4px; cursor: pointer; margin-top: 10px;">
+                💾 Save Configurations
+            </button>
+        </div>
+    </div>
+</div>
+    
 
     <script type="module" src="js/main-admin.js"></script>
 </body>

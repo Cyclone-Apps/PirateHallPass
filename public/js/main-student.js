@@ -7,7 +7,8 @@ import {
     renderRecentTravelsSidebar,
     renderMapModal, 
     renderStudentWaitingScreen, 
-    renderStudentActiveScreen 
+    renderStudentActiveScreen,
+    initializeRotationDayEngine // <-- ADD THIS IMPORT
 } from "./modules/student-ui.js";
 import { createNewPass, listenToStudentPass, updatePassStatus, fetchStudentProfileByEmail } from "./modules/pass-engine.js";
 import { 
@@ -16,6 +17,8 @@ import {
     evaluateCurrentTime, 
     getAdjustedNow 
 } from "./modules/time-engine.js";
+import { db } from "./firebase-config.js";
+import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 let activeTimerInterval = null; 
 let elapsedSeconds = 0; 
@@ -76,6 +79,11 @@ async function initStudentApp(user, role) {
     
     renderStudentSidebar(studentProfile);
 
+    
+
+    // Start the live rotation day & menu Firestore listener
+    initializeRotationDayEngine(db, onSnapshot, doc);
+
     // ==========================================================
     // --- LIVE TIME ENGINE TRACKING COLLABORATION ---
     // ==========================================================
@@ -110,6 +118,13 @@ async function initStudentApp(user, role) {
         if (typeof window.updateStudentScheduleWidget === "function") {
             window.updateStudentScheduleWidget(timeMetrics);
         }
+        
+        // ✨ BULLETPROOF BANNER HIDER: Finds any element containing this text and hides it
+        document.querySelectorAll("*").forEach(el => {
+            if (el.innerHTML === "⏳ Synchronizing Time Engine...") {
+                el.style.display = "none";
+            }
+        });
         
     }, 1000);
     // ==========================================================

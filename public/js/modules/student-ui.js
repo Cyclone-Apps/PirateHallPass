@@ -1,8 +1,13 @@
 // js/modules/student-ui.js
 import { schoolMapSVG } from "../map.js"; 
+import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // Keep a global reference to the student's profile so the 1-second interval can read it!
 window.currentStudentProfile = null;
+// Pre-initialize global variables so re-renders don't wipe data out!
+window.menuData = window.menuData || { today: "🔄 Loading...", tomorrow: "🔄 Loading..." };
+window.showingTomorrow = window.showingTomorrow || false;
+window.currentRotationDayText = window.currentRotationDayText || "🔄 Loading Day...";
 
 export function renderStudentIdleScreen() {
     const container = document.getElementById("kiosk-main-widget");
@@ -62,17 +67,16 @@ export function renderStudentSidebar(studentProfile = null) {
         });
     }
 
-    // Render the Sidebar with the Fieldset, Legend Title, and Student Name moved down
+    // Render the Sidebar with both live Schedule and Menu widgets
     container.innerHTML = `
-        <fieldset style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 15px; margin-bottom: 15px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box;">
-            
+        <fieldset style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 5px 15px 15px 15px; margin-bottom: 8px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box;">
             <legend style="font-weight: bold; color: #444; padding: 0 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px;">
                 Schedule
             </legend>
             
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0;">
-                <span style="color: #333; font-size: 1.15rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${studentProfile?.fullName || "Student"}
+                <span id="schedule-rotation-display" style="color: var(--pirate-red); font-size: 1.25rem; font-weight: 900; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${window.currentRotationDayText}
                 </span>
                 <button id="btn-open-full-schedule" style="background: white; border: 1px solid #ced4da; border-radius: 4px; padding: 4px 8px; font-size: 1.1rem; cursor: pointer; transition: 0.2s;" title="View Full Schedule" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">📅</button>
             </div>
@@ -80,7 +84,28 @@ export function renderStudentSidebar(studentProfile = null) {
             <div id="dynamic-schedule-container" style="margin-top: 5px;">
                 <p style="color: #888; font-size: 0.85rem; text-align: center; margin: 5px 0; font-style: italic;">Syncing clock...</p>
             </div>
+        </fieldset>
 
+        <fieldset style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 5px 15px 15px 15px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box;">
+            <legend style="font-weight: bold; color: #444; padding: 0 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px;">
+                🍽️ Menus
+            </legend>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span id="menu-day-title" style="color: #333; font-size: 1.15rem; font-weight: bold; white-space: nowrap;">
+                        ${window.showingTomorrow ? "Tomorrow's Meals" : "Today's Meals"}
+                    </span>
+                    <button id="btn-toggle-menu-day" onclick="window.toggleMenuDay()" style="background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 0; line-height: 1; transition: 0.2s;" title="Toggle Day">${window.showingTomorrow ? "⬅️" : "➡️"}</button>
+                </div>
+                <a href="https://calendar.google.com/calendar/embed?src=postville.k12.ia.us_500jtlgkca5rfjv1qq310d7c2o%40group.calendar.google.com&ctz=America%2FChicago" target="_blank" style="text-decoration: none; display: flex;">
+                    <button style="background: white; border: 1px solid #ced4da; border-radius: 4px; padding: 4px 8px; font-size: 1.1rem; cursor: pointer; transition: 0.2s;" title="View Full Menu Calendar" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">📅</button>
+                </a>
+            </div>
+            
+            <div id="active-menu-display" style="font-size: 0.9rem; line-height: 1.4; background: #f8f9fa; padding: 10px; border-radius: 4px; border-left: 3px solid var(--pirate-red);">
+                ${window.showingTomorrow ? window.menuData.tomorrow : window.menuData.today}
+            </div>
         </fieldset>
     `;
 
@@ -101,17 +126,14 @@ export function renderStudentSidebar(studentProfile = null) {
         `;
         document.body.appendChild(modalDiv);
 
-        // Bind the Close button
         document.getElementById("close-full-schedule").addEventListener("click", () => {
             modalDiv.classList.add("hidden");
         });
     }
 
-    // Fill the popup with the rows we built
     const contentBox = document.getElementById("full-schedule-content");
     if (contentBox) contentBox.innerHTML = fullScheduleRows || "<p style='color: #777;'>No schedule data found.</p>";
 
-    // Bind the Open button
     document.getElementById("btn-open-full-schedule").addEventListener("click", () => {
         document.getElementById("full-schedule-modal").classList.remove("hidden");
     });
@@ -131,53 +153,11 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
         return;
     }
 
-    // 1. Calculate precise local time with global offset applied
-    let now = new Date();
-    if (window.globalTimeOffsetSeconds) {
-        now = new Date(now.getTime() + window.globalTimeOffsetSeconds * 1000);
-    }
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const currentTimeString = `${hours}:${minutes}`;
-
-    // 2. Safely extract layout and times from global caches
-    const activeName = window.activeDailyScheduleName || "HS - Regular";
-    const times = (window.globalBellSchedulesCache && window.globalBellSchedulesCache[activeName]) ? window.globalBellSchedulesCache[activeName] : {};
-    
-    // Attempt to pull layout order from periods configured in the times object
-    const layout = Object.keys(times).length > 0 
-        ? Object.keys(times).sort((a, b) => parseInt(a) - parseInt(b) || a.localeCompare(b))
-        : ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
-
-    let currentPeriod = null;
-    let nextPeriod = null;
+    // Direct extraction of processed data provided by the active time interval loop
+    const currentPeriod = timeMetrics?.currentPeriod || null;
+    const nextPeriod = timeMetrics?.nextPeriod || null;
     const sched = profile.schedule;
 
-    // A. Detect if we are actively INSIDE a class
-    for (let i = 0; i < layout.length; i++) {
-        const p = layout[i];
-        if (times[p] && times[p].start && times[p].end) {
-            if (currentTimeString >= times[p].start && currentTimeString <= times[p].end) {
-                currentPeriod = p;
-                nextPeriod = layout[i + 1] || null;
-                break;
-            }
-        }
-    }
-
-    // B. Detect if we are in a PASSING PERIOD (Treat upcoming class as "Current")
-    if (!currentPeriod) {
-        for (let i = 0; i < layout.length; i++) {
-            const p = layout[i];
-            if (times[p] && times[p].start && currentTimeString < times[p].start) {
-                currentPeriod = p; // Promote the upcoming class to Current!
-                nextPeriod = layout[i + 1] || null;
-                break;
-            }
-        }
-    }
-
-    // Render logic
     let html = '';
     
     if (currentPeriod && sched[currentPeriod]) {
@@ -356,4 +336,99 @@ export function renderStudentActiveScreen(pass) {
             </div>
         </div>
     `;
+}
+
+// --- MEAL MENU ENGINE & PARSERS --- //
+
+window.toggleMenuDay = function() {
+    window.showingTomorrow = !window.showingTomorrow;
+    window.updateMenuUI();
+};
+
+window.updateMenuUI = function() {
+    const displayEl = document.getElementById("active-menu-display");
+    const titleEl = document.getElementById("menu-day-title");
+    const btnEl = document.getElementById("btn-toggle-menu-day");
+
+    if (!displayEl || !titleEl || !btnEl) return;
+
+    if (window.showingTomorrow) {
+        titleEl.innerText = "Tomorrow's Meals";
+        btnEl.innerText = "⬅️"; 
+        displayEl.innerHTML = window.menuData.tomorrow;
+    } else {
+        titleEl.innerText = "Today's Meals";
+        btnEl.innerText = "➡️"; 
+        displayEl.innerHTML = window.menuData.today;
+    }
+};
+
+/**
+ * Splits Firestore string by <br> and formats B- and L- prefixes.
+ * Guarantees Breakfast is always sorted and displayed before Lunch.
+ */
+function parseMenuData(menuStr) {
+    if (!menuStr) return "<div style='color: #666;'>Menu data unavailable.</div>";
+    
+    const parts = menuStr.split('<br>');
+    let breakfastHtml = '';
+    let lunchHtml = '';
+    let otherHtml = '';
+    
+    parts.forEach(part => {
+        let cleanPart = part.trim();
+        if (!cleanPart) return;
+
+        // Check for Breakfast
+        if (cleanPart.toUpperCase().startsWith('B-')) {
+            breakfastHtml += `<div style="margin-bottom: 8px;"><strong style="color: var(--pirate-red);">Breakfast:</strong> <span style="color: black;">${cleanPart.substring(2).trim()}</span></div>`;
+        } 
+        // Check for Lunch
+        else if (cleanPart.toUpperCase().startsWith('L-')) {
+            lunchHtml += `<div style="margin-bottom: 8px;"><strong style="color: var(--pirate-red);">Lunch:</strong> <span style="color: black;">${cleanPart.substring(2).trim()}</span></div>`;
+        } 
+        // Anything else fallback
+        else {
+            otherHtml += `<div style="margin-bottom: 8px; color: black;">${cleanPart}</div>`;
+        }
+    });
+    
+    return breakfastHtml + lunchHtml + otherHtml;
+}
+
+/**
+ * Real-time connection hook that subscribes to system/daily_info
+ */
+export function initializeRotationDayEngine(db, onSnapshot, doc) {
+    if (!db || !onSnapshot || !doc) return;
+
+    onSnapshot(doc(db, "system", "daily_info"), (docSnap) => {
+        const schedRotationEl = document.getElementById("schedule-rotation-display");
+        
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            
+            // Save to memory
+            window.currentRotationDayText = data.rotationDay || "Regular Day";
+            
+            // Update Schedule Widget header
+            if (schedRotationEl) schedRotationEl.innerText = window.currentRotationDayText;
+            
+            // Parse and store to global memory variables
+            window.menuData.today = parseMenuData(data.lunchMenu);
+            window.menuData.tomorrow = parseMenuData(data.tomorrowMenu);
+            
+        } else {
+            window.currentRotationDayText = "Regular Schedule";
+            if (schedRotationEl) schedRotationEl.innerText = window.currentRotationDayText;
+            
+            window.menuData.today = "<div style='color: #666;'>Menu data unavailable.</div>";
+            window.menuData.tomorrow = "<div style='color: #666;'>Menu data unavailable.</div>";
+        }
+        
+        // Push the update to the UI immediately
+        if (typeof window.updateMenuUI === "function") {
+            window.updateMenuUI();
+        }
+    });
 }

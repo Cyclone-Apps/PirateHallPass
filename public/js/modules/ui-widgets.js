@@ -42,6 +42,7 @@ export function renderHeader(user, role) {
             <button id="btn-open-management" class="toolbar-btn" style="background-color: #0277bd; color: white; border: none;">👥 Student Management</button>
             <button id="btn-open-bell-schedule" class="toolbar-btn" style="background-color: #4caf50; color: white; border: none;">⏱️ Bell Schedules</button>
             <button id="btn-open-academic-cal-modal" class="toolbar-btn" style="background-color: var(--pirate-red); color: white; border: none;">📅 Academic Calendar</button>
+            <button id="btn-open-gcal-modal" class="toolbar-btn" style="background-color: #333; color: white; border: none;">⚙️ Google Calendar Setup</button>
         `;
     }
     
