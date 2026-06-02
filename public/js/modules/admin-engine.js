@@ -20,17 +20,32 @@ export async function upsertStudentData(studentId, studentData) {
 }
 
 /**
- * Updates JUST the restriction fields for a specific student.
+ * Updates JUST the restriction fields for a specific student in a dedicated decoupled collection.
  */
 export async function updateStudentRestrictions(studentId, restrictions) {
     try {
-        const studentDoc = doc(db, "students", studentId);
-        await setDoc(studentDoc, { restrictions: restrictions }, { merge: true });
+        // Decoupled: Restrictions now live in their own collection, completely independent!
+        const restrictionDoc = doc(db, "restrictions", studentId);
+        await setDoc(restrictionDoc, restrictions);
         return true;
     } catch (error) {
         console.error("Error saving restrictions:", error);
         return false;
     }
+}
+
+/**
+ * Listens to all decoupled restrictions in real-time
+ */
+export function listenToAllRestrictions(callback) {
+    const restrictionsRef = collection(db, "restrictions");
+    return onSnapshot(restrictionsRef, (snapshot) => {
+        const restrictionsMap = {};
+        snapshot.forEach(doc => {
+            restrictionsMap[doc.id] = doc.data();
+        });
+        callback(restrictionsMap);
+    });
 }
 
 /**

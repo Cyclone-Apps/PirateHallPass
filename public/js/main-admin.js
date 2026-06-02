@@ -2,7 +2,8 @@
 import { 
     upsertStudentData, listenToAllStudents, updateStudentRestrictions, 
     saveBellSchedule, fetchBellSchedules, setEmergencyState, 
-    listenToEmergencyState, saveTimeOffset, listenToTimeOffset, setActiveDailySchedule 
+    listenToEmergencyState, saveTimeOffset, listenToTimeOffset, setActiveDailySchedule,
+    listenToAllRestrictions
 } from "./modules/admin-engine.js";
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { schoolMapSVG } from "./map.js";
@@ -286,15 +287,57 @@ document.getElementById("btn-sync-students").addEventListener("click", async () 
 
 
 // ==========================================
-// RENDER STUDENT LIST & SEARCH
+// RENDER STUDENT LIST & SEARCH (DECOUPLED)
 // ==========================================
-let allStudentsCache = [];
+let rawStudentsCache = [];
+let allRestrictionsCache = {};
+let allStudentsCache = []; // Keeps combined data perfectly available for search and dropdowns!
 
+function mergeAndRender() {
+    // Dynamically stitch the separate student and restriction records together
+    allStudentsCache = rawStudentsCache.map(student => {
+        return {
+            ...student,
+            restrictions: allRestrictionsCache[student.studentId] || null
+        };
+    });
+
+    // Preserves active text filters when real-time updates hit!
+    const searchInput = document.getElementById("search-student");
+    const term = searchInput ? searchInput.value.toLowerCase().trim() : "";
+    
+    if (term) {
+        const filtered = allStudentsCache.filter(s => 
+            (s.fullName && s.fullName.toLowerCase().includes(term)) || 
+            (s.studentId && s.studentId.includes(term))
+        );
+        renderAdminStudentList(filtered);
+    } else {
+        renderAdminStudentList(allStudentsCache);
+    }
+}
+
+// Listen for typing in the search bar
+const searchEl = document.getElementById("search-student");
+if (searchEl) {
+    searchEl.addEventListener("input", () => {
+        mergeAndRender();
+    });
+}
+
+// 1. Listen to students database collection
 listenToAllStudents((students) => {
-    allStudentsCache = students;
-    renderAdminStudentList(students);
+    rawStudentsCache = students;
+    mergeAndRender();
 });
 
+// 2. Listen to decoupled restrictions database collection
+listenToAllRestrictions((restrictionsMap) => {
+    allRestrictionsCache = restrictionsMap;
+    mergeAndRender();
+});
+
+// 3. The newly updated Render Function (Now with Icons!)
 function renderAdminStudentList(students) {
     const container = document.getElementById("admin-student-list");
     if (!container) return;
@@ -304,7 +347,8 @@ function renderAdminStudentList(students) {
 
     students.forEach(student => {
         const card = document.createElement("div");
-        card.style.cssText = "background: white; padding: 15px; border-radius: 8px; border: 1px solid #ced4da; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.1s;";
+        // Added position: relative so we can pin the icons to the top right corner!
+        card.style.cssText = "position: relative; background: white; padding: 15px; border-radius: 8px; border: 1px solid #ced4da; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.1s;";
         card.onmouseover = () => card.style.transform = "scale(1.02)";
         card.onmouseout = () => card.style.transform = "scale(1)";
         
@@ -340,28 +384,37 @@ function renderAdminStudentList(students) {
             }
         }
 
+        // Added padding-right to the text so it doesn't overlap the new icons
         card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="padding-right: 65px;"> 
                 <strong style="font-size: 1.1rem; color: var(--pirate-red);">${student.fullName || "Unknown"} (${student.studentId})</strong>
+                <div style="font-size: 0.9rem; color: #555; margin-top: 5px;">Grade: ${student.grade || "N/A"}</div>
+                <div style="font-size: 0.9rem; color: #555;">Email: ${student.email || "N/A"}</div>
             </div>
-            <div style="font-size: 0.9rem; color: #555; margin-top: 5px;">Grade: ${student.grade || "N/A"}</div>
-            <div style="font-size: 0.9rem; color: #555;">Email: ${student.email || "N/A"}</div>
+            
+            <div style="position: absolute; top: 15px; right: 15px; display: flex; gap: 10px; font-size: 1.3rem;">
+                <span class="action-schedule" style="cursor: pointer; filter: grayscale(100%); transition: filter 0.2s;" title="View Schedule" onmouseover="this.style.filter='none'" onmouseout="this.style.filter='grayscale(100%)'">📅</span>
+                <span class="action-restriction" style="cursor: pointer; filter: grayscale(100%); transition: filter 0.2s;" title="Modify Restrictions" onmouseover="this.style.filter='none'" onmouseout="this.style.filter='grayscale(100%)'">🛑</span>
+            </div>
+
             ${restrictionsHtml}
         `;
 
-        card.addEventListener("click", () => openRestrictionModal(student));
+        // Click event ONLY on the restriction icon now, not the whole card!
+        card.querySelector(".action-restriction").addEventListener("click", (e) => {
+            e.stopPropagation(); // Prevents click from bubbling up
+            openRestrictionModal(student);
+        });
+
+        // Click event for the schedule icon
+        card.querySelector(".action-schedule").addEventListener("click", (e) => {
+            e.stopPropagation();
+            alert(`We will build the Schedule popup for ${student.fullName} next!`); 
+        });
+
         container.appendChild(card);
     });
 }
-
-document.getElementById("search-student").addEventListener("input", (e) => {
-    const term = e.target.value.toLowerCase();
-    const filtered = allStudentsCache.filter(s => 
-        (s.fullName && s.fullName.toLowerCase().includes(term)) || 
-        (s.studentId && s.studentId.includes(term))
-    );
-    renderAdminStudentList(filtered);
-});
 
 
 // ==========================================
