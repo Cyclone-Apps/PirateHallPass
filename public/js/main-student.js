@@ -262,7 +262,7 @@ document.addEventListener("click", async (e) => {
             if (typeof window.hideTeacherNamesOnMap === "function") window.hideTeacherNamesOnMap();
         } else {
             // ------------------------------------------
-            // WE CLICKED PLUS -> ZOOM IN (Massive 4x Scale)
+            // WE CLICKED PLUS -> ZOOM IN (Massive 1.5x Scale)
             // ------------------------------------------
             
             // CRITICAL FIX 1: Turn off Flexbox layout. This guarantees 
@@ -299,4 +299,149 @@ document.addEventListener("click", async (e) => {
     if (e.target.id === "btn-open-map") mapModal.classList.remove("hidden");
     if (e.target.id === "close-map-modal") mapModal.classList.add("hidden");
     
+    // ==========================================
+    // ROOM SELECTION ON MAP (With Teacher Lookup)
+    // ==========================================
+    const mapNode = e.target.closest(".map-node");
+    if (mapNode) {
+        e.preventDefault();
+        
+        // 1. Get the room identifier exactly how your map stores it
+        const selectedDestination = mapNode.getAttribute("data-id") || mapNode.id || "";
+        const matchKey = selectedDestination.toLowerCase().replace(/^room\s+/i, '').trim();
+        
+        if (!selectedDestination) return;
+
+        // 2. Use your existing CSS rules to handle the selection highlight perfectly!
+        document.querySelectorAll(".map-node").forEach(node => node.classList.remove("selected"));
+        mapNode.classList.add("selected");
+
+        // 3. Figure out which Teacher is in this room right now!
+        let activePeriod = "1"; 
+        if (window.currentTimeState && window.currentTimeState.currentPeriod) {
+            activePeriod = String(window.currentTimeState.currentPeriod);
+        }
+        
+        let currentDayNum = 1; 
+        if (window.currentRotationDayText) {
+            const parsed = parseInt(window.currentRotationDayText.replace(/\D/g, ''));
+            if (!isNaN(parsed)) currentDayNum = parsed;
+        }
+
+        let teacherDisplay = "";
+
+        if (window.liveMasterSchedule && window.liveMasterSchedule[activePeriod]) {
+            const assignments = window.liveMasterSchedule[activePeriod][matchKey];
+            if (assignments && assignments.length > 0) {
+                let activeTeacher = assignments.find(a => a.days.includes(currentDayNum));
+                if (!activeTeacher) activeTeacher = assignments[0]; 
+                teacherDisplay = ` (${activeTeacher.teacher})`; 
+            }
+        }
+
+        // 4. Update your exact text label with the Room + Teacher Name
+        const labelElement = document.getElementById("selected-room-label");
+        if (labelElement) {
+            labelElement.innerText = `Destination: Room ${selectedDestination.toUpperCase()}${teacherDisplay}`;
+        }
+
+        // 5. Unlock the confirm button exactly like your old code did
+        const confirmBtn = document.getElementById("btn-confirm-destination");
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+        }
+
+        // 6. Save selection globally so the submit pass code can read it
+        window.selectedDestination = selectedDestination;
+        if (teacherDisplay) {
+            window.selectedDestinationTeacher = teacherDisplay.replace(/[()]/g, '').trim();
+        }
+    }
+
+    // ==========================================
+    // --- 1. STUDENT CONFIRMS MAP DESTINATION ---
+    // ==========================================
+    if (e.target.id === "btn-confirm-destination") {
+        const dest = window.selectedDestination;
+        if (!dest) return;
+        
+        e.target.innerText = "⏳ Requesting...";
+        e.target.disabled = true;
+
+        const evaluation = typeof evaluateRestrictions === "function" 
+            ? evaluateRestrictions(dest) 
+            : { statusLevel: "pending", restrictionType: "", restrictionReason: "", waitlistPosition: 0, recentTravels: [] };
+
+        let assignedPeriod = "Unknown";
+        if (window.currentTimeState) {
+            if (window.currentTimeState.isPassing && window.currentTimeState.nextPeriod) {
+                assignedPeriod = window.currentTimeState.nextPeriod;
+            } else if (window.currentTimeState.currentPeriod) {
+                assignedPeriod = window.currentTimeState.currentPeriod;
+            }
+        }
+
+        const isProxyActive = typeof isProxy !== "undefined" ? isProxy : false;
+        const proxyTeacherName = typeof proxyTeacher !== "undefined" ? proxyTeacher : "";
+        
+        let studentName = "Student";
+        if (window.currentUser && window.currentUser.displayName) {
+            studentName = window.currentUser.displayName;
+        }
+        const finalDisplayName = isProxyActive ? `${studentName} (Created by ${proxyTeacherName})` : studentName;
+
+        const passData = {
+            studentDisplayName: finalDisplayName,
+            destination: dest,
+            targetTeacher: window.selectedDestinationTeacher || "Unknown", 
+            period: assignedPeriod, 
+            type: "standard",
+            initiatedBy: isProxyActive ? "teacher_proxy" : "student",
+            status: evaluation.statusLevel === 'red' ? "pending_restricted" : "pending", 
+            restrictionLevel: evaluation.statusLevel || "none",
+            restrictionType: evaluation.restrictionType || "",
+            restrictionReason: evaluation.restrictionReason || "",
+            waitlistPosition: evaluation.waitlistPosition || 0,
+            recentTravels: evaluation.recentTravels || []
+        };
+
+        const success = await createNewPass(passData);
+        
+        if (success) {
+            const mapModalElement = document.getElementById("map-modal");
+            if (mapModalElement) mapModalElement.classList.add("hidden");
+            
+            document.querySelectorAll(".map-node").forEach(node => node.classList.remove("selected"));
+            
+            const labelElement = document.getElementById("selected-room-label");
+            if (labelElement) labelElement.innerText = "Select a room on the map";
+            
+            window.selectedDestination = null;
+            window.selectedDestinationTeacher = null;
+        }
+        
+        e.target.innerText = "Confirm Destination";
+        e.target.disabled = false;
+    }
+
+    // ==========================================
+    // --- 2. TEACHER APPROVAL HANDOFF CONTROLS ---
+    // ==========================================
+    if (e.target.id === "btn-teacher-approve") {
+        const passId = e.target.getAttribute("data-id");
+        if (typeof updatePassStatus === "function") updatePassStatus(passId, "active");
+    }
+    if (e.target.id === "btn-teacher-reject") {
+        const passId = e.target.getAttribute("data-id");
+        if (typeof updatePassStatus === "function") updatePassStatus(passId, "rejected");
+    }
+
+    // ==========================================
+    // --- 3. TEACHER RETURN HANDOFF CONTROL ---
+    // ==========================================
+    if (e.target.id === "btn-teacher-return") {
+        const passId = e.target.getAttribute("data-id");
+        if (typeof updatePassStatus === "function") updatePassStatus(passId, "returned");
+    }
+
 });
