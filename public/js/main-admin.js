@@ -9,7 +9,7 @@ import { db } from "./firebase-config.js";
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { schoolMapSVG } from "./map.js";
 import { initializeTimeEngine } from "./modules/time-engine.js";
-import { doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, setDoc, getDoc, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { fetchAllStudents } from "./modules/pass-engine.js";
 import { renderHeader, setupStudentAutocomplete } from "./modules/ui-widgets.js";
 
@@ -1123,3 +1123,355 @@ document.addEventListener("click", async (e) => {
         }
     }
 });
+
+// ==========================================
+// TEACHER MANAGEMENT ENGINE
+// ==========================================
+
+// 1. Open and Close the Modal
+document.addEventListener("click", (e) => {
+    const modal = document.getElementById("teacher-management-modal");
+    if (!modal) return;
+
+    if (e.target.id === "btn-open-teacher-management") {
+        modal.classList.remove("hidden");
+    }
+    if (e.target.id === "close-teacher-management-modal") {
+        modal.classList.add("hidden");
+    }
+});
+
+// 2. CSV Import Processing
+const btnTriggerTeacherImport = document.getElementById("btn-trigger-teacher-import");
+const fileInputTeachers = document.getElementById("file-import-teachers");
+
+if (btnTriggerTeacherImport && fileInputTeachers) {
+    btnTriggerTeacherImport.addEventListener("click", () => {
+        const file = fileInputTeachers.files[0];
+        if (!file) return alert("Please select a CSV file first.");
+
+        btnTriggerTeacherImport.innerText = "⏳ Importing...";
+        btnTriggerTeacherImport.disabled = true;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const csvText = event.target.result;
+            await processTeacherCSV(csvText);
+            
+            btnTriggerTeacherImport.innerText = "✅ Import Complete!";
+            setTimeout(() => {
+                btnTriggerTeacherImport.innerText = "📥 Import Teachers";
+                btnTriggerTeacherImport.disabled = false;
+                fileInputTeachers.value = ""; // Clear input
+            }, 3000);
+        };
+        reader.readAsText(file);
+    });
+}
+
+/**
+ * Parses the CSV and uploads/merges teachers into Firestore
+ */
+async function processTeacherCSV(csvText) {
+    const rows = csvText.split(/\r?\n/).filter(row => row.trim() !== "");
+    const headers = rows[0].split(",").map(h => h.trim());
+    const nameIdx = headers.indexOf("Member Name");
+    const emailIdx = headers.indexOf("Member Email");
+
+    if (nameIdx === -1 || emailIdx === -1) {
+        alert("Error: CSV must contain 'Member Name' and 'Member Email' columns.");
+        return;
+    }
+
+    let successCount = 0;
+
+    for (let i = 1; i < rows.length; i++) {
+        const cols = rows[i].split(",");
+        if (cols.length < 2) continue;
+
+        const name = cols[nameIdx].trim();
+        const email = cols[emailIdx].trim().toLowerCase();
+
+        if (email && name) {
+            try {
+                const userRef = doc(db, "users", email);
+                
+                // Check if user already exists to protect their role if they are already an Admin!
+                const docSnap = await getDoc(userRef);
+                let finalizedRole = "teacher";
+                
+                if (docSnap.exists() && docSnap.data().role === "admin") {
+                    finalizedRole = "admin"; // Maintain admin privileges across re-imports
+                }
+
+                await setDoc(userRef, {
+                    displayName: name,
+                    email: email,
+                    role: finalizedRole 
+                }, { merge: true });
+
+                successCount++;
+            } catch (err) {
+                console.error(`Failed to import ${email}:`, err);
+            }
+        }
+    }
+
+    alert(`Successfully imported/updated ${successCount} teachers!`);
+}
+
+// ====================================================================
+// 3. Live Teacher Roster Table with Admin Privilege Toggle & Search Compatibility
+// ====================================================================
+window.activeStaffList = []; // Global array stored for the schedule sync engine
+
+function listenToTeacherRoster() {
+    const tbody = document.getElementById("teacher-roster-table-body");
+    if (!tbody) return;
+
+    // Look for users where the role is EITHER teacher OR admin
+    const q = query(collection(db, "users"), where("role", "in", ["teacher", "admin"]));
+    
+    onSnapshot(q, (snapshot) => {
+        if (snapshot.empty) {
+            tbody.innerHTML = '<tr><td colspan="3" style="padding: 20px; text-align: center; color: #888;">No staff records found. Import a CSV to begin.</td></tr>';
+            return;
+        }
+
+        let html = "";
+        window.activeStaffList = []; // Reset global list on every update
+
+        snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            data.id = docSnap.id; // Store email document ID directly inside the data object
+            window.activeStaffList.push(data);
+
+            const name = data.displayName || "Unknown";
+            const email = data.email || docSnap.id;
+            const isAdmin = data.role === "admin";
+
+            // If this teacher has a schedule name mapped, show a nice link indicator badge right under their name
+            const aliasBadge = data.scheduleAlias 
+                ? `<div style="font-size: 0.8rem; color: #0277bd; margin-top: 4px; font-weight: normal;">🔗 Linked Schedule: <strong>${data.scheduleAlias}</strong></div>` 
+                : ``;
+
+            // Build standard checkbox styled beautifully with center alignment
+            const checkboxHTML = `
+                <div style="text-align: center;">
+                    <input type="checkbox" class="teacher-admin-toggle" data-email="${email}" ${isAdmin ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer;" />
+                </div>
+            `;
+
+            // Included class="staff-roster-row" for search engine visibility
+            html += `
+                <tr class="staff-roster-row" style="border-bottom: 1px solid #eee; transition: background 0.2s;" onmouseover="this.style.background='#f9f9f9'" onmouseout="this.style.background='white'">
+                    <td style="padding: 12px; color: #333; font-weight: 500;">
+                        ${name}
+                        ${aliasBadge}
+                    </td>
+                    <td style="padding: 12px; color: #666;">${email}</td>
+                    <td style="padding: 12px;">${checkboxHTML}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html;
+    }, (error) => {
+        console.error("Error fetching teachers:", error);
+        tbody.innerHTML = '<tr><td colspan="3" style="padding: 20px; text-align: center; color: var(--pirate-red);">Error loading teachers. Check console.</td></tr>';
+    });
+}
+
+// ====================================================================
+// 4. Handle Real-time Real-World Admin Privilege Toggling via Event Delegation
+// ====================================================================
+const tbodyElement = document.getElementById("teacher-roster-table-body");
+if (tbodyElement) {
+    tbodyElement.addEventListener("change", async (e) => {
+        if (e.target.classList.contains("teacher-admin-toggle")) {
+            const email = e.target.getAttribute("data-email");
+            const grantAdminPrivileges = e.target.checked;
+            
+            try {
+                const userRef = doc(db, "users", email);
+                
+                // Swap the role field directly in Firestore
+                await setDoc(userRef, { 
+                    role: grantAdminPrivileges ? "admin" : "teacher" 
+                }, { merge: true });
+                
+                console.log(`Updated privileges for ${email}: Role is now ${grantAdminPrivileges ? 'admin' : 'teacher'}`);
+            } catch (err) {
+                console.error("Failed to update user privileges:", err);
+                alert("Critical Error: Database authorization update failed.");
+                e.target.checked = !grantAdminPrivileges; // Undo visual state if save failed
+            }
+        }
+    });
+}
+
+// Start the listener right away
+listenToTeacherRoster();
+
+// ====================================================================
+// 5. Live Search Filter Control
+// ====================================================================
+const searchInput = document.getElementById("input-search-teachers");
+if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+        const term = e.target.value.toLowerCase();
+        const rows = document.querySelectorAll(".staff-roster-row");
+        
+        rows.forEach(row => {
+            if (row.innerText.toLowerCase().includes(term)) {
+                row.style.display = "";
+            } else {
+                row.style.display = "none";
+            }
+        });
+    });
+}
+
+// ====================================================================
+// 6. Auto-Match Schedule Sync Engine
+// ====================================================================
+const btnSync = document.getElementById("btn-sync-schedules");
+if (btnSync) {
+    btnSync.addEventListener("click", async () => {
+        btnSync.innerText = "⏳ Scanning...";
+        btnSync.disabled = true;
+
+        try {
+            // 1. Fetch all student profile objects to look at teacher listings in schedules
+            const students = await fetchAllStudents();
+            const uniqueScheduleNames = new Set();
+            
+            students.forEach(student => {
+                if (student.schedule) {
+                    Object.values(student.schedule).forEach(classInfo => {
+                        if (classInfo.teacher && classInfo.teacher.trim() !== "" && classInfo.teacher !== "N/A") {
+                            uniqueScheduleNames.add(classInfo.teacher.trim());
+                        }
+                    });
+                }
+            });
+
+            const unmappedNames = [];
+            const staffList = window.activeStaffList || [];
+
+            // 2. Cross-reference schedule strings with imported staff accounts
+            for (const schedName of uniqueScheduleNames) {
+                // Skip if a user account is already officially linked to this schedule name string
+                const alreadyMapped = staffList.find(staff => staff.scheduleAlias === schedName);
+                if (alreadyMapped) continue;
+
+                // Grab the last word of the schedule name (e.g., "Mr. Rose" -> target: "rose")
+                const lastNameTarget = schedName.split(" ").pop().toLowerCase();
+                
+                // Track down how many staff accounts share that same last name
+                const potentialMatches = staffList.filter(staff => {
+                    const staffLastName = (staff.displayName || "").split(" ").pop().toLowerCase();
+                    return staffLastName === lastNameTarget;
+                });
+
+                if (potentialMatches.length === 1) {
+                    // Exactly one unique match found by last name! Apply link instantly in firestore
+                    const matchedStaff = potentialMatches[0];
+                    await setDoc(doc(db, "users", matchedStaff.id), { scheduleAlias: schedName }, { merge: true });
+                    console.log(`Auto-Linked Schedule Alias: ${schedName} ➡️ ${matchedStaff.displayName}`);
+                } else {
+                    // Zero matches or multiple matches (duplicate last names). Push to manual resolver container.
+                    unmappedNames.push(schedName);
+                }
+            }
+
+            // 3. Display manual overrides inside the warning alert block
+            renderUnmappedUI(unmappedNames, staffList);
+
+        } catch (err) {
+            console.error("Error running schedule synchronization engine:", err);
+            alert("Error running schedule match scan. See console for execution logs.");
+        }
+
+        btnSync.innerText = "🔄 Auto-Match Schedules";
+        btnSync.disabled = false;
+    });
+}
+
+// ====================================================================
+// 7. Manual Mapping Dropdown Renders & Event Hook Bindings
+// ====================================================================
+function renderUnmappedUI(unmappedNames, staffList) {
+    const alertBox = document.getElementById("teacher-mapping-alert");
+    const container = document.getElementById("unmapped-teachers-container");
+    const countBadge = document.getElementById("unmapped-count-badge");
+    
+    if (!alertBox || !container || !countBadge) return;
+
+    if (unmappedNames.length === 0) {
+        alertBox.classList.add("hidden");
+        alert("✅ Schedule Sync Complete! All schedule names matched successfully.");
+        return;
+    }
+
+    alertBox.classList.remove("hidden");
+    countBadge.innerText = unmappedNames.length;
+
+    // Generate option list alphabetically for a premium drop-down experience
+    let optionsHtml = `<option value="">-- Select Staff Account --</option>`;
+    const sortedStaff = [...staffList].sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+    sortedStaff.forEach(staff => {
+        optionsHtml += `<option value="${staff.id}">${staff.displayName} (${staff.email})</option>`;
+    });
+
+    let html = "";
+    unmappedNames.forEach(name => {
+        html += `
+            <div class="unmapped-row" style="display: flex; align-items: center; gap: 15px; background: white; padding: 10px; border-radius: 4px; border: 1px solid #ffeeba;">
+                <strong style="width: 150px; color: #333;">${name}</strong>
+                <span style="font-size: 1.5rem;">➡️</span>
+                <select class="manual-map-select" data-schedname="${name}" style="flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 1rem;">
+                    ${optionsHtml}
+                </select>
+                <button class="primary-btn btn-save-manual-map" style="padding: 8px 15px; background: #2e7d32; border: none; color: white; cursor: pointer; border-radius: 4px;">💾 Link</button>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+
+    // Bind real-time submission hooks to every row item link action button
+    container.querySelectorAll(".btn-save-manual-map").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+            const row = e.target.closest(".unmapped-row");
+            const select = row.querySelector(".manual-map-select");
+            const schedName = select.getAttribute("data-schedname");
+            const staffEmail = select.value;
+
+            if (!staffEmail) return alert("Please select an active staff member account from the drop-down selector.");
+
+            e.target.innerText = "⏳...";
+            e.target.disabled = true;
+
+            try {
+                // Write manual alias resolution relationship data directly into Firestore
+                await setDoc(doc(db, "users", staffEmail), { scheduleAlias: schedName }, { merge: true });
+                row.remove(); // Safely clear out UI entry row item row dynamically
+                
+                // Track down remainder counter badge status counts
+                const remaining = container.children.length;
+                countBadge.innerText = remaining;
+                
+                if (remaining === 0) {
+                    alertBox.classList.add("hidden");
+                    alert("✅ All schedule names linked successfully!");
+                }
+            } catch (err) {
+                console.error("Failed to commit manual relationship mapping update:", err);
+                alert("Failed to save assignment details. Check network status.");
+                e.target.innerText = "💾 Link";
+                e.target.disabled = false;
+            }
+        });
+    });
+}
