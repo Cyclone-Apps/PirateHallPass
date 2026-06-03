@@ -21,16 +21,31 @@ export function renderStudentIdleScreen() {
         displayName = window.currentUser.displayName;
     }
 
+    // Check if ANY lockdown is active
+    const isLockedDown = window.currentLoudLockdown || window.currentQuietLockdown;
+
+    // Draw the button differently based on the lockdown state
+    let buttonHTML = isLockedDown 
+        ? `<button id="btn-open-map" class="primary-btn" style="font-size: 1.5rem; padding: 20px 40px; width: 100%; background-color: #c62828; cursor: not-allowed; opacity: 0.8;" disabled>
+               🛑 No Passes Are Allowed At This Moment
+           </button>`
+        : `<button id="btn-open-map" class="primary-btn" style="font-size: 1.5rem; padding: 20px 40px; width: 100%;">
+               🗺️ Open School Map
+           </button>`;
+
     container.innerHTML = `
         <div class="kiosk-card">
             <h1 style="color: var(--pirate-red); font-size: 2.5rem; margin-bottom: 10px;">Where to, ${displayName}?</h1>
             <p style="color: #666; margin-bottom: 30px;">Select a destination to request a hall pass.</p>
-            <button id="btn-open-map" class="primary-btn" style="font-size: 1.5rem; padding: 20px 40px; width: 100%;">
-                🗺️ Open School Map
-            </button>
+            ${buttonHTML}
             <p style="margin-top: 20px; font-size: 0.9rem; color: #888;">Your teacher must approve the request before you leave.</p>
         </div>
     `;
+    
+    // Ensure the message center also checks its state if a redraw happens
+    if (typeof window.updateEmergencyUI === "function") {
+        window.updateEmergencyUI();
+    }
 }
 
 export function renderStudentSidebar(studentProfile = null) {
@@ -408,9 +423,32 @@ function parseMenuData(menuStr) {
 window.updateEmergencyUI = function() {
     const announcementWidget = document.getElementById("admin-messages-widget");
     const announcementContainer = document.getElementById("admin-messages-container");
+    const mapBtn = document.getElementById("btn-open-map");
     
-    if (!announcementWidget || !announcementContainer) return; // Exit if sidebar hasn't drawn yet
+    // The button locks if EITHER lockdown is active
+    const isLockedDown = window.currentLoudLockdown || window.currentQuietLockdown;
 
+    // 1. INSTANTLY TOGGLE THE MAP BUTTON (If they are on the idle screen)
+    if (mapBtn) {
+        if (isLockedDown) {
+            mapBtn.innerHTML = "🛑 No Passes Are Allowed At This Moment";
+            mapBtn.disabled = true;
+            mapBtn.style.backgroundColor = "#c62828";
+            mapBtn.style.opacity = "0.8";
+            mapBtn.style.cursor = "not-allowed";
+        } else {
+            mapBtn.innerHTML = "🗺️ Open School Map";
+            mapBtn.disabled = false;
+            mapBtn.style.backgroundColor = ""; // Restores to CSS default
+            mapBtn.style.opacity = "1";
+            mapBtn.style.cursor = "pointer";
+        }
+    }
+
+    // 2. TOGGLE THE MESSAGE CENTER 
+    if (!announcementWidget || !announcementContainer) return; 
+
+    // ONLY Loud Lockdowns trigger the blinking red alert
     if (window.currentLoudLockdown) {
         announcementWidget.style.background = "#ffebee"; 
         announcementWidget.style.borderColor = "var(--pirate-red)";
@@ -427,7 +465,7 @@ window.updateEmergencyUI = function() {
             </style>
         `;
     } else {
-        // Restore standard aesthetics
+        // Restore standard aesthetics (Used for Normal days AND Quiet Lockdowns)
         announcementWidget.style.background = "white";
         announcementWidget.style.borderColor = "var(--pirate-silver)";
         
