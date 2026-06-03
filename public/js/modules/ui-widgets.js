@@ -39,10 +39,9 @@ export function renderHeader(user, role) {
         adminToolbar.innerHTML = `
             <button id="btn-emergency" class="danger-btn toolbar-btn" style="border: none;">🚨 Emergency Controls</button>
             <button id="btn-open-proxy-setup" class="toolbar-btn" style="background-color: #8e24aa; color: white; border: none;">💻 Open Pass As Student</button>
-            
             <button id="btn-open-management" class="toolbar-btn" style="background-color: #0277bd; color: white; border: none;">👥 Student Management</button>
-            <button id="btn-open-teacher-management" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">👨‍🏫 Teacher Management</button>
-            
+            <button id="btn-open-teacher-management" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">👨‍🏫 Teacher Management</button>            
+            <button id="btn-open-teacher-schedule" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">📋 Teacher Schedule</button>
             <button id="btn-open-bell-schedule" class="toolbar-btn" style="background-color: #4caf50; color: white; border: none;">⏱️ Bell Schedules</button>
             <button id="btn-open-academic-cal-modal" class="toolbar-btn" style="background-color: var(--pirate-red); color: white; border: none;">📅 Academic Calendar</button>
             <button id="btn-open-gcal-modal" class="toolbar-btn" style="background-color: #333; color: white; border: none;">⚙️ Google Calendar Setup</button>

@@ -1,6 +1,6 @@
 // map.js
 export const schoolMapSVG = `
-<svg class="floorplan-svg" viewBox="-50 -20 1650 1200" preserveAspectRatio="xMidYMid meet">
+<svg id="interactive-school-map" class="floorplan-svg" viewBox="-50 -20 1650 1200" preserveAspectRatio="xMidYMid meet" style="transition: all 0.4s ease-in-out;">
     <defs>
         <pattern id="hazard-stripes" width="20" height="20" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
             <line x1="0" y1="0" x2="0" y2="20" stroke="#ffebee" stroke-width="20" />
@@ -116,6 +116,11 @@ export const schoolMapSVG = `
     <g class="map-node" data-id="Auditorium Lobby Fountain" data-corridor="Auditorium Lobby"><rect class="zone-box" x="1438" y="845" width="30" height="30" rx="15"/><text class="lbl-room" x="1453" y="866" font-size="18" text-anchor="middle">🚰</text></g>
     <g class="map-node" data-id="Office Vending" data-corridor="Main Entrance"><rect class="zone-box" x="1003" y="115" width="30" height="30" rx="15"/><text class="lbl-room" x="1018" y="136" font-size="18" text-anchor="middle">🥤</text></g>
     <g class="map-node" data-id="Gym Lobby Vending" data-corridor="Gym Lobby"><rect class="zone-box" x="1063" y="515" width="30" height="30" rx="15"/><text class="lbl-room" x="1078" y="536" font-size="18" text-anchor="middle">🥤</text></g>
+
+    <g class="map-zoom-glass" transform="translate(380, 336)" style="cursor: pointer;">
+        <rect width="128" height="128" rx="64" fill="white" stroke="var(--pirate-red)" stroke-width="4" />
+        <text class="zoom-icon-text" x="64" y="84" font-size="64" font-weight="bold" fill="var(--pirate-red)" text-anchor="middle">🔍+</text>
+    </g>
 
 </svg>
 `;

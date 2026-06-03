@@ -1,6 +1,7 @@
 // js/modules/student-ui.js
 import { schoolMapSVG } from "../map.js"; 
-import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { db } from "../firebase-config.js";
 
 // Keep a global reference to the student's profile so the 1-second interval can read it!
 window.currentStudentProfile = null;
@@ -533,3 +534,90 @@ export function initializeRotationDayEngine(db, onSnapshot, doc) {
         }
     });
 }
+
+// ==========================================
+// FIREBASE MAP TEACHER OVERLAY ENGINE (Rotation Day Aware)
+// ==========================================
+
+window.liveMasterSchedule = {};
+onSnapshot(doc(db, "settings", "master_schedule"), (docSnap) => {
+    if (docSnap.exists()) {
+        window.liveMasterSchedule = docSnap.data();
+    }
+});
+
+window.showTeacherNamesOnMap = function() {
+    // 1. Identify current running school period
+    let activePeriod = "1"; 
+    if (window.currentTimeState) {
+        if (window.currentTimeState.isPassing && window.currentTimeState.nextPeriod) {
+            activePeriod = String(window.currentTimeState.nextPeriod);
+        } else if (window.currentTimeState.currentPeriod) {
+            activePeriod = String(window.currentTimeState.currentPeriod);
+        }
+    }
+
+    // 2. Identify the current Rotation Day (Extracting the number from "Day 2", "Day 6", etc.)
+    let currentDayNum = 1; // Default fallback
+    if (window.currentRotationDayText) {
+        // Strip out letters, leaving just the number
+        const parsed = parseInt(window.currentRotationDayText.replace(/\D/g, ''));
+        if (!isNaN(parsed)) currentDayNum = parsed;
+    }
+
+    // 3. Pull the period directory from Firebase
+    const periodMap = window.liveMasterSchedule[activePeriod];
+    if (!periodMap) return;
+
+    // 4. Inject dynamically into SVG Map Nodes
+    const mapNodes = document.querySelectorAll(".map-node");
+    mapNodes.forEach(node => {
+        const dataId = node.getAttribute("data-id") || "";
+        const matchKey = dataId.toLowerCase().replace(/^room\s+/i, '').trim();
+        
+        const assignments = periodMap[matchKey];
+
+        if (assignments && assignments.length > 0) {
+            // Find the specific teacher assigned to THIS rotation day
+            let activeTeacherAssignment = assignments.find(a => a.days.includes(currentDayNum));
+            
+            // Fallback: If for some reason the day doesn't match, pick the first teacher in the array
+            if (!activeTeacherAssignment) activeTeacherAssignment = assignments[0];
+            
+            const teacherName = activeTeacherAssignment.teacher;
+
+            const textEl = node.querySelector("text.lbl-room, text.lbl-large");
+            if (textEl) {
+                // Backup original attributes
+                if (!textEl.hasAttribute("data-orig-text")) {
+                    textEl.setAttribute("data-orig-text", textEl.textContent);
+                    textEl.setAttribute("data-orig-font", textEl.getAttribute("font-size") || "");
+                    textEl.setAttribute("data-orig-fill", textEl.getAttribute("fill") || "");
+                }
+                
+                // Swap text and styling
+                textEl.textContent = teacherName;
+                textEl.setAttribute("fill", "#0277bd"); // Pirate Blue
+                textEl.setAttribute("font-size", teacherName.length > 12 ? "10" : "13");
+            }
+        }
+    });
+};
+
+window.hideTeacherNamesOnMap = function() {
+    const mapNodes = document.querySelectorAll(".map-node");
+    mapNodes.forEach(node => {
+        const textEl = node.querySelector("text.lbl-room, text.lbl-large");
+        if (textEl && textEl.hasAttribute("data-orig-text")) {
+            textEl.textContent = textEl.getAttribute("data-orig-text");
+            const origFont = textEl.getAttribute("data-orig-font");
+            const origFill = textEl.getAttribute("data-orig-fill");
+            
+            if (origFont) textEl.setAttribute("font-size", origFont);
+            else textEl.removeAttribute("font-size");
+            
+            if (origFill) textEl.setAttribute("fill", origFill);
+            else textEl.removeAttribute("fill");
+        }
+    });
+};

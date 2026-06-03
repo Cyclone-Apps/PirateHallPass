@@ -225,107 +225,78 @@ function evaluateRestrictions(destination) {
 
 // Global Event Listeners
 document.addEventListener("click", async (e) => {
+
+    // ==========================================
+    // NEW: MAP ZOOM ENGINE (Native Panning & Scrolling)
+    // ==========================================
+    const zoomGlass = e.target.closest(".map-zoom-glass");
+    if (zoomGlass) {
+        e.preventDefault();
+        e.stopPropagation(); 
+        
+        const mapSvg = document.getElementById("interactive-school-map");
+        if (!mapSvg) return;
+
+        const mapContainer = mapSvg.parentElement; 
+        const iconText = zoomGlass.querySelector(".zoom-icon-text");
+
+        if (!mapContainer) return;
+
+        mapContainer.style.overflow = "auto";
+        mapSvg.style.transition = "width 0.3s ease";
+
+        if (mapSvg.style.width === "150vw") {
+            // ------------------------------------------
+            // WE ARE ZOOMED IN -> ZOOM OUT
+            // ------------------------------------------
+            mapSvg.style.width = "100%";
+            mapSvg.style.height = "100%";
+            
+            // Restore Flexbox centering for the zoomed-out view
+            mapContainer.style.display = "flex";
+            mapContainer.style.justifyContent = "center";
+            mapContainer.style.alignItems = "center";
+
+            iconText.textContent = "🔍+"; 
+            
+            if (typeof window.hideTeacherNamesOnMap === "function") window.hideTeacherNamesOnMap();
+        } else {
+            // ------------------------------------------
+            // WE CLICKED PLUS -> ZOOM IN (Massive 4x Scale)
+            // ------------------------------------------
+            
+            // CRITICAL FIX 1: Turn off Flexbox layout. This guarantees 
+            // scrollbars will generate for all 4 directions natively.
+            mapContainer.style.display = "block";
+            
+            // Clear any restrictive CSS or SVG cropping rules
+            mapSvg.style.maxWidth = "none";
+            mapSvg.style.maxHeight = "none";
+            mapSvg.removeAttribute("preserveAspectRatio");
+
+            // CRITICAL FIX 2: Set Width to 400vw (Massive Zoom) and Height to 'auto'.
+            // 'auto' forces the map to retain its exact natural shape without 
+            // ANY cropping or generating empty white space!
+            mapSvg.style.width = "150vw";
+            mapSvg.style.height = "auto";
+            
+            iconText.textContent = "🔍-"; 
+            
+            if (typeof window.showTeacherNamesOnMap === "function") window.showTeacherNamesOnMap();
+            
+            // Wait 320ms for the animation to finish growing before calculating the center!
+            setTimeout(() => {
+                mapContainer.scrollLeft = (mapContainer.scrollWidth - mapContainer.clientWidth) / 2;
+                mapContainer.scrollTop = (mapContainer.scrollHeight - mapContainer.clientHeight) / 2;
+            }, 320);
+        }
+        return; 
+    }
+
     const mapModal = document.getElementById("map-modal");
 
     // --- MAP CONTROLS ---
     if (e.target.id === "btn-open-map") mapModal.classList.remove("hidden");
     if (e.target.id === "close-map-modal") mapModal.classList.add("hidden");
-
-    // --- FULL SCHEDULE TOGGLES ---
-    if (e.target.closest("#btn-open-full-schedule")) {
-        const schedModal = document.getElementById("full-schedule-modal");
-        if (schedModal) schedModal.classList.remove("hidden");
-    }
     
-    if (e.target.id === "close-full-schedule") {
-        const schedModal = document.getElementById("full-schedule-modal");
-        if (schedModal) schedModal.classList.add("hidden");
-    }
-
-    const mapNode = e.target.closest(".map-node"); 
-    if (mapNode) {
-        
-        // --- BULLETPROOF HALLWAY CHECK ---
-        const mapId = (mapNode.getAttribute("data-id") || "").toLowerCase();
-        const isCorridor = mapNode.querySelector(".corridor-box") || 
-                           mapNode.innerHTML.includes("corridor-box") ||
-                           mapId.includes("hallway") || 
-                           mapId.includes("corridor") ||
-                           mapId.includes("block");
-                           
-        if (isCorridor) {
-            // SILENTLY IGNORE. No alert, no UI changes.
-            return; 
-        }
-
-        document.querySelectorAll(".map-node").forEach(node => node.classList.remove("selected"));
-        mapNode.classList.add("selected");
-        selectedDestination = mapNode.getAttribute("data-id");
-        document.getElementById("selected-room-label").innerText = `Destination: ${selectedDestination}`;
-        document.getElementById("btn-confirm-destination").disabled = false;
-    }
-
-    // --- 1. STUDENT CONFIRMS MAP DESTINATION ---
-    if (e.target.id === "btn-confirm-destination") {
-        if (!selectedDestination) return;
-        
-        e.target.innerText = "⏳ Requesting...";
-        e.target.disabled = true;
-
-        const evaluation = evaluateRestrictions(selectedDestination);
-
-        // Determine period log target based on active passing periods
-        let assignedPeriod = "Unknown";
-        if (window.currentTimeState) {
-            if (window.currentTimeState.isPassing && window.currentTimeState.nextPeriod) {
-                // If in passing period, count it against their UPCOMING period assignment
-                assignedPeriod = window.currentTimeState.nextPeriod;
-            } else if (window.currentTimeState.currentPeriod) {
-                assignedPeriod = window.currentTimeState.currentPeriod;
-            }
-        }
-
-        // FORMAT THE NAME TO INCLUDE THE TEACHER IF IN PROXY MODE!
-        const finalDisplayName = isProxy ? `${window.currentUser.displayName} (Created by ${proxyTeacher})` : window.currentUser.displayName;
-
-        const passData = {
-            studentDisplayName: finalDisplayName,
-            destination: selectedDestination,
-            period: assignedPeriod, // <-- This successfully tags the class period to the pass!
-            type: "standard",
-            initiatedBy: isProxy ? "teacher_proxy" : "student",
-            status: evaluation.statusLevel === 'red' ? "pending_restricted" : "pending", 
-            restrictionLevel: evaluation.statusLevel,
-            restrictionType: evaluation.restrictionType,
-            restrictionReason: evaluation.restrictionReason,
-            waitlistPosition: evaluation.waitlistPosition,
-            recentTravels: evaluation.recentTravels
-        };
-
-        const success = await createNewPass(passData);
-        
-        if (success) {
-            mapModal.classList.add("hidden");
-            document.querySelectorAll(".map-node").forEach(node => node.classList.remove("selected"));
-            document.getElementById("selected-room-label").innerText = "Select a room on the map";
-            selectedDestination = null;
-        }
-        e.target.innerText = "Confirm Destination";
-    }
-
-    // --- 2. TEACHER APPROVAL HANDOFF CONTROLS ---
-    if (e.target.id === "btn-teacher-approve") {
-        const passId = e.target.getAttribute("data-id");
-        updatePassStatus(passId, "active");
-    }
-    if (e.target.id === "btn-teacher-reject") {
-        const passId = e.target.getAttribute("data-id");
-        updatePassStatus(passId, "rejected");
-    }
-
-    // --- 3. TEACHER RETURN HANDOFF CONTROL ---
-    if (e.target.id === "btn-teacher-return") {
-        const passId = e.target.getAttribute("data-id");
-        updatePassStatus(passId, "returned");
-    }
 });

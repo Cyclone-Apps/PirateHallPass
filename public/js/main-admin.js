@@ -1229,7 +1229,17 @@ function listenToTeacherRoster() {
     const tbody = document.getElementById("teacher-roster-table-body");
     if (!tbody) return;
 
-    // Look for users where the role is EITHER teacher OR admin
+    const tableElement = tbody.closest("table");
+    if (tableElement && !document.getElementById("btn-open-add-teacher")) {
+        tableElement.insertAdjacentHTML('beforebegin', `
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
+                <button id="btn-open-add-teacher" style="background: #0277bd; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                    ➕ Manually Add Teacher
+                </button>
+            </div>
+        `);
+    }
+
     const q = query(collection(db, "users"), where("role", "in", ["teacher", "admin"]));
     
     onSnapshot(q, (snapshot) => {
@@ -1239,30 +1249,31 @@ function listenToTeacherRoster() {
         }
 
         let html = "";
-        window.activeStaffList = []; // Reset global list on every update
+        let datalistHTML = ""; // NEW: Variable to hold autocomplete options
+        window.activeStaffList = []; 
 
         snapshot.forEach(docSnap => {
             const data = docSnap.data();
-            data.id = docSnap.id; // Store email document ID directly inside the data object
+            data.id = docSnap.id; 
             window.activeStaffList.push(data);
 
             const name = data.displayName || "Unknown";
             const email = data.email || docSnap.id;
             const isAdmin = data.role === "admin";
 
-            // If this teacher has a schedule name mapped, show a nice link indicator badge right under their name
+            // Add this name to our autocomplete dropdown list!
+            datalistHTML += `<option value="${name}">`;
+
             const aliasBadge = data.scheduleAlias 
                 ? `<div style="font-size: 0.8rem; color: #0277bd; margin-top: 4px; font-weight: normal;">🔗 Linked Schedule: <strong>${data.scheduleAlias}</strong></div>` 
                 : ``;
 
-            // Build standard checkbox styled beautifully with center alignment
             const checkboxHTML = `
                 <div style="text-align: center;">
                     <input type="checkbox" class="teacher-admin-toggle" data-email="${email}" ${isAdmin ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer;" />
                 </div>
             `;
 
-            // Included class="staff-roster-row" for search engine visibility
             html += `
                 <tr class="staff-roster-row" style="border-bottom: 1px solid #eee; transition: background 0.2s;" onmouseover="this.style.background='#f9f9f9'" onmouseout="this.style.background='white'">
                     <td style="padding: 12px; color: #333; font-weight: 500;">
@@ -1276,6 +1287,13 @@ function listenToTeacherRoster() {
         });
         
         tbody.innerHTML = html;
+
+        // Push the compiled list into the datalist for the Teacher Edit Modal
+        const datalist = document.getElementById("staff-list-options");
+        if (datalist) {
+            datalist.innerHTML = datalistHTML;
+        }
+
     }, (error) => {
         console.error("Error fetching teachers:", error);
         tbody.innerHTML = '<tr><td colspan="3" style="padding: 20px; text-align: center; color: var(--pirate-red);">Error loading teachers. Check console.</td></tr>';
@@ -1475,3 +1493,279 @@ function renderUnmappedUI(unmappedNames, staffList) {
         });
     });
 }
+
+// ==========================================
+// DYNAMIC TEACHER SCHEDULE CONTROLLER (Firebase + Rotation Days)
+// ==========================================
+
+document.addEventListener("click", async (e) => {
+    if (e.target && e.target.id === "btn-open-teacher-schedule") {
+        document.getElementById("teacher-schedule-modal").classList.remove("hidden");
+        const snap = await getDoc(doc(db, "settings", "master_schedule"));
+        if (snap.exists()) renderTeacherScheduleTable(snap.data());
+    }
+    if (e.target && e.target.id === "close-teacher-schedule-modal") {
+        document.getElementById("teacher-schedule-modal").classList.add("hidden");
+    }
+});
+
+setTimeout(() => {
+    const importBtn = document.getElementById("btn-import-teacher-schedule");
+    if (importBtn) importBtn.addEventListener("click", processTeacherCSVImport);
+}, 1000);
+
+/**
+ * Parses the CSV, extracts Teacher Names AND Rotation Days, and pushes to Firebase
+ */
+async function processTeacherCSVImport() {
+    const fileInput = document.getElementById("file-teacher-schedule");
+    const statusText = document.getElementById("teacher-import-status");
+    
+    if (!fileInput || !fileInput.files.length) {
+        statusText.style.color = "var(--pirate-red)";
+        statusText.innerText = "⚠️ Please select a valid CSV file first.";
+        return;
+    }
+
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+
+    reader.onload = async function(e) {
+        try {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+            const headers = lines[0].split(",");
+
+            const cleanSchedule = {}; 
+            headers.forEach(h => {
+                const period = h.trim();
+                if (period !== "Room Name" && period !== "0") cleanSchedule[period] = {};
+            });
+
+            // Smart Extractor for both Name and Days
+            function extractTeacherInfo(rawText) {
+                if (!rawText || rawText.toLowerCase() === 'nan') return null;
+
+                // 1. Grab Teacher Name
+                let teacherName = null;
+                const nameMatch = rawText.match(/(M[rs]s?\.?\s+[A-Za-z\-]+|Dr\.?\s+[A-Za-z\-]+)/i);
+                if (nameMatch) teacherName = nameMatch[1].trim();
+                else if (rawText.toLowerCase().includes("spanish")) teacherName = "Spanish"; 
+                if (!teacherName) return null;
+
+                // 2. Grab Rotation Pattern (looks for exactly 6 chars of numbers/hyphens)
+                let activeDays = [1, 2, 3, 4, 5, 6]; // Default to every day
+                const daysMatch = rawText.match(/([1-6\-]{6})/); 
+                if (daysMatch) {
+                    const dayString = daysMatch[1]; // e.g., "-2-4-6" or "1-3-5-"
+                    // Split the string, remove hyphens, convert to numbers -> [2, 4, 6]
+                    activeDays = dayString.split('').filter(c => c !== '-').map(Number);
+                }
+
+                return { teacher: teacherName, days: activeDays };
+            }
+
+            for (let i = 1; i < lines.length; i++) {
+                const rowCells = [];
+                let currentCell = "", inQuotes = false;
+                for (let char of lines[i]) {
+                    if (char === '"') inQuotes = !inQuotes;
+                    else if (char === ',' && !inQuotes) { rowCells.push(currentCell.trim()); currentCell = ""; }
+                    else currentCell += char;
+                }
+                rowCells.push(currentCell.trim());
+
+                let roomName = rowCells[0].toLowerCase().replace(/room\s+/i, '').trim();
+                if (!roomName) continue;
+
+                headers.forEach((h, idx) => {
+                    const period = h.trim();
+                    if (cleanSchedule[period]) {
+                        const info = extractTeacherInfo(rowCells[idx]);
+                        if (info) {
+                            if (!cleanSchedule[period][roomName]) cleanSchedule[period][roomName] = [];
+                            
+                            // Prevent duplicate entries if the CSV has messy repeating lines
+                            const exists = cleanSchedule[period][roomName].find(t => t.teacher === info.teacher && JSON.stringify(t.days) === JSON.stringify(info.days));
+                            if (!exists) {
+                                cleanSchedule[period][roomName].push(info);
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Sync to Firebase!
+            await setDoc(doc(db, "settings", "master_schedule"), cleanSchedule);
+
+            statusText.style.color = "green";
+            statusText.innerText = `✅ Successfully mapped Teachers & Rotation Days!`;
+            
+            renderTeacherScheduleTable(cleanSchedule);
+        } catch (error) {
+            console.error(error);
+            statusText.style.color = "var(--pirate-red)";
+            statusText.innerText = `❌ Error processing file. Check console.`;
+        }
+    };
+
+    reader.readAsText(file);
+}
+
+/**
+ * Visual HTML grid showing Teachers. Now Clickable for Manual Editing!
+ */
+window.currentLiveScheduleData = null; // Store globally so we can edit it
+
+function renderTeacherScheduleTable(scheduleObj) {
+    window.currentLiveScheduleData = scheduleObj; 
+    const headerRow = document.getElementById("teacher-table-header");
+    const tbody = document.getElementById("teacher-table-tbody");
+    if (!headerRow || !tbody || !scheduleObj) return;
+
+    const allRooms = new Set();
+    Object.values(scheduleObj).forEach(pObj => Object.keys(pObj).forEach(room => allRooms.add(room)));
+    const sortedRooms = Array.from(allRooms).sort();
+    const periods = Object.keys(scheduleObj).sort((a,b) => parseInt(a) - parseInt(b));
+
+    let headerHtml = `<th style="padding: 12px; border-bottom: 2px solid #dee2e6;">Room</th>`;
+    periods.forEach(p => headerHtml += `<th style="padding: 12px; border-bottom: 2px solid #dee2e6;">Period ${p}</th>`);
+    headerRow.innerHTML = headerHtml;
+
+    let rowsHtml = "";
+    sortedRooms.forEach(room => {
+        let rowHtml = `<tr><td style="padding: 10px; font-weight: bold; border-bottom: 1px solid #eee;">${room.toUpperCase()}</td>`;
+        periods.forEach(p => {
+            const assignments = scheduleObj[p][room];
+            let cellHtml = "<span style='color:#ccc'>-</span>";
+            
+            if (assignments && assignments.length > 0) {
+                cellHtml = assignments.map(a => {
+                    const dayBadge = a.days.length === 6 ? "All Days" : `Days: ${a.days.join(",")}`;
+                    return `<div>${a.teacher} <span style="font-size: 0.75rem; color: #888;">(${dayBadge})</span></div>`;
+                }).join("");
+            }
+            // Add a clickable class and data attributes so we know what cell was clicked
+            rowHtml += `<td class="editable-schedule-cell" data-room="${room}" data-period="${p}" style="padding: 10px; border-bottom: 1px solid #eee; vertical-align: top; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#fff3cd'" onmouseout="this.style.background='transparent'">${cellHtml}</td>`;
+        });
+        rowHtml += `</tr>`;
+        rowsHtml += rowHtml;
+    });
+
+    tbody.innerHTML = rowsHtml;
+}
+
+// ==========================================
+// MANUAL EDIT CONTROLS (Schedule & Roster)
+// ==========================================
+document.addEventListener("click", async (e) => {
+    // --- 1. CLICK A CELL TO EDIT SCHEDULE ---
+    const cell = e.target.closest(".editable-schedule-cell");
+    if (cell) {
+        const room = cell.getAttribute("data-room");
+        const period = cell.getAttribute("data-period");
+        
+        document.getElementById("edit-cell-room").value = room;
+        document.getElementById("edit-cell-period").value = period;
+        document.getElementById("edit-cell-title").innerText = `Edit: ${room.toUpperCase()} (Period ${period})`;
+        
+        // Auto-fill existing data if there is any
+        const existingData = window.currentLiveScheduleData[period][room];
+        if (existingData && existingData.length > 0) {
+            document.getElementById("edit-cell-teacher").value = existingData[0].teacher;
+        } else {
+            document.getElementById("edit-cell-teacher").value = "";
+        }
+        
+        document.getElementById("edit-schedule-cell-modal").classList.remove("hidden");
+    }
+
+    // --- 2. SAVE CELL TO FIREBASE ---
+    if (e.target.id === "btn-save-cell") {
+        const room = document.getElementById("edit-cell-room").value;
+        const period = document.getElementById("edit-cell-period").value;
+        const teacher = document.getElementById("edit-cell-teacher").value.trim();
+        const rotSelect = document.getElementById("edit-cell-rotation").value;
+        
+        if (!teacher) return alert("Please enter a teacher name.");
+        
+        let days = [];
+        if (rotSelect === "custom") {
+            days = document.getElementById("edit-cell-custom-days").value.split(",").map(n => parseInt(n.trim()));
+        } else {
+            days = rotSelect.split(",").map(Number);
+        }
+
+        // Update the live object memory
+        if (!window.currentLiveScheduleData[period]) window.currentLiveScheduleData[period] = {};
+        window.currentLiveScheduleData[period][room] = [{ teacher, days }];
+
+        // Push to Firebase instantly
+        e.target.innerText = "Saving...";
+        await setDoc(doc(db, "settings", "master_schedule"), window.currentLiveScheduleData);
+        
+        // Refresh Table UI
+        renderTeacherScheduleTable(window.currentLiveScheduleData);
+        document.getElementById("edit-schedule-cell-modal").classList.add("hidden");
+        e.target.innerText = "Save";
+    }
+
+    // --- 3. CLEAR CELL COMPLETELY ---
+    if (e.target.id === "btn-clear-cell") {
+        const room = document.getElementById("edit-cell-room").value;
+        const period = document.getElementById("edit-cell-period").value;
+        
+        if (window.currentLiveScheduleData[period] && window.currentLiveScheduleData[period][room]) {
+            delete window.currentLiveScheduleData[period][room];
+            await setDoc(doc(db, "settings", "master_schedule"), window.currentLiveScheduleData);
+            renderTeacherScheduleTable(window.currentLiveScheduleData);
+        }
+        document.getElementById("edit-schedule-cell-modal").classList.add("hidden");
+    }
+
+    // Modal Cancels & Toggles
+    if (e.target.id === "btn-cancel-cell") document.getElementById("edit-schedule-cell-modal").classList.add("hidden");
+    
+    const rotDropdown = document.getElementById("edit-cell-rotation");
+    if (rotDropdown) {
+        rotDropdown.addEventListener("change", (ev) => {
+            if (ev.target.value === "custom") document.getElementById("edit-cell-custom-days-container").classList.remove("hidden");
+            else document.getElementById("edit-cell-custom-days-container").classList.add("hidden");
+        });
+    }
+
+    // --- 4. MANUALLY ADD TEACHER TO ROSTER ---
+    // (Assuming you add a button with ID 'btn-open-add-teacher' to your main roster page)
+    if (e.target.id === "btn-open-add-teacher") {
+        document.getElementById("add-teacher-modal").classList.remove("hidden");
+    }
+    
+    if (e.target.id === "btn-save-new-teacher") {
+        const name = document.getElementById("new-teacher-name").value.trim();
+        const email = document.getElementById("new-teacher-email").value.trim().toLowerCase();
+        
+        if (!name || !email) return alert("Please fill out both Name and Email.");
+        
+        e.target.innerText = "Saving...";
+        try {
+            await setDoc(doc(db, "users", email), {
+                displayName: name,
+                email: email,
+                role: "teacher"
+            }, { merge: true });
+            
+            document.getElementById("new-teacher-name").value = "";
+            document.getElementById("new-teacher-email").value = "";
+            document.getElementById("add-teacher-modal").classList.add("hidden");
+            alert("Teacher successfully added to the database!");
+        } catch (err) {
+            console.error(err);
+            alert("Error adding teacher.");
+        }
+        e.target.innerText = "Save Teacher";
+    }
+
+    if (e.target.id === "btn-cancel-new-teacher") {
+        document.getElementById("add-teacher-modal").classList.add("hidden");
+    }
+});
