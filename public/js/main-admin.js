@@ -7,7 +7,7 @@ import {
 } from "./modules/admin-engine.js";
 import { db } from "./firebase-config.js";
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
-import { schoolMapSVG } from "./map.js";
+import { MapController } from "./modules/map-engine.js";
 import { initializeTimeEngine } from "./modules/time-engine.js";
 import { doc, setDoc, getDoc, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { fetchAllStudents, listenToPendingPasses, listenToActivePasses } from "./modules/pass-engine.js";
@@ -272,7 +272,8 @@ document.addEventListener("click", async (e) => {
             passData.destination = "Current Class";
         } else {
             const purpose = document.getElementById("proxy-purpose").value.trim();
-            const destination = document.getElementById("proxy-destination-input").value.trim();
+            const destInput = document.getElementById("proxy-destination-input");
+            const destination = destInput ? destInput.value.trim() : "";
             const date = document.getElementById("proxy-date").value;
             const when = document.getElementById("proxy-when").value;
             const duration = document.getElementById("proxy-duration").value;
@@ -286,6 +287,10 @@ document.addEventListener("click", async (e) => {
             passData.status = "scheduled"; // Routes into Student Messages view
             passData.purpose = purpose;
             passData.destination = destination;
+            
+            // 🌟 NEW: Grab the teacher name we saved earlier and put it in the payload!
+            passData.targetTeacher = destInput?.dataset?.teacher || "Unknown";
+
             passData.scheduledDate = date;
             passData.scheduledWhen = when;
             passData.duration = duration;
@@ -297,7 +302,7 @@ document.addEventListener("click", async (e) => {
         if (typeof createNewPass === "function") {
             const success = await createNewPass(passData);
             if (success) {
-                if (sendPassModal) sendPassModal.classList.add("hidden");
+                if (typeof sendPassModal !== "undefined" && sendPassModal) sendPassModal.classList.add("hidden");
                 alert(`✅ Pass successfully pushed to ${studentName}!`);
             }
         }
@@ -347,19 +352,62 @@ document.addEventListener("click", async (e) => {
         document.getElementById("emergency-modal").classList.add("hidden");
     }
 
-    // Map Popout Modal (Now supports both the main dashboard button and the Proxy Modal button)
+    // Map Popout Modal (Handles both Admin Restrictions & Proxy Passes natively!)
     if (e.target.id === "btn-open-map-popout" || e.target.id === "btn-proxy-open-map") {
-        e.preventDefault(); // Prevents page reload if inside a form
+        e.preventDefault(); 
         const mapModal = document.getElementById("map-popout-modal");
+        const triggerId = e.target.id;
+        
         if (mapModal) {
             mapModal.classList.remove("hidden");
-            // Make sure the map has a high enough z-index to appear OVER the send pass modal
             mapModal.style.zIndex = "10000"; 
-            if (typeof loadModalMap === "function") loadModalMap(); 
+            const modalTitle = mapModal.querySelector("h2");
+
+            if (triggerId === "btn-open-map-popout") {
+                // 🔴 ADMIN RESTRICTION MODE
+                if (modalTitle) modalTitle.innerText = "🗺️ Click Rooms to Restrict";
+                new MapController({
+                    containerId: "full-map-container",
+                    mode: "admin_restrict",
+                    selectedRooms: typeof selectedRooms !== "undefined" ? selectedRooms : [], 
+                    onRoomSelect: (updatedRoomsArray) => {
+                        if (typeof selectedRooms !== "undefined") selectedRooms = updatedRoomsArray; 
+                        if (typeof updateRoomDisplay === "function") updateRoomDisplay(); 
+                    }
+                });
+            } else if (triggerId === "btn-proxy-open-map") {
+                // 🟢 PROXY PASS MODE
+                if (modalTitle) modalTitle.innerText = "🗺️ Select Destination";
+                
+                // 🌟 NEW: Check what time the pass is scheduled for!
+                let selectedPeriod = null;
+                const whenType = document.getElementById("proxy-when")?.value;
+                if (whenType === "class_period") {
+                    selectedPeriod = document.getElementById("proxy-when-period")?.value;
+                }
+
+                new MapController({
+                    containerId: "full-map-container",
+                    mode: "proxy_pass",
+                    periodOverride: selectedPeriod, // Send the time to the map!
+                    onRoomSelect: (selection) => {
+                        const proxyInput = document.getElementById("proxy-destination-input") || 
+                                           document.getElementById("input-proxy-destination");
+                        if (proxyInput) {
+                            proxyInput.value = selection.room;
+                            // 🌟 NEW: Secretly save the teacher's name directly to the input field's dataset!
+                            proxyInput.dataset.teacher = selection.teacher || "Unknown";
+                        }
+                        mapModal.classList.add("hidden"); 
+                    }
+                });
+            }
         }
     }
+
     if (e.target.id === "btn-close-map-popout") {
-        document.getElementById("map-popout-modal").classList.add("hidden");
+        const mapModal = document.getElementById("map-popout-modal");
+        if (mapModal) mapModal.classList.add("hidden");
     }
 
     if (e.target.id === "btn-open-bell-schedule") {
@@ -704,58 +752,6 @@ async function openRestrictionModal(student) {
     renderSelectedPeers();
 
     document.getElementById("restriction-modal").classList.remove("hidden");
-}
-
-function loadModalMap() {
-    const container = document.getElementById("full-map-container");
-    if (!container) return; 
-    
-    if (!container.querySelector("svg")) {
-        container.innerHTML = schoolMapSVG;
-        
-        const svg = container.querySelector("svg");
-        svg.style.width = "100%";
-        svg.style.height = "100%";
-        
-        const mapNodes = svg.querySelectorAll(".map-node"); 
-        mapNodes.forEach(node => {
-            node.style.cursor = "pointer";
-            node.addEventListener("click", () => {
-                const roomId = node.getAttribute("data-id");
-                if (!roomId) return;
-                
-                if (selectedRooms.includes(roomId)) {
-                    selectedRooms = selectedRooms.filter(r => r !== roomId);
-                } else {
-                    selectedRooms.push(roomId);
-                }
-                updateRoomDisplay();
-                applyMapHighlights();
-            });
-        });
-    }
-    applyMapHighlights();
-}
-
-function applyMapHighlights() {
-    const svg = document.querySelector("#full-map-container svg");
-    if(!svg) return;
-    
-    const mapNodes = svg.querySelectorAll(".map-node");
-    mapNodes.forEach(node => {
-        const roomId = node.getAttribute("data-id");
-        if(!roomId) return;
-        
-        const shape = node.querySelector(".zone-box, .corridor-box, path, rect, polygon") || node;
-        
-        if (selectedRooms.includes(roomId)) {
-            shape.style.fill = "#ef1a14"; // Solid Pirate Red
-            shape.style.opacity = "0.7";
-        } else {
-            shape.style.fill = ""; 
-            shape.style.opacity = "1";
-        }
-    });
 }
 
 function updateRoomDisplay() {

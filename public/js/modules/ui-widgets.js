@@ -109,6 +109,11 @@ export function renderPassList(passes, containerId, countId) {
             `;
         }
         
+        // 🌟 NEW: Format the destination to include the teacher's name if we have it!
+        const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown") 
+            ? ` (${pass.targetTeacher})` 
+            : "";
+        
         return `
             <div class="pass-card" style="background: white; border: 1px solid #eaedf2; border-left: 5px solid ${pass.status === 'active' ? '#4caf50' : '#ff9800'}; padding: 15px; margin-bottom: 12px; border-radius: var(--radius, 8px); box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 5px;">
@@ -116,7 +121,7 @@ export function renderPassList(passes, containerId, countId) {
                     <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee;">${pass.type}</span>
                 </div>
                 <div style="color: #555; font-size: 0.95rem; margin-bottom: 5px;">
-                    📍 Destination: <strong>${pass.destination}</strong>
+                    📍 Destination: <strong>${pass.destination}${teacherText}</strong>
                 </div>
                 ${pass.senderName ? `<div style="color: #888; font-size: 0.85rem; font-style: italic;">Initiated by: ${pass.senderName}</div>` : ''}
                 ${actionButtons}
