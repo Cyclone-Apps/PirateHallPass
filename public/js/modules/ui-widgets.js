@@ -36,15 +36,27 @@ export function renderHeader(user, role) {
     const adminToolbar = document.getElementById("admin-toolbar-widget");
     if (adminToolbar) {
         adminToolbar.className = "admin-toolbar"; 
+        adminToolbar.style.display = "flex";
+        adminToolbar.style.flexDirection = "column";
+        adminToolbar.style.gap = "10px";
+
         adminToolbar.innerHTML = `
-            <button id="btn-emergency" class="danger-btn toolbar-btn" style="border: none;">🚨 Emergency Controls</button>
-            <button id="btn-open-proxy-setup" class="toolbar-btn" style="background-color: #8e24aa; color: white; border: none;">💻 Open Pass As Student</button>
-            <button id="btn-open-management" class="toolbar-btn" style="background-color: #0277bd; color: white; border: none;">👥 Student Management</button>
-            <button id="btn-open-teacher-management" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">👨‍🏫 Teacher Management</button>            
-            <button id="btn-open-teacher-schedule" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">📋 Teacher Schedule</button>
-            <button id="btn-open-bell-schedule" class="toolbar-btn" style="background-color: #4caf50; color: white; border: none;">⏱️ Bell Schedules</button>
-            <button id="btn-open-academic-cal-modal" class="toolbar-btn" style="background-color: var(--pirate-red); color: white; border: none;">📅 Academic Calendar</button>
-            <button id="btn-open-gcal-modal" class="toolbar-btn" style="background-color: #333; color: white; border: none;">⚙️ Google Calendar Setup</button>
+            <!-- Row 1: Active Pass & Student Operations -->
+            <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button id="btn-emergency" class="danger-btn toolbar-btn" style="border: none;">🚨 Emergency Controls</button>
+                <button id="btn-open-send-pass" class="toolbar-btn" style="background-color: #2e7d32; color: white; border: none;">🎫 Send Student a Pass</button>
+                <button id="btn-open-proxy-setup" class="toolbar-btn" style="background-color: #8e24aa; color: white; border: none;">💻 Open Pass As Student</button>
+                <button id="btn-open-management" class="toolbar-btn" style="background-color: #0277bd; color: white; border: none;">👥 Student Management</button>
+            </div>
+            
+            <!-- Row 2: Schedules & Building Management Settings -->
+            <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button id="btn-open-teacher-management" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">👨‍🏫 Teacher Management</button>            
+                <button id="btn-open-teacher-schedule" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">📋 Teacher Schedule</button>
+                <button id="btn-open-bell-schedule" class="toolbar-btn" style="background-color: #4caf50; color: white; border: none;">⏱️ Bell Schedules</button>
+                <button id="btn-open-academic-cal-modal" class="toolbar-btn" style="background-color: var(--pirate-red); color: white; border: none;">📅 Academic Calendar</button>
+                <button id="btn-open-gcal-modal" class="toolbar-btn" style="background-color: #333; color: white; border: none;">⚙️ Google Calendar Setup</button>
+            </div>
         `;
     }
     
@@ -53,6 +65,7 @@ export function renderHeader(user, role) {
         teacherToolbar.className = "teacher-toolbar";
         teacherToolbar.innerHTML = `
             <button id="btn-create-pass" class="toolbar-btn" style="background-color: var(--pirate-red); color: white; border: none;">🎟️ Quick Outbound Pass</button>
+            <button id="btn-open-send-pass" class="toolbar-btn" style="background-color: #2e7d32; color: white; border: none;">🎫 Send Student a Pass</button>
             <button id="btn-open-proxy-setup" class="toolbar-btn" style="background-color: #8e24aa; color: white; border: none;">💻 Open Pass As Student</button>
             <button id="btn-emergency" class="danger-btn toolbar-btn" style="border: none;">🚨 Emergency</button>
         `;

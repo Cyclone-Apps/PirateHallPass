@@ -1,4 +1,4 @@
-// map.js
+// js/modules/map.js
 export const schoolMapSVG = `
 <svg id="interactive-school-map" class="floorplan-svg" viewBox="-50 -20 1650 1200" preserveAspectRatio="xMidYMid meet" style="transition: all 0.4s ease-in-out;">
     <defs>
@@ -124,3 +124,62 @@ export const schoolMapSVG = `
 
 </svg>
 `;
+
+// --- 🌐 GLOBAL INTERACTIVE MAP INTERACTION ENGINE ---
+// Listens dynamically across the entire app whenever the interactive map is rendered
+document.addEventListener("click", (e) => {
+    // Find the closest map node element inside our SVG
+    const mapNode = e.target.closest(".map-node");
+    if (!mapNode) return;
+
+    // Extract the exact room or zone unique identifier
+    const targetDestination = mapNode.getAttribute("data-id");
+    if (!targetDestination) return;
+
+    // Filter out core architectural walkways from assignment arrays
+    if (
+        targetDestination.includes("Hallway") || 
+        targetDestination.includes("Hall") || 
+        targetDestination.includes("Corridor") ||
+        targetDestination.includes("Block")
+    ) {
+        return; 
+    }
+
+    let targetUpdated = false;
+
+    // 1. Identify if the Proxy Search Modal is active and update it
+    const proxyInput = document.getElementById("proxy-destination-input");
+    const proxyModal = document.getElementById("modal-proxy-search");
+    if (proxyInput && proxyModal && !proxyModal.classList.contains("hidden")) {
+        proxyInput.value = targetDestination;
+        targetUpdated = true;
+    }
+
+    // 2. Identify if the Standard Pass Creation Modal is active and update it
+    const standardInput = document.getElementById("input-destination");
+    const standardModal = document.getElementById("new-pass-modal");
+    if (!targetUpdated && standardInput && standardModal && !standardModal.classList.contains("hidden")) {
+        standardInput.value = targetDestination;
+        targetUpdated = true;
+    }
+
+    // 3. Optional User Interface Enhancement: Close popout/fullscreen map if active
+    if (targetUpdated) {
+        const mapPopoutModal = document.getElementById("map-popout-modal");
+        if (mapPopoutModal && !mapPopoutModal.classList.contains("hidden")) {
+            mapPopoutModal.classList.add("hidden");
+        }
+        
+        // Apply visual toggle tracking across current render cycle
+        document.querySelectorAll("#interactive-school-map .zone-box").forEach(box => {
+            box.style.stroke = "";
+            box.style.strokeWidth = "";
+        });
+        const activeBox = mapNode.querySelector(".zone-box");
+        if (activeBox) {
+            activeBox.style.stroke = "#2e7d32"; // Success Green outline tracking selector
+            activeBox.style.strokeWidth = "3px";
+        }
+    }
+});

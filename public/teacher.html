@@ -25,7 +25,7 @@
 
         <section id="teacher-toolbar-widget"></section>
 
-        <div class="columns-container">
+       <div class="columns-container" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
             <div id="pending-passes-widget" class="dashboard-column">
                 <h2>Pending Requests <span id="pending-count" class="badge">0</span></h2>
                 <div id="list-pending-passes"></div>
@@ -34,6 +34,12 @@
             <div id="active-passes-widget" class="dashboard-column">
                 <h2>Active Passes <span id="active-count" class="badge">0</span></h2>
                 <div id="list-active-passes"></div>
+            </div>
+
+            <div id="sent-passes-widget" class="dashboard-column">
+                <h2>Sent Passes <span id="sent-count" class="badge">0</span></h2>
+                <div id="list-sent-passes" class="pass-list-container">
+                    </div>
             </div>
         </div>
 
@@ -117,6 +123,94 @@
         <div style="height: 80vh; max-width: 95vw; aspect-ratio: 2360 / 1640; margin: 0 auto; background: black; border-radius: 20px; padding: 15px; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
             <iframe id="proxy-iframe" src="" style="width: 100%; height: 100%; border: none;"></iframe>
         </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SEND STUDENT A PASS (PROXY) MODAL          -->
+    <!-- ========================================== -->
+    <div id="modal-proxy-search" class="modal-overlay hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 9999;">
+        <div class="modal" style="background: #ffffff !important; color: #333333 !important; padding: 25px; border-radius: 10px; width: 100%; max-width: 550px; max-height: 90vh; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.3); box-sizing: border-box;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0; color: #1a1a1a;">🎫 Send/Schedule a Pass</h2>
+                <button class="close-btn" id="close-proxy-search" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+                
+                <label style="font-size: 0.85rem; font-weight: bold; color: #555; text-transform: uppercase;">1. Select Student</label>
+                <input type="text" id="proxy-search-input" placeholder="Start typing name..." style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%; box-sizing: border-box;">
+                <div id="proxy-datalist" class="autocomplete-dropdown hidden" style="position: absolute; background: white; border: 1px solid #ccc; max-height: 150px; overflow-y: auto; z-index: 10000; width: calc(100% - 50px); max-width: 500px;"></div>
+                <input type="hidden" id="proxy-email-input">
+
+                <label style="font-size: 0.85rem; font-weight: bold; color: #555; text-transform: uppercase;">2. Pass Type</label>
+                <select id="proxy-pass-type" style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%;">
+                    <option value="tardy">Tardy Pass (Immediate Override)</option>
+                    <option value="request" selected>Request Pass (Optional / Future)</option>
+                    <option value="required">Required Pass (Mandatory / Future)</option>
+                </select>
+
+                <label style="font-size: 0.85rem; font-weight: bold; color: #555; text-transform: uppercase;">3. Purpose</label>
+                <input type="text" id="proxy-purpose" placeholder="e.g., Make up quiz, counselor meeting..." style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%; box-sizing: border-box;">
+
+                <label style="font-size: 0.85rem; font-weight: bold; color: #555; text-transform: uppercase;">4. Destination</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="proxy-destination-input" readonly placeholder="Click Map to select..." style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; flex-grow: 1; background: #f9f9f9; cursor: not-allowed;">
+                    <button id="btn-proxy-open-map" class="toolbar-btn" style="background: var(--pirate-blue); color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer;">🗺️ Map</button>
+                </div>
+
+                <div id="proxy-future-options" style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px; padding-top: 15px; border-top: 1px dashed #ccc;">
+                    
+                    <label style="font-size: 0.85rem; font-weight: bold; color: #555; text-transform: uppercase;">5. Date</label>
+                    <input type="date" id="proxy-date" style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%; box-sizing: border-box;">
+
+                    <label style="font-size: 0.85rem; font-weight: bold; color: #555; text-transform: uppercase;">6. When</label>
+                    <select id="proxy-when" style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%;">
+                        <option value="available">When Available</option>
+                        <option value="specific_time">Specific Time</option>
+                        <option value="class_period">Class Period</option>
+                    </select>
+                    
+                    <!-- Hidden Sub-inputs for "When" -->
+                    <input type="time" id="proxy-when-time" class="hidden" style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%; box-sizing: border-box; margin-top: 5px;">
+                    
+                    <select id="proxy-when-period" class="hidden" style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%; margin-top: 5px;">
+                        <option value="" disabled selected>Select Period...</option>
+                        <option value="1">1st Period</option>
+                        <option value="2">2nd Period</option>
+                        <option value="3">3rd Period</option>
+                        <option value="4">4th Period</option>
+                        <option value="5">5th Period</option>
+                        <option value="6">6th Period</option>
+                        <option value="7">7th Period</option>
+                        <option value="8">8th Period</option>
+                        <option value="9">9th Period</option>
+                    </select>
+
+                    <label style="font-size: 0.85rem; font-weight: bold; color: #555; text-transform: uppercase;">7. Duration</label>
+                    <select id="proxy-duration" style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%;">
+                        <option value="1">1 Minute</option>
+                        <option value="5" selected>5 Minutes</option>
+                        <option value="10">10 Minutes</option>
+                        <option value="rest_of_class">Rest of Class (Will not return)</option>
+                    </select>
+                </div>
+
+                <button class="card-btn" id="btn-submit-proxy-pass" style="width: 100%; padding: 15px; margin-top: 10px; background-color: #2e7d32; color: white; border: none; font-weight: bold; font-size: 1.1rem; border-radius: 6px; cursor: pointer;" disabled>Send Pass</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="map-popout-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: white; display: flex; flex-direction: column; z-index: 1200; overflow: hidden;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; background: #eee; padding: 15px 30px; border-bottom: 2px solid #ccc; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 10;">
+            <h2 style="margin: 0; color: #333;">🗺️ Click Rooms to Restrict</h2>
+            <button id="btn-close-map-popout" class="primary-btn" style="background-color: var(--pirate-red); border: none; padding: 12px 30px; font-size: 1.2rem; font-weight: bold; border-radius: 6px; cursor: pointer;">✅ Done</button>
+        </div>
+        
+        <!-- The ID here MUST be full-map-container -->
+        <div id="full-map-container" style="flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; background: #fafafa; padding: 20px;">
+        </div>
+        
     </div>
 
     <script type="module" src="js/main-teacher.js"></script>

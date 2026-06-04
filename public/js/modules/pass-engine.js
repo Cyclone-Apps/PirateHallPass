@@ -51,6 +51,24 @@ export function listenToActivePasses(callback) {
 }
 
 /**
+ * Listens for Scheduled Passes in real-time.
+ * @param {function} callback - Function to run when data updates
+ */
+export function listenToScheduledPasses(callback) {
+    const q = query(passesRef, where("status", "==", "scheduled"));
+    
+    return onSnapshot(q, (snapshot) => {
+        const passes = [];
+        snapshot.forEach((doc) => {
+            passes.push({ id: doc.id, ...doc.data() });
+        });
+        callback(passes);
+    }, (error) => {
+        console.error("Error listening to scheduled passes:", error);
+    });
+}
+
+/**
  * Updates the status of a pass (e.g., active, returned, rejected)
  */
 export async function updatePassStatus(passId, newStatus) {
