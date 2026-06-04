@@ -390,10 +390,20 @@ document.addEventListener("click", async (e) => {
         }
         const finalDisplayName = isProxyActive ? `${studentName} (Created by ${proxyTeacherName})` : studentName;
 
+        // 🌟 NEW: Figure out the student's CURRENT teacher based on their schedule
+        let currentOriginTeacher = "Unknown";
+        if (window.currentStudentProfile && window.currentStudentProfile.schedule) {
+            const currentClass = window.currentStudentProfile.schedule[assignedPeriod];
+            if (currentClass && currentClass.teacher) {
+                currentOriginTeacher = currentClass.teacher;
+            }
+        }
+
         const passData = {
             studentDisplayName: finalDisplayName,
             destination: dest,
             targetTeacher: window.selectedDestinationTeacher || "Unknown", 
+            originTeacher: currentOriginTeacher, // 🌟 NEW: Saves their current teacher!
             period: assignedPeriod, 
             type: "standard",
             initiatedBy: isProxyActive ? "teacher_proxy" : "student",
@@ -404,7 +414,6 @@ document.addEventListener("click", async (e) => {
             waitlistPosition: evaluation.waitlistPosition || 0,
             recentTravels: evaluation.recentTravels || []
         };
-
         const success = await createNewPass(passData);
         
         if (success) {

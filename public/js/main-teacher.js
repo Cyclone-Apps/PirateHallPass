@@ -32,7 +32,17 @@ initAuthListener("teacher", async (user, role) => {
     }
 
     // Hook up real-time Firestore listeners to UI components
-    listenToPendingPasses((passes) => renderPassList(passes, "list-pending-passes", "pending-count"));
+    listenToPendingPasses((passes) => {
+        // 🌟 TEACHER FILTER: Only show passes where they are the Origin or Target
+        const myName = user.displayName;
+        const myPendingPasses = passes.filter(pass => 
+            pass.targetTeacher === myName || pass.originTeacher === myName
+        );
+        
+        renderPassList(myPendingPasses, "list-pending-passes", "pending-count");
+    });
+
+    // 🌟 ACTIVE PASSES: Unfiltered. Visible to all teachers for hallway monitoring!
     listenToActivePasses((passes) => renderPassList(passes, "list-active-passes", "active-count"));
     
     // Listen for Emergencies and drop down the banner

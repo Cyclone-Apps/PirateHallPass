@@ -10,8 +10,8 @@ import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { schoolMapSVG } from "./map.js";
 import { initializeTimeEngine } from "./modules/time-engine.js";
 import { doc, setDoc, getDoc, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { fetchAllStudents } from "./modules/pass-engine.js";
-import { renderHeader, setupStudentAutocomplete } from "./modules/ui-widgets.js";
+import { fetchAllStudents, listenToPendingPasses, listenToActivePasses } from "./modules/pass-engine.js";
+import { renderHeader, setupStudentAutocomplete, renderPassList } from "./modules/ui-widgets.js";
 
 // Call the function to start the background clock!
 initializeTimeEngine(); 
@@ -23,6 +23,23 @@ if (btnLogin) btnLogin.addEventListener("click", handleGoogleLogin);
 initAuthListener("admin", async (user, role) => {
     window.currentUser = user;
     renderHeader(user, role);
+
+    // =======================================================
+    // 🌟 ADMIN VIEW: GOD-MODE (Sees absolutely everything)
+    // =======================================================
+    if (typeof listenToPendingPasses === "function") {
+        listenToPendingPasses((passes) => {
+            // NO FILTER: Admins see all pending passes
+            renderPassList(passes, "list-pending-passes", "pending-count");
+        });
+    }
+
+    if (typeof listenToActivePasses === "function") {
+        listenToActivePasses((passes) => {
+            // NO FILTER: Admins see all active passes
+            renderPassList(passes, "list-active-passes", "active-count");
+        });
+    }
 
     // =======================================================
     // PRE-LOAD STUDENTS FOR VIRTUAL KIOSK
