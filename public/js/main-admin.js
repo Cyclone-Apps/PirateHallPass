@@ -9,7 +9,7 @@ import { db } from "./firebase-config.js";
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { MapController } from "./modules/map-engine.js";
 import { initializeTimeEngine } from "./modules/time-engine.js";
-import { doc, setDoc, getDoc, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { fetchAllStudents, listenToPendingPasses, listenToActivePasses } from "./modules/pass-engine.js";
 import { renderHeader, setupStudentAutocomplete, renderPassList } from "./modules/ui-widgets.js";
 
@@ -127,6 +127,19 @@ document.addEventListener("change", (e) => {
             }
         }
     }
+
+    // 🌟 NEW: The Lunch Pill Toggle (Supports A, B, and None)
+            const isA = lunchShift === "A";
+            const isB = lunchShift === "B";
+            
+            const lunchHTML = `
+                <div style="text-align: center;">
+                    <div class="teacher-lunch-pill" data-id="${docSnap.id}" data-lunch="${lunchShift || 'none'}" style="display: inline-flex; border-radius: 20px; overflow: hidden; border: 1px solid #ccc; cursor: pointer; user-select: none; font-size: 0.9rem;">
+                        <div class="lunch-option" data-value="A" style="padding: 6px 16px; background: ${isA ? '#c62828' : '#f8f9fa'}; color: ${isA ? 'white' : '#444'}; font-weight: bold; transition: 0.2s;">A</div>
+                        <div class="lunch-option" data-value="B" style="padding: 6px 16px; background: ${isB ? '#c62828' : '#f8f9fa'}; color: ${isB ? 'white' : '#444'}; font-weight: bold; border-left: 1px solid #ccc; transition: 0.2s;">B</div>
+                    </div>
+                </div>
+            `;
 
     // Handle "When" Dropdown Change (Specific Time vs Class Period)
     if (e.target.id === "proxy-when") {
@@ -1436,12 +1449,12 @@ function listenToTeacherRoster() {
     
     onSnapshot(q, (snapshot) => {
         if (snapshot.empty) {
-            tbody.innerHTML = '<tr><td colspan="3" style="padding: 20px; text-align: center; color: #888;">No staff records found. Import a CSV to begin.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" style="padding: 20px; text-align: center; color: #888;">No staff records found. Import a CSV to begin.</td></tr>';
             return;
         }
 
         let html = "";
-        let datalistHTML = ""; // NEW: Variable to hold autocomplete options
+        let datalistHTML = ""; 
         window.activeStaffList = []; 
 
         snapshot.forEach(docSnap => {
@@ -1452,8 +1465,10 @@ function listenToTeacherRoster() {
             const name = data.displayName || "Unknown";
             const email = data.email || docSnap.id;
             const isAdmin = data.role === "admin";
+            
+            // 🌟 Pull current lunch assignment (Default to "none" so no side is red initially if unassigned)
+            const lunchShift = data.lunch || "none";
 
-            // Add this name to our autocomplete dropdown list!
             datalistHTML += `<option value="${name}">`;
 
             const aliasBadge = data.scheduleAlias 
@@ -1466,6 +1481,19 @@ function listenToTeacherRoster() {
                 </div>
             `;
 
+            // 🌟 NEW: The Lunch Pill Toggle (Supports A, B, and None)
+            const isA = lunchShift === "A";
+            const isB = lunchShift === "B";
+            
+            const lunchHTML = `
+                <div style="text-align: center;">
+                    <div class="teacher-lunch-pill" data-id="${docSnap.id}" data-lunch="${lunchShift}" style="display: inline-flex; border-radius: 20px; overflow: hidden; border: 1px solid #ccc; cursor: pointer; user-select: none; font-size: 0.9rem;">
+                        <div class="lunch-option" data-value="A" style="padding: 6px 16px; background: ${isA ? '#c62828' : '#f8f9fa'}; color: ${isA ? 'white' : '#444'}; font-weight: bold; transition: 0.2s;">A</div>
+                        <div class="lunch-option" data-value="B" style="padding: 6px 16px; background: ${isB ? '#c62828' : '#f8f9fa'}; color: ${isB ? 'white' : '#444'}; font-weight: bold; border-left: 1px solid #ccc; transition: 0.2s;">B</div>
+                    </div>
+                </div>
+            `;
+
             html += `
                 <tr class="staff-roster-row" style="border-bottom: 1px solid #eee; transition: background 0.2s;" onmouseover="this.style.background='#f9f9f9'" onmouseout="this.style.background='white'">
                     <td style="padding: 12px; color: #333; font-weight: 500;">
@@ -1474,13 +1502,13 @@ function listenToTeacherRoster() {
                     </td>
                     <td style="padding: 12px; color: #666;">${email}</td>
                     <td style="padding: 12px;">${checkboxHTML}</td>
+                    <td style="padding: 12px;">${lunchHTML}</td>
                 </tr>
             `;
         });
         
         tbody.innerHTML = html;
 
-        // Push the compiled list into the datalist for the Teacher Edit Modal
         const datalist = document.getElementById("staff-list-options");
         if (datalist) {
             datalist.innerHTML = datalistHTML;
@@ -1488,7 +1516,7 @@ function listenToTeacherRoster() {
 
     }, (error) => {
         console.error("Error fetching teachers:", error);
-        tbody.innerHTML = '<tr><td colspan="3" style="padding: 20px; text-align: center; color: var(--pirate-red);">Error loading teachers. Check console.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="padding: 20px; text-align: center; color: var(--pirate-red);">Error loading teachers. Check console.</td></tr>';
     });
 }
 
@@ -1959,5 +1987,52 @@ document.addEventListener("click", async (e) => {
 
     if (e.target.id === "btn-cancel-new-teacher") {
         document.getElementById("add-teacher-modal").classList.add("hidden");
+    }
+});
+
+// 🌟 NEW: Listen for Lunch Pill Clicks
+document.addEventListener("click", async (e) => {
+    // Check if they clicked one of the A or B sides of the pill
+    const lunchOption = e.target.closest(".lunch-option");
+    if (!lunchOption) return;
+
+    // Get the parent pill container and its data
+    const pillContainer = lunchOption.closest(".teacher-lunch-pill");
+    if (!pillContainer) return;
+
+    const userId = pillContainer.getAttribute("data-id");
+    const currentLunch = pillContainer.getAttribute("data-lunch");
+    const clickedValue = lunchOption.getAttribute("data-value"); // "A" or "B"
+    
+    // Logic: If they click the already-red side, turn it off ("none"). Otherwise, turn it to what they clicked.
+    const newLunch = (currentLunch === clickedValue) ? "none" : clickedValue;
+
+    // 1. Optimistically update the UI so it feels instantaneous
+    pillContainer.setAttribute("data-lunch", newLunch);
+    const optA = pillContainer.querySelector('[data-value="A"]');
+    const optB = pillContainer.querySelector('[data-value="B"]');
+    
+    optA.style.background = newLunch === "A" ? "#c62828" : "#f8f9fa";
+    optA.style.color = newLunch === "A" ? "white" : "#444";
+    
+    optB.style.background = newLunch === "B" ? "#c62828" : "#f8f9fa";
+    optB.style.color = newLunch === "B" ? "white" : "#444";
+
+    try {
+        // 2. Save the change to Firestore
+        await updateDoc(doc(db, "users", userId), { 
+            lunch: newLunch 
+        });
+        console.log(`Updated lunch for ${userId} to ${newLunch}`);
+    } catch (error) {
+        console.error("Error updating lunch assignment:", error);
+        alert("Failed to save lunch assignment. Check console.");
+        
+        // 3. Revert UI visually if the database save fails!
+        pillContainer.setAttribute("data-lunch", currentLunch);
+        optA.style.background = currentLunch === "A" ? "#c62828" : "#f8f9fa";
+        optA.style.color = currentLunch === "A" ? "white" : "#444";
+        optB.style.background = currentLunch === "B" ? "#c62828" : "#f8f9fa";
+        optB.style.color = currentLunch === "B" ? "white" : "#444";
     }
 });
