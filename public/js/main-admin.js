@@ -10,7 +10,7 @@ import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { MapController } from "./modules/map-engine.js";
 import { initializeTimeEngine } from "./modules/time-engine.js";
 import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { fetchAllStudents, listenToPendingPasses, listenToActivePasses } from "./modules/pass-engine.js";
+import { fetchAllStudents, listenToPendingPasses, listenToActivePasses, listenToScheduledPasses } from "./modules/pass-engine.js";
 import { renderHeader, setupStudentAutocomplete, renderPassList } from "./modules/ui-widgets.js";
 
 // Call the function to start the background clock!
@@ -39,6 +39,26 @@ initAuthListener("admin", async (user, role) => {
             // NO FILTER: Admins see all active passes
             renderPassList(passes, "list-active-passes", "active-count");
         });
+    }
+
+// =======================================================
+    // 📅 NEW: LISTEN TO SCHEDULED/SENT PASSES
+    // =======================================================
+    if (typeof listenToScheduledPasses === "function") {
+        listenToScheduledPasses((passes) => {
+            renderSentPassesColumn(passes);
+        });
+    }
+
+    // 🔄 NEW: RE-RENDER WHEN DROPDOWN FILTERS CHANGE
+    const filterTeacherBtn = document.getElementById("filter-sent-teacher");
+    const filterStudentBtn = document.getElementById("filter-sent-student");
+
+    if (filterTeacherBtn) {
+        filterTeacherBtn.addEventListener("change", () => renderSentPassesColumn());
+    }
+    if (filterStudentBtn) {
+        filterStudentBtn.addEventListener("change", () => renderSentPassesColumn());
     }
 
     // =======================================================
@@ -2036,3 +2056,123 @@ document.addEventListener("click", async (e) => {
         optB.style.color = currentLunch === "B" ? "white" : "#444";
     }
 });
+
+// ====================================================================
+// SENT PASSES LOGIC (ADMIN)
+// ====================================================================
+let globalSentPasses = []; // Store them here so filters can re-render without hitting the DB
+
+/**
+ * Checks if a scheduled pass is in the past based on date and time.
+ */
+function isPassExpired(pass) {
+    if (!pass.scheduledDate) return false; 
+    
+    const now = new Date();
+    // Format today as YYYY-MM-DD
+    const todayStr = now.getFullYear() + "-" + 
+                     String(now.getMonth() + 1).padStart(2, '0') + "-" + 
+                     String(now.getDate()).padStart(2, '0');
+
+    // 1. Is the date strictly in the past?
+    if (pass.scheduledDate < todayStr) return true;
+
+    // 2. Is it today, but the specific time has already passed?
+    if (pass.scheduledDate === todayStr && pass.scheduledWhen === "specific_time" && pass.scheduledTime) {
+        const currentHour = String(now.getHours()).padStart(2, '0');
+        const currentMin = String(now.getMinutes()).padStart(2, '0');
+        const currentTimeStr = `${currentHour}:${currentMin}`;
+        
+        if (pass.scheduledTime < currentTimeStr) return true; 
+    }
+    
+    return false;
+}
+
+/**
+ * Filters, sorts, and renders the Sent Passes column
+ */
+function renderSentPassesColumn(passesFromDb) {
+    // Update global array if Firebase sent new data
+    if (passesFromDb) {
+        globalSentPasses = passesFromDb;
+    }
+
+    // 1. Remove Expired Passes
+    const validPasses = globalSentPasses.filter(p => !isPassExpired(p));
+
+    // 2. Setup Dropdowns
+    const teacherSelect = document.getElementById("filter-sent-teacher");
+    const studentSelect = document.getElementById("filter-sent-student");
+
+    // Remember what the user currently has selected so we don't reset it on live updates
+    const currentTeacher = teacherSelect ? teacherSelect.value : "ALL";
+    const currentStudent = studentSelect ? studentSelect.value : "ALL";
+
+    if (teacherSelect && studentSelect) {
+        const teachers = new Set();
+        const students = new Set();
+
+        validPasses.forEach(p => {
+            if (p.senderName) teachers.add(p.senderName);
+            if (p.studentDisplayName) students.add(p.studentDisplayName);
+        });
+
+        // Rebuild Teacher Dropdown dynamically
+        teacherSelect.innerHTML = `<option value="ALL">All Teachers</option>` +
+            Array.from(teachers).sort().map(t => 
+                `<option value="${t}" ${t === currentTeacher ? 'selected' : ''}>${t}</option>`
+            ).join('');
+
+        // Rebuild Student Dropdown dynamically
+        studentSelect.innerHTML = `<option value="ALL">All Students</option>` +
+            Array.from(students).sort().map(s => 
+                `<option value="${s}" ${s === currentStudent ? 'selected' : ''}>${s}</option>`
+            ).join('');
+    }
+
+    // 3. Apply the Dropdown Filters
+    const filteredPasses = validPasses.filter(p => {
+        const matchTeacher = currentTeacher === "ALL" || p.senderName === currentTeacher;
+        const matchStudent = currentStudent === "ALL" || p.studentDisplayName === currentStudent;
+        return matchTeacher && matchStudent;
+    });
+
+    // 4. Update the UI
+    const countBadge = document.getElementById("sent-count");
+    if (countBadge) countBadge.innerText = filteredPasses.length;
+
+    const container = document.getElementById("list-sent-passes");
+    if (!container) return;
+
+    if (filteredPasses.length === 0) {
+        container.innerHTML = `<p style="color: #666; font-style: italic; padding: 15px 5px;">No active sent passes.</p>`;
+        return;
+    }
+
+    // Map passes into HTML cards
+    container.innerHTML = filteredPasses.map(pass => {
+        const timeText = pass.scheduledWhen === 'specific_time' ? pass.scheduledTime : pass.scheduledWhen;
+        const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown") ? ` (${pass.targetTeacher})` : "";
+        
+        return `
+            <div class="pass-card" style="background: white; border: 1px solid #eaedf2; border-left: 5px solid #0277bd; padding: 15px; margin-bottom: 12px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 5px;">
+                    <span style="font-size: 1.1rem; color: #1a1a1a;">👤 ${pass.studentDisplayName}</span>
+                    <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee;">${pass.type}</span>
+                </div>
+                <div style="color: #555; font-size: 0.95rem; margin-bottom: 5px;">
+                    📍 To: <strong>${pass.destination}</strong>${teacherText}
+                </div>
+                <div style="color: #444; font-size: 0.85rem; margin-bottom: 5px;">
+                    📅 <strong>${pass.scheduledDate}</strong> @ <strong>${timeText}</strong>
+                </div>
+                <div style="color: #888; font-size: 0.85rem; font-style: italic;">Sent by: ${pass.senderName}</div>
+                
+                <div style="margin-top: 10px;">
+                    <button class="card-btn" data-id="${pass.id}" data-action="delete" style="padding: 6px 12px; font-size: 0.8rem; background-color: #c62828; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Cancel Pass</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}

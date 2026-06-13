@@ -50,6 +50,17 @@
 
             <div id="sent-passes-widget" class="dashboard-column">
                 <h2>Sent Passes <span id="sent-count" class="badge">0</span></h2>
+                
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <select id="filter-sent-teacher" style="flex: 1; padding: 6px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;">
+                        <option value="ALL">All Teachers</option>
+                        </select>
+                    
+                    <select id="filter-sent-student" style="flex: 1; padding: 6px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;">
+                        <option value="ALL">All Students</option>
+                        </select>
+                </div>
+
                 <div id="list-sent-passes" class="pass-list-container">
                     </div>
             </div>
