@@ -1,7 +1,8 @@
 // js/main-teacher.js
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { renderHeader, renderPassList, setupStudentAutocomplete } from "./modules/ui-widgets.js";
-import { listenToPendingPasses, listenToActivePasses, updatePassStatus, createNewPass, fetchAllStudents } from "./modules/pass-engine.js";
+// 🌟 FIX: Added listenToScheduledPasses to the import list
+import { listenToPendingPasses, listenToActivePasses, listenToScheduledPasses, updatePassStatus, createNewPass, fetchAllStudents } from "./modules/pass-engine.js";
 import { listenToEmergencyState } from "./modules/admin-engine.js";
 import { MapController } from "./modules/map-engine.js";
 
@@ -67,6 +68,76 @@ initAuthListener("teacher", async (user, role) => {
 
     // 🌟 ACTIVE PASSES: Unfiltered. Visible to all teachers for hallway monitoring!
     listenToActivePasses((passes) => renderPassList(passes, "list-active-passes", "active-count"));
+
+    // =======================================================
+    // 🌟 NEW: SCHEDULED / SENT PASSES (3rd Column)
+    // =======================================================
+    if (typeof listenToScheduledPasses === "function") {
+        listenToScheduledPasses((passes) => {
+            const scheduledContainerTeacher = document.getElementById("scheduled-passes-container");
+            const sentCountBadge = document.getElementById("sent-count");
+            if (!scheduledContainerTeacher) return;
+            
+            scheduledContainerTeacher.innerHTML = "";
+            const myName = user.displayName;
+            const now = new Date();
+
+            // Filter: Must be sent by THIS teacher, and must not be expired
+            const myScheduledPasses = passes.filter(p => {
+                if (p.senderName !== myName) return false;
+                
+                if (!p.scheduledDate || !p.scheduledTime) return true; 
+                const passDateTime = new Date(`${p.scheduledDate}T${p.scheduledTime}`);
+                return passDateTime >= now;
+            });
+
+            // 🌟 FIX: Automatically update your 3rd column badge count!
+            if (sentCountBadge) {
+                sentCountBadge.innerText = myScheduledPasses.length;
+            }
+
+            if (myScheduledPasses.length === 0) {
+                scheduledContainerTeacher.innerHTML = `<div style="padding: 15px; color: #777; text-align: center; border: 1px dashed #ccc; border-radius: 8px;">You have no active scheduled passes.</div>`;
+                return;
+            }
+
+            myScheduledPasses.forEach(pass => {
+                let timeText = pass.scheduledTime ? pass.scheduledTime : `Period ${pass.scheduledPeriod}`;
+                let teacherText = pass.targetTeacher && pass.targetTeacher !== "Unknown" ? ` (${pass.targetTeacher})` : "";
+
+                const card = document.createElement("div");
+                card.style.cssText = "background: white; border: 1px solid #eaedf2; border-left: 5px solid #2196F3; padding: 15px; margin-bottom: 12px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);";
+                
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 5px;">
+                        <span style="font-size: 1.1rem; color: #1a1a1a;">🧑‍🎓 ${pass.studentDisplayName || pass.studentName}</span>
+                        <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee;">${pass.type || "Request"}</span>
+                    </div>
+                    <div style="color: #555; font-size: 0.95rem; margin-bottom: 5px;">
+                        📍 To: <strong>${pass.destination}</strong>${teacherText}
+                    </div>
+                    <div style="color: #444; font-size: 0.85rem; margin-bottom: 5px;">
+                        📅 <strong>${pass.scheduledDate}</strong> @ <strong>${timeText}</strong>
+                    </div>
+                    
+                    <div style="margin-top: 10px; display: flex; gap: 8px;">
+                        <button class="btn-cancel-scheduled" data-id="${pass.id}" style="background: #ef5350; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Cancel Pass</button>
+                    </div>
+                `;
+
+                const cancelBtn = card.querySelector(".btn-cancel-scheduled");
+                if (cancelBtn) {
+                    cancelBtn.addEventListener("click", () => {
+                        if (confirm("Are you sure you want to cancel this scheduled pass?")) {
+                            if (typeof window.cancelPass === "function") window.cancelPass(pass.id);
+                        }
+                    });
+                }
+
+                scheduledContainerTeacher.appendChild(card);
+            });
+        });
+    }
     
     // Listen for Emergencies and drop down the banner
     listenToEmergencyState((state) => {

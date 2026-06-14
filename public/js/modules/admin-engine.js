@@ -183,10 +183,6 @@ export async function saveTimeOffset(offsetSeconds) {
     }
 }
 
-// Ensure getDoc is imported at the top of admin-engine.js!
-// import { collection, doc, setDoc, getDoc, ... } 
-
-
 /**
  * Listens for changes to the time offset globally (in SECONDS)
  */
@@ -207,8 +203,6 @@ export function listenToTimeOffset(callback) {
 export async function saveAcademicCalendar(calendarData) {
     try {
         const calDoc = doc(db, "system", "calendar");
-        // Using setDoc without merge: true ensures deleted or reset keys are cleaned up, 
-        // or keep merge: true if you want to preserve historical data across separate months.
         await setDoc(calDoc, calendarData); 
         return true;
     } catch (error) {
@@ -229,5 +223,36 @@ export async function fetchAcademicCalendar() {
     } catch (error) {
         console.error("Error fetching calendar:", error);
         return {};
+    }
+}
+
+/**
+ * Fetches the Google Calendar Configuration
+ */
+export async function fetchGCalConfig() {
+    try {
+        // Corrected path from your original code!
+        const docRef = doc(db, "system", "settings");
+        const snap = await getDoc(docRef);
+        if (snap.exists()) return snap.data();
+        return null;
+    } catch (error) {
+        console.error("Error fetching GCal config:", error);
+        return null;
+    }
+}
+
+/**
+ * Saves the Google Calendar Configuration
+ */
+export async function saveGCalConfig(configData) {
+    try {
+        // Corrected path from your original code!
+        const docRef = doc(db, "system", "settings");
+        await setDoc(docRef, configData, { merge: true });
+        return true;
+    } catch (error) {
+        console.error("Error saving GCal config:", error);
+        return false;
     }
 }

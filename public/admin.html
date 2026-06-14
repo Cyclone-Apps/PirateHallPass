@@ -20,13 +20,7 @@
         
         <section id="admin-toolbar-widget">
             <!-- Academic Calendar launcher integrated directly into the admin screen toolbar ribbon -->
-            <button id="btn-open-academic-cal-modal" class="primary-btn" style="background: var(--pirate-red); color: white; padding: 10px 15px; border-radius: 4px; font-weight: bold; border: none; cursor: pointer; margin-right: 10px;">
-                📅 Academic Calendar
-            </button>
 
-            <button id="btn-open-gcal-modal" class="primary-btn" style="background: #0277bd; color: white; padding: 10px 15px; border-radius: 4px; font-weight: bold; border: none; cursor: pointer;">
-                ⚙️ Google Calendar Setup
-            </button>
         </section>
 
         <section id="stats-ribbon-widget" class="stats-ribbon"></section>
@@ -534,8 +528,10 @@
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
                 
                 <label style="font-size: 0.85rem; font-weight: bold; color: #555; text-transform: uppercase;">1. Select Student</label>
-                <input type="text" id="proxy-search-input" placeholder="Start typing name..." style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%; box-sizing: border-box;">
-                <div id="proxy-datalist" class="autocomplete-dropdown hidden" style="position: absolute; background: white; border: 1px solid #ccc; max-height: 150px; overflow-y: auto; z-index: 10000; width: calc(100% - 50px); max-width: 500px;"></div>
+                <div style="position: relative;">
+                    <input type="text" id="proxy-search-input" placeholder="Start typing name..." style="padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; width: 100%; box-sizing: border-box;" autocomplete="off">
+                     <div id="proxy-datalist" class="hidden" style="position: absolute; top: 100%; left: 0; width: 100%; max-height: 200px; overflow-y: auto; background: white; border: 1px solid #ccc; border-top: none; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 0 0 4px 4px;"></div>
+                </div>
                 <input type="hidden" id="proxy-email-input">
 
                 <label style="font-size: 0.85rem; font-weight: bold; color: #555; text-transform: uppercase;">2. Pass Type</label>

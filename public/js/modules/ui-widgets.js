@@ -143,8 +143,21 @@ export function renderPassList(passes, containerId, countId) {
 export function setupStudentAutocomplete(inputElement, dropdownElement, studentList, onSelectCallback = null, displayEmailElement = null, hiddenEmailElement = null) {
     if (!inputElement || !dropdownElement) return;
 
-    // Show list when clicked
-    inputElement.addEventListener("focus", () => renderList(inputElement.value));
+    // 1. Prevent clicks on the dropdown itself from hiding it
+    dropdownElement.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+    });
+
+    // 2. Prevent clicks on the input from bubbling to the document (This fixes the flash!)
+    inputElement.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        renderList(inputElement.value);
+    });
+
+    // 3. Still allow keyboard tab-focus to open the list
+    inputElement.addEventListener("focus", () => {
+        renderList(inputElement.value);
+    });
     
     // Filter list as they type
     inputElement.addEventListener("input", () => {
@@ -156,7 +169,7 @@ export function setupStudentAutocomplete(inputElement, dropdownElement, studentL
         }
     });
 
-    // Hide dropdown if clicked outside
+    // Hide dropdown if clicked completely outside
     document.addEventListener("click", (evt) => {
         if (evt.target !== inputElement && !dropdownElement.contains(evt.target)) {
             dropdownElement.classList.add("hidden");
@@ -165,7 +178,7 @@ export function setupStudentAutocomplete(inputElement, dropdownElement, studentL
 
     function renderList(searchTerm) {
         dropdownElement.innerHTML = "";
-        const term = searchTerm.toLowerCase();
+        const term = (searchTerm || "").toLowerCase();
 
         // Check name OR email
         const filtered = studentList.filter(s => 
@@ -185,10 +198,12 @@ export function setupStudentAutocomplete(inputElement, dropdownElement, studentL
             div.style.padding = "10px";
             div.style.cursor = "pointer";
             div.style.borderBottom = "1px solid #eee";
+            
             div.innerHTML = `<strong>${student.displayName || "Unknown"}</strong> <span style="font-size: 0.85rem; color: #888; margin-left: 5px;">(${student.email || "No Email"})</span>`;
 
-            // Click behavior
-            div.addEventListener("click", () => {
+            // Click behavior for individual items
+            div.addEventListener("click", (evt) => {
+                evt.stopPropagation(); 
                 inputElement.value = student.displayName || "";
                 if (hiddenEmailElement) hiddenEmailElement.value = student.email || "";
                 if (displayEmailElement) {
@@ -201,8 +216,9 @@ export function setupStudentAutocomplete(inputElement, dropdownElement, studentL
                 if (onSelectCallback) onSelectCallback(student);
             });
 
+            // Hover effects
             div.addEventListener("mouseover", () => div.style.background = "#f0f8ff");
-            div.addEventListener("mouseout", () => div.style.background = "white");
+            div.addEventListener("mouseout", () => div.style.background = "transparent");
 
             dropdownElement.appendChild(div);
         });
