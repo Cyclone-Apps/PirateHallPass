@@ -9,7 +9,8 @@ import {
     doc, 
     serverTimestamp,
     addDoc,
-    getDocs 
+    getDocs,
+    deleteDoc 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const passesRef = collection(db, "passes");
@@ -124,7 +125,8 @@ export function listenToStudentPass(studentName, callback) {
                 pass.status === "active" || 
                 pass.status === "pending" || 
                 pass.status === "pending_student" || 
-                pass.status === "pending_restricted" 
+                pass.status === "pending_restricted" ||
+                pass.status === "scheduled" 
             ) {
                 currentPass = pass; 
             }
@@ -212,5 +214,21 @@ export async function fetchAllStudents() {
     } catch (error) {
         console.error("Error fetching all students:", error);
         return [];
+    }
+}
+
+/**
+ * Cancels (deletes) a scheduled pass permanently
+ */
+export async function cancelScheduledPass(passId) {
+    try {
+        const passDoc = doc(db, "passes", passId);
+        await deleteDoc(passDoc);
+        console.log(`Pass ${passId} cancelled successfully.`);
+        return true;
+    } catch (error) {
+        console.error("Failed to cancel pass:", error);
+        alert("Error cancelling pass. Check console.");
+        return false;
     }
 }

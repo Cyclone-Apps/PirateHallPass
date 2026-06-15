@@ -3,7 +3,8 @@
 import { 
     listenToPendingPasses, 
     listenToActivePasses, 
-    listenToScheduledPasses 
+    listenToScheduledPasses,
+    updatePassStatus // 🌟 IMPORTED: Needed for cancellation
 } from "../modules/pass-engine.js";
 import { renderPassList } from "../modules/ui-widgets.js";
 
@@ -17,6 +18,13 @@ let cachedSentPasses = []; // We only need to cache Sent Passes for filtering
 // ==========================================
 export function initDashboardManagement() {
     
+    // 🌟 GLOBAL BINDING: Wire up the global cancel pass handler
+    window.cancelPass = function(passId) {
+        if (typeof updatePassStatus === "function") {
+            updatePassStatus(passId, "cancelled");
+        }
+    };
+
     // 1. Start "GOD-MODE" Firebase Listeners (No filters applied to these!)
     if (typeof listenToPendingPasses === "function") {
         listenToPendingPasses((passes) => {

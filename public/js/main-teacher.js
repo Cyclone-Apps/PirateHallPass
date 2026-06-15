@@ -2,9 +2,11 @@
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { renderHeader, renderPassList, setupStudentAutocomplete } from "./modules/ui-widgets.js";
 // 🌟 FIX: Added listenToScheduledPasses to the import list
-import { listenToPendingPasses, listenToActivePasses, listenToScheduledPasses, updatePassStatus, createNewPass, fetchAllStudents } from "./modules/pass-engine.js";
+import { listenToPendingPasses, listenToActivePasses, listenToScheduledPasses, updatePassStatus, createNewPass, cancelScheduledPass, fetchAllStudents } from "./modules/pass-engine.js";
 import { listenToEmergencyState } from "./modules/admin-engine.js";
 import { MapController } from "./modules/map-engine.js";
+
+window.cancelPass = cancelScheduledPass;
 
 // --- INIT AUTH & UI ---
 const btnLogin = document.getElementById("btn-google-login");
@@ -74,7 +76,8 @@ initAuthListener("teacher", async (user, role) => {
     // =======================================================
     if (typeof listenToScheduledPasses === "function") {
         listenToScheduledPasses((passes) => {
-            const scheduledContainerTeacher = document.getElementById("scheduled-passes-container");
+            // 🌟 FIX: Fallback checks for both ID variations so it connects seamlessly to your layout
+            const scheduledContainerTeacher = document.getElementById("scheduled-passes-container") || document.getElementById("list-sent-passes");
             const sentCountBadge = document.getElementById("sent-count");
             if (!scheduledContainerTeacher) return;
             

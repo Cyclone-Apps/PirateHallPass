@@ -79,8 +79,6 @@ async function initStudentApp(user, role) {
     
     renderStudentSidebar(studentProfile);
 
-    
-
     // Start the live rotation day & menu Firestore listener
     initializeRotationDayEngine(db, onSnapshot, doc);
 
@@ -133,6 +131,28 @@ async function initStudentApp(user, role) {
             window.updateStudentScheduleWidget(timeMetrics);
         }
         
+        // 🌟 NEW: Check Scheduled Pass Time Unlock dynamically
+        const useBtn = document.getElementById("btn-use-scheduled-pass");
+        if (useBtn && window.currentActivePass && window.currentActivePass.status === "scheduled") {
+            const pass = window.currentActivePass;
+            let canUse = false;
+            
+            if (pass.scheduledWhen === "class_period" && timeMetrics?.currentPeriod == pass.scheduledPeriod) {
+                canUse = true; // Unlock if the requested period has started
+            } else if (pass.scheduledWhen === "specific_time" && pass.scheduledTime) {
+                const now = new Date();
+                const passTime = new Date(`${pass.scheduledDate || now.toISOString().split('T')[0]}T${pass.scheduledTime}`);
+                // Unlock exactly 5 minutes before the scheduled time
+                if (now >= new Date(passTime.getTime() - 5 * 60000)) {
+                    canUse = true;
+                }
+            } else if (pass.scheduledWhen === "available" || (!pass.scheduledTime && !pass.scheduledPeriod)) {
+                canUse = true; // Unlock instantly if set to "whenever available"
+            }
+
+            useBtn.style.display = canUse ? "block" : "none";
+        }
+        
         // ✨ BULLETPROOF BANNER HIDER: Finds any element containing this text and hides it
         document.querySelectorAll("*").forEach(el => {
             if (el.innerHTML === "⏳ Synchronizing Time Engine...") {
@@ -146,16 +166,53 @@ async function initStudentApp(user, role) {
 
     // LISTEN TO THE DATABASE IN REAL-TIME
     // In proxy mode, we format the name exactly as it saves in the database so the listener catches it!
-    const activeListenerName = isProxy ? `${user.displayName} (Created by ${proxyTeacher})` : user.displayName;
-
+    const activeListenerName = user.displayName;
     listenToStudentPass(activeListenerName, (currentPass) => {
         clearInterval(activeTimerInterval);
+
+        window.currentActivePass = currentPass; // 🌟 NEW: Save globally for the time engine
 
         if (!currentPass) {
             renderStudentIdleScreen();
             // Re-render sidebar to ensure it stays visible
             renderStudentSidebar(window.currentStudentProfile); 
+            
+            // Clear message center if pass was cancelled/removed
+            const msgCenter = document.getElementById("message-center");
+            if (msgCenter) msgCenter.innerHTML = "";
         } 
+        else if (currentPass.status === "scheduled") {
+            renderStudentIdleScreen(); 
+            renderStudentSidebar(window.currentStudentProfile);
+            
+            const msgCenter = document.getElementById("admin-messages-container");
+            
+            if (msgCenter) {
+                let timeText = currentPass.scheduledTime ? currentPass.scheduledTime : `Period ${currentPass.scheduledPeriod}`;
+                let requestingTeacher = currentPass.senderName || currentPass.teacherName || currentPass.originTeacher || "A teacher";
+                
+                const passCard = `
+                    <div id="scheduled-pass-banner" style="background: #e3f2fd; border-left: 4px solid #1976d2; padding: 10px; margin-top: 10px; border-radius: 4px;">
+                        <strong style="color: #1565c0; font-size: 0.95rem;">📍 To: ${currentPass.destination}</strong><br>
+                        <span style="font-size: 0.85rem; color: #555;">📅 Time: <strong>${timeText}</strong></span>
+                        <div style="margin-top: 10px; display: flex; gap: 5px;">
+                            <!-- Button is hidden by default until the clock unlocks it -->
+                            <button id="btn-use-scheduled-pass" data-id="${currentPass.id}" style="display: none; background-color: #2e7d32; color: white; border: none; padding: 6px; font-size: 0.85rem; font-weight: bold; border-radius: 4px; cursor: pointer; flex: 1;">Use</button>
+                            <button class="btn-view-scheduled-pass" data-teacher="${requestingTeacher}" data-purpose="${currentPass.purpose || 'Not specified'}" data-dest="${currentPass.destination}" data-time="${timeText}" style="background-color: #1976d2; color: white; border: none; padding: 6px; font-size: 0.85rem; border-radius: 4px; cursor: pointer; flex: 1;">View</button>
+                            <button id="btn-delete-scheduled-pass" data-id="${currentPass.id}" style="background-color: #c62828; color: white; border: none; padding: 6px; font-size: 0.85rem; border-radius: 4px; cursor: pointer; flex: 1;">Delete</button>
+                        </div>
+                    </div>
+                `;
+                
+                if (msgCenter.innerHTML.includes("Loading announcements...") || msgCenter.innerHTML.includes("No active announcements.")) {
+                    msgCenter.innerHTML = "";
+                }
+                
+                if (!document.getElementById("btn-use-scheduled-pass")) {
+                    msgCenter.insertAdjacentHTML('beforeend', passCard);
+                }
+            }
+        }
         else if (currentPass.status.startsWith("pending")) {
             const statusData = {
                 statusLevel: currentPass.restrictionLevel || 'green',
@@ -451,6 +508,49 @@ document.addEventListener("click", async (e) => {
     if (e.target.id === "btn-teacher-return") {
         const passId = e.target.getAttribute("data-id");
         if (typeof updatePassStatus === "function") updatePassStatus(passId, "returned");
+    }
+
+    // ==========================================
+    // --- 4. STUDENT SCHEDULED PASS CONTROLS ---
+    // ==========================================
+    
+    // 🟢 USE PASS (Routes to CURRENT teacher for approval first!)
+    if (e.target.id === "btn-use-scheduled-pass") {
+        const passId = e.target.getAttribute("data-id");
+        if (!passId) return;
+        
+        e.target.innerText = "Requesting...";
+        e.target.disabled = true;
+        
+        if (typeof updatePassStatus === "function") {
+            // 🌟 Changed from "active" to "pending"
+            updatePassStatus(passId, "pending");
+        }
+    }
+
+    // 🔵 VIEW PASS (Shows details popup without accepting)
+    if (e.target.classList.contains("btn-view-scheduled-pass")) {
+        const teacher = e.target.getAttribute("data-teacher");
+        const purpose = e.target.getAttribute("data-purpose");
+        const dest = e.target.getAttribute("data-dest");
+        const time = e.target.getAttribute("data-time");
+
+        alert(`📨 SCHEDULED PASS DETAILS\n\nSent By: ${teacher}\nDestination: ${dest}\nTime: ${time}\nPurpose: ${purpose}`);
+    }
+
+    // 🔴 DELETE PASS (Removes it from the queue)
+    if (e.target.id === "btn-delete-scheduled-pass") {
+        const passId = e.target.getAttribute("data-id");
+        if (!passId) return;
+        
+        if (confirm("Are you sure you want to delete this scheduled pass?")) {
+            e.target.innerText = "Deleting...";
+            e.target.disabled = true;
+            
+            if (typeof updatePassStatus === "function") {
+                updatePassStatus(passId, "cancelled");
+            }
+        }
     }
 
 });

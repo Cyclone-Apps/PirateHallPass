@@ -296,20 +296,26 @@ export function renderStudentWaitingScreen(pass, statusData) {
                 ❌ Cancel Request
             </button>
         `;
-    } else if (statusData.statusLevel === 'yellow') {
-        bgColor = "#fff3cd"; textColor = "#856404"; titleColor = "#856404";
+    } else {
+        bgColor = statusData.statusLevel === 'yellow' ? "#fff3cd" : "#d4edda"; 
+        textColor = statusData.statusLevel === 'yellow' ? "#856404" : "#155724"; 
+        titleColor = statusData.statusLevel === 'yellow' ? "#856404" : "#155724";
+        
         buttonsHtml = `
             <div style="display: flex; gap: 15px; justify-content: center; width: 100%; max-width: 500px; margin: 0 auto;">
                 <button id="btn-teacher-approve" data-id="${pass.id}" class="primary-btn" style="flex: 1; font-size: 1.4rem; padding: 20px;">✅ Approve</button>
                 <button id="btn-teacher-reject" data-id="${pass.id}" class="danger-btn" style="flex: 1; font-size: 1.4rem; padding: 20px;">❌ Reject</button>
             </div>
         `;
-    } else {
-        bgColor = "#d4edda"; textColor = "#155724"; titleColor = "#155724";
-        buttonsHtml = `
-            <div style="display: flex; gap: 15px; justify-content: center; width: 100%; max-width: 500px; margin: 0 auto;">
-                <button id="btn-teacher-approve" data-id="${pass.id}" class="primary-btn" style="flex: 1; font-size: 1.4rem; padding: 20px;">✅ Approve</button>
-                <button id="btn-teacher-reject" data-id="${pass.id}" class="danger-btn" style="flex: 1; font-size: 1.4rem; padding: 20px;">❌ Reject</button>
+    }
+
+    // 🌟 NEW: Inject the requesting teacher's comment if this pass was scheduled by someone else!
+    let teacherNoteHtml = '';
+    if (pass.isProxy || pass.senderName) {
+        teacherNoteHtml = `
+            <div style="background: rgba(255,255,255,0.6); padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 1.1rem; color: #444; border: 1px solid rgba(0,0,0,0.1); text-align: left; max-width: 80%; margin-left: auto; margin-right: auto;">
+                <strong style="color: #1565c0;">📢 Scheduled By:</strong> ${pass.senderName || "A Teacher"}<br>
+                <strong style="color: #1565c0;">Purpose:</strong> ${pass.purpose || "Not specified"}
             </div>
         `;
     }
@@ -327,10 +333,11 @@ export function renderStudentWaitingScreen(pass, statusData) {
                 ${pass.studentDisplayName}
             </h1>
             
-            <p style="color: ${textColor}; font-size: 1.8rem; margin-bottom: 20px;">
+            <p style="color: ${textColor}; font-size: 1.8rem; margin-bottom: 15px;">
                 Requests to go to <strong>${pass.destination}</strong>
             </p>
 
+            ${teacherNoteHtml}
             ${extraInfoHtml}
             ${buttonsHtml}
 
