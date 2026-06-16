@@ -45,8 +45,9 @@ export function initAuthListener(requiredRole, onAuthenticated) {
             if(btn) btn.innerText = "🔍 User found! Reading Firestore...";
             
             try {
-                // Check Firestore for user role
-                const userRef = doc(db, "users", user.uid);
+                // Check Firestore for user role using their Email Address!
+                const userEmail = user.email.toLowerCase();
+                const userRef = doc(db, "users", userEmail);
                 const userSnap = await getDoc(userRef);
 
                 let role = "teacher"; 

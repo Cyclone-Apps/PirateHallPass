@@ -64,10 +64,19 @@ export function initStaffManagement() {
     if (tbodyElement) {
         tbodyElement.addEventListener("change", async (e) => {
             if (e.target.classList.contains("teacher-admin-toggle")) {
-                const email = e.target.getAttribute("data-email");
+                // Fetch the actual Document ID from the closest row
+                const docId = e.target.closest("tr").dataset.uid; 
                 const grantAdmin = e.target.checked;
+                
+                if (!docId) {
+                    alert("Error: Cannot update role. Document ID missing.");
+                    e.target.checked = !grantAdmin; // Revert visually
+                    return;
+                }
+
                 try {
-                    await setDoc(doc(db, "users", email), { role: grantAdmin ? "admin" : "teacher" }, { merge: true });
+                    // Update using the UID instead of the email
+                    await setDoc(doc(db, "users", docId), { role: grantAdmin ? "admin" : "teacher" }, { merge: true });
                 } catch (err) {
                     console.error("Failed to update user privileges:", err);
                     alert("Critical Error: Database authorization update failed.");
@@ -257,8 +266,8 @@ function listenToTeacherRoster() {
                 </div>
             `;
 
-            html += `
-                <tr class="staff-roster-row" style="border-bottom: 1px solid #eee; transition: background 0.2s;" onmouseover="this.style.background='#f9f9f9'" onmouseout="this.style.background='white'">
+           html += `
+                <tr class="staff-roster-row" data-uid="${docSnap.id}" style="border-bottom: 1px solid #eee; transition: background 0.2s;" onmouseover="this.style.background='#f9f9f9'" onmouseout="this.style.background='white'">
                     <td style="padding: 12px; color: #333; font-weight: 500;">${name}${aliasBadge}</td>
                     <td style="padding: 12px; color: #666;">${email}</td>
                     <td style="padding: 12px;">${checkboxHTML}</td>
