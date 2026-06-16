@@ -12,6 +12,10 @@ export class MapController {
         this.mode = config.mode || "student";
         this.periodOverride = config.periodOverride || null; // 🌟 NEW: Allows time-traveling map
         this.onRoomSelect = config.onRoomSelect || function(){};
+
+        this.selectedRooms = config.selectedRooms || []; // Load previously restricted rooms
+        this.capacityLimits = config.capacityLimits || {}; // 🟢 NEW: Load capacity limits
+        this.currentSelection = null; // Used for standard pass
         
         this.container = document.getElementById(this.containerId);
         this.isZoomedIn = false;
@@ -40,12 +44,14 @@ export class MapController {
             zoomGlass.addEventListener("click", (e) => this.toggleZoom(e, zoomGlass));
         }
 
-        // 3. Attach Node Click Listeners
+       // 3. Attach Node Click Listeners
         const mapNodes = this.svg.querySelectorAll(".map-node");
         mapNodes.forEach(node => {
             node.style.cursor = "pointer";
             node.addEventListener("click", (e) => this.handleNodeClick(e, node));
         });
+
+        this.applyHighlights(); // 🟢 NEW: Draw existing limits immediately
     }
 
     handleNodeClick(e, node) {
@@ -65,6 +71,11 @@ export class MapController {
             }
             this.applyHighlights();
             this.onRoomSelect(this.selectedRooms); // Pass array back
+
+        } else if (this.mode === "admin_capacity") { 
+            // --- 🚦 ADMIN CAPACITY MODE ---
+            // Just trigger the selection to fire the prompt
+            this.onRoomSelect({ room: roomId });
 
         } else {
             // --- STUDENT OR PROXY MODE ---
@@ -141,17 +152,54 @@ export class MapController {
 
     applyHighlights() {
         const mapNodes = this.svg.querySelectorAll(".map-node");
+        
+        // Clear any old capacity text labels before redrawing
+        this.svg.querySelectorAll(".capacity-label").forEach(el => el.remove());
+
         mapNodes.forEach(node => {
             const roomId = node.getAttribute("data-id");
             if(!roomId) return;
             const shape = node.querySelector(".zone-box, .corridor-box, path, rect, polygon") || node;
             
-            if (this.selectedRooms.includes(roomId)) {
-                shape.style.fill = "#ef1a14"; // Solid Pirate Red
-                shape.style.opacity = "0.7";
-            } else {
-                shape.style.fill = ""; 
-                shape.style.opacity = "1";
+            // --- ADMIN RESTRICT MODE ---
+            if (this.mode === "admin_restrict") {
+                if (this.selectedRooms.includes(roomId)) {
+                    shape.style.fill = "#ef1a14"; // Solid Pirate Red
+                    shape.style.opacity = "0.7";
+                } else {
+                    shape.style.fill = ""; 
+                    shape.style.opacity = "1";
+                }
+            }
+            // --- 🚦 ADMIN CAPACITY MODE --- 
+            else if (this.mode === "admin_capacity") {
+                if (this.capacityLimits[roomId] !== undefined) {
+                    shape.style.fill = "#ef1a14"; // Solid Pirate Red
+                    shape.style.opacity = "0.7";
+
+                    // Inject White Text at the bottom of the box!
+                    const bbox = shape.getBBox(); // Gets the exact coordinates of the shape
+                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    text.classList.add("capacity-label");
+                    
+                    // Center X, Bottom Y
+                    text.setAttribute("x", bbox.x + bbox.width / 2);
+                    text.setAttribute("y", bbox.y + bbox.height - 4); 
+                    
+                    text.setAttribute("text-anchor", "middle");
+                    text.setAttribute("fill", "white");
+                    text.setAttribute("font-size", "14px");
+                    text.setAttribute("font-weight", "bold");
+                    text.setAttribute("pointer-events", "none"); // Prevent text from blocking clicks
+                    
+                    // Display the number (e.g., "Max: 2")
+                    text.textContent = `Limit: ${this.capacityLimits[roomId]}`;
+                    
+                    node.appendChild(text);
+                } else {
+                    shape.style.fill = ""; 
+                    shape.style.opacity = "1";
+                }
             }
         });
     }

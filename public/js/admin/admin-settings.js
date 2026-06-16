@@ -277,21 +277,44 @@ function renderScheduleEditor(type, dataStore = window.bellScheduleDataStore || 
     const tbody = document.getElementById("schedule-tbody");
     if (!tbody) return;
     
-    let rawTimes = dataStore[type];
-    if (!rawTimes) rawTimes = defaultTimes[type] || defaultTimes["Regular"];
+    // 1. Instantly clear the screen to prevent ghost HTML
+    tbody.innerHTML = "";
 
-    let normalizedTimes = [];
-    if (Array.isArray(rawTimes)) {
-        normalizedTimes = JSON.parse(JSON.stringify(rawTimes));
-    } else if (rawTimes && typeof rawTimes === "object") {
-        normalizedTimes = Object.keys(rawTimes).map(key => ({
-            period: key,
-            start: rawTimes[key].start || "00:00",
-            end: rawTimes[key].end || "00:00"
-        }));
-        normalizedTimes.sort((a, b) => a.period.localeCompare(b.period, undefined, { numeric: true }));
+    // 2. Fetch the raw data safely
+    let rawTimes = dataStore[type];
+    
+    if (!rawTimes) {
+        rawTimes = dataStore["Regular"] || (typeof defaultTimes !== 'undefined' ? defaultTimes["Regular"] : []);
     }
 
+    let normalizedTimes = [];
+
+    try {
+        if (Array.isArray(rawTimes)) {
+            // It's an Array (e.g., your current "HS - Regular" in Firebase)
+            normalizedTimes = JSON.parse(JSON.stringify(rawTimes));
+        } else if (rawTimes && typeof rawTimes === "object") {
+            // It's a Map/Object (e.g., your Early Out / Late Start schedules)
+            normalizedTimes = Object.keys(rawTimes).map(key => ({
+                period: key,
+                start: rawTimes[key].start || "00:00",
+                end: rawTimes[key].end || "00:00"
+            }));
+        }
+
+        // 3. Bulletproof sorting (prevents crashes if a period name is missing)
+        normalizedTimes.sort((a, b) => {
+            const p1 = String(a.period || "");
+            const p2 = String(b.period || "");
+            return p1.localeCompare(p2, undefined, { numeric: true });
+        });
+
+    } catch (error) {
+        console.error("Error parsing schedule data:", error);
+        normalizedTimes = []; 
+    }
+
+    // 4. Draw the clean, verified schedule
     currentlyEditingSchedule = normalizedTimes;
     drawScheduleTable();
 }
@@ -337,13 +360,19 @@ function removePeriodRow() {
 async function handleSaveBellSchedule() {
     const type = document.getElementById("schedule-type-select").value;
     const rows = document.querySelectorAll(".schedule-row");
-    const updatedSchedule = [];
+    
+    // Switch from an Array to a Map (Object)
+    const updatedSchedule = {};
 
     rows.forEach(row => {
         const periodName = row.querySelector(".period-label").dataset.period;
         const start = row.querySelector(".time-start").value;
         const end = row.querySelector(".time-end").value;
-        if (periodName) updatedSchedule.push({ period: periodName, start, end });
+        
+        // Assign the period name as the Object Key instead of pushing to an Array
+        if (periodName) {
+            updatedSchedule[periodName] = { start, end };
+        }
     });
 
     if (typeof saveBellSchedule === "function") {
@@ -354,22 +383,6 @@ async function handleSaveBellSchedule() {
             }
             alert(`${type} schedule saved successfully!`);
         }
-    }
-}
-
-async function handleSaveTimeOffset() {
-    const offsetInput = document.getElementById("input-time-offset")?.value;
-    if (typeof saveTimeOffset === "function") {
-        const success = await saveTimeOffset(offsetInput);
-        if (success) alert("Building Time Offset Synced!");
-    }
-}
-
-async function handleSetActiveSchedule() {
-    const activeSelect = document.getElementById("active-schedule-select")?.value;
-    if (typeof setActiveDailySchedule === "function") {
-        const success = await setActiveDailySchedule(activeSelect);
-        if (success) alert(`Active schedule set to: ${activeSelect}`);
     }
 }
 
@@ -562,4 +575,20 @@ window.openSchedulePopup = function(student) {
     box.appendChild(closeBtn);
     modal.appendChild(box);
     document.body.appendChild(modal);
+}
+
+async function handleSaveTimeOffset() {
+    const offsetInput = document.getElementById("input-time-offset")?.value;
+    if (typeof saveTimeOffset === "function") {
+        const success = await saveTimeOffset(offsetInput);
+        if (success) alert("Building Time Offset Synced!");
+    }
+}
+
+async function handleSetActiveSchedule() {
+    const activeSelect = document.getElementById("active-schedule-select")?.value;
+    if (typeof setActiveDailySchedule === "function") {
+        const success = await setActiveDailySchedule(activeSelect);
+        if (success) alert(`Active schedule set to: ${activeSelect}`);
+    }
 }

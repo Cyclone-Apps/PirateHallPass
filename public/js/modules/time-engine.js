@@ -26,11 +26,27 @@ export function getAdjustedNow() {
 }
 
 /**
- * Converts a time string "08:15" into total minutes since midnight
+ * BULLETPROOF time conversion: 
+ * Handles "15:30", "03:30 PM", "3:30 pm", and "11:30 PM" flawlessly.
  */
 export function timeToMinutes(timeStr) {
     if (!timeStr) return 0;
-    const [hours, minutes] = timeStr.split(':').map(Number);
+    
+    // 1. Check if the string explicitly contains AM or PM
+    const isPM = timeStr.toLowerCase().includes('pm');
+    const isAM = timeStr.toLowerCase().includes('am');
+    
+    // 2. Strip out all letters/spaces, keeping only the numbers and colon
+    const cleanStr = timeStr.replace(/[^0-9:]/g, '');
+    let [hours, minutes] = cleanStr.split(':').map(Number);
+    
+    if (isNaN(hours)) hours = 0;
+    if (isNaN(minutes)) minutes = 0;
+
+    // 3. Convert to 24-hour time mathematically
+    if (isPM && hours < 12) hours += 12;
+    if (isAM && hours === 12) hours = 0;
+    
     return (hours * 60) + minutes;
 }
 
@@ -95,7 +111,7 @@ export function evaluateCurrentTime(scheduleData) {
         return { currentPeriod: null, isPassing: false, nextPeriod: null, minutesLeft: 0 };
     }
 
-    const now = getAdjustedNow(); // <-- Uses the Offset Time!
+    const now = getAdjustedNow(); 
     const currentMins = (now.getHours() * 60) + now.getMinutes();
 
     let activePeriod = null;
@@ -103,11 +119,35 @@ export function evaluateCurrentTime(scheduleData) {
     let isPassing = false;
     let minsLeft = 0;
 
-    const periods = Object.keys(scheduleData).map(p => ({
-        name: p,
-        startMins: timeToMinutes(scheduleData[p].start),
-        endMins: timeToMinutes(scheduleData[p].end)
-    })).sort((a, b) => a.startMins - b.startMins);
+    // 🌟 BULLETPROOF FIX: Check if the database gave us an Array or a Map
+    let periods = [];
+    
+    if (Array.isArray(scheduleData)) {
+        // If it's an array (HS - Regular), pull the name from the "period" field
+        periods = scheduleData.map(p => ({
+            name: p.period, 
+            startStr: p.start,
+            endStr: p.end,
+            startMins: timeToMinutes(p.start),
+            endMins: timeToMinutes(p.end)
+        }));
+    } else {
+        // If it's a Map (HS - Early Out), pull the name from the Object Key
+        periods = Object.keys(scheduleData).map(key => ({
+            name: key,
+            startStr: scheduleData[key].start,
+            endStr: scheduleData[key].end,
+            startMins: timeToMinutes(scheduleData[key].start),
+            endMins: timeToMinutes(scheduleData[key].end)
+        }));
+    }
+
+    // Sort chronologically
+    periods.sort((a, b) => a.startMins - b.startMins);
+
+    // 🕵️ DEBUG LOGGER: Let's see exactly what the engine sees!
+    console.log(`⏱️ CURRENT TIME: ${now.toLocaleTimeString()} (Total Mins: ${currentMins})`);
+    console.table(periods);
 
     for (let i = 0; i < periods.length; i++) {
         const p = periods[i];

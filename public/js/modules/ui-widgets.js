@@ -44,6 +44,10 @@ export function renderHeader(user, role) {
             <!-- Row 1: Active Pass & Student Operations -->
             <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <button id="btn-emergency" class="danger-btn toolbar-btn" style="border: none;">🚨 Emergency Controls</button>
+                
+                <!-- 🚦 NEW BUTTON ADDED HERE -->
+                <button id="btn-location-limits" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">🚦 Set Location Limits</button>
+                
                 <button id="btn-open-send-pass" class="toolbar-btn" style="background-color: #2e7d32; color: white; border: none;">🎫 Send Student a Pass</button>
                 <button id="btn-open-proxy-setup" class="toolbar-btn" style="background-color: #8e24aa; color: white; border: none;">💻 Open Pass As Student</button>
                 <button id="btn-open-management" class="toolbar-btn" style="background-color: #0277bd; color: white; border: none;">👥 Student Management</button>

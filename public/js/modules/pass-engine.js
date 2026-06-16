@@ -10,7 +10,8 @@ import {
     serverTimestamp,
     addDoc,
     getDocs,
-    deleteDoc 
+    deleteDoc,
+    getDoc 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const passesRef = collection(db, "passes");
@@ -92,18 +93,69 @@ export async function updatePassStatus(passId, newStatus) {
 /**
  * Creates a brand new pass in the database
  */
+/**
+ * Creates a brand new pass in the database (With Waitlist Gatekeeper)
+ */
 export async function createNewPass(passData) {
     try {
+        // --- 🚦 GATEKEEPER LOGIC ---
+        if (passData.destination) {
+            const limitRef = doc(db, "location_limits", passData.destination);
+            const limitSnap = await getDoc(limitRef);
+            
+            if (limitSnap.exists()) {
+                const maxCapacity = limitSnap.data().maxCapacity;
+
+                // 1. Count currently Active passes for this exact room
+                const activeQ = query(
+                    passesRef, 
+                    where("destination", "==", passData.destination), 
+                    where("status", "==", "active")
+                );
+                const activeSnaps = await getDocs(activeQ);
+                const currentCount = activeSnaps.size;
+
+                // 2. If room is at or over capacity, route to WAITLIST
+                if (currentCount >= maxCapacity) {
+                    
+                    // Count how many people are already on the waitlist to find their position
+                    const waitlistQ = query(
+                        passesRef, 
+                        where("destination", "==", passData.destination), 
+                        where("status", "==", "waitlist")
+                    );
+                    const waitlistSnaps = await getDocs(waitlistQ);
+                    const queuePosition = waitlistSnaps.size + 1;
+
+                    // Save as waitlist instead of pending/active
+                    await addDoc(passesRef, {
+                        ...passData,
+                        status: "waitlist",
+                        queuePosition: queuePosition,
+                        createdAt: serverTimestamp()
+                    });
+                    
+                    console.log(`Location full. Placed on waitlist at position ${queuePosition}`);
+                    // Note: returning an object here so the UI knows they were waitlisted
+                    return { success: true, status: "waitlist", position: queuePosition };
+                }
+            }
+        }
+        // --- END GATEKEEPER ---
+
+        // Proceed normally if no limit is set or capacity is not reached
         await addDoc(passesRef, {
             ...passData,
             createdAt: serverTimestamp()
         });
+        
         console.log("New pass created successfully!");
-        return true;
+        return { success: true, status: passData.status || "pending" };
+        
     } catch (error) {
         console.error("Error creating pass:", error);
         alert("Failed to create pass. Check console.");
-        return false;
+        return { success: false, error: error };
     }
 }
 
