@@ -256,11 +256,27 @@ document.addEventListener("click", async (e) => {
     
     // --- PASS ACTION BUTTONS ---
     const btn = e.target.closest(".card-btn");
-    // Ensure we don't accidentally trigger pass actions on our submit buttons
     if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
         const passId = btn.getAttribute("data-id");
-        const action = btn.getAttribute("data-action");
-        if (passId && action && typeof updatePassStatus === "function") updatePassStatus(passId, action);
+        let action = btn.getAttribute("data-action");
+        const currentStatus = btn.getAttribute("data-current-status"); // We will add this to HTML next
+        
+        if (passId && action && typeof updatePassStatus === "function") {
+            
+            // 🌟 1. THE WARNING POP-UP INTERCEPT
+            if (currentStatus === "pending_restricted" && action === "active") {
+                const proceed = confirm("⚠️ ADMIN WARNING: You are about to override a restricted pass. Admin will be notified and may inquire why. Do you wish to proceed?");
+                if (!proceed) return; 
+                action = "active_bypassed"; // Reroute status!
+            }
+            
+            // 🌟 2. THE RETURN INTERCEPT
+            if (currentStatus === "active_bypassed" && action === "returned") {
+                action = "returned_bypassed"; // Reroute status!
+            }
+
+            updatePassStatus(passId, action);
+        }
     }
 
     // --- MODAL CONTROLS ---

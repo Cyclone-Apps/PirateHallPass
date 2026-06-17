@@ -628,3 +628,63 @@ window.hideTeacherNamesOnMap = function() {
         }
     });
 };
+
+// Add these to js/modules/student-ui.js
+
+export function renderStudentWaitlistScreen(pass) {
+    const container = document.getElementById("kiosk-main-widget");
+    container.innerHTML = `
+        <div class="kiosk-card panel" style="text-align: center; border-left: 10px solid #f57c00;">
+            <h2>⏳ You are in the Queue</h2>
+            <p>The <strong>${pass.destination}</strong> is currently at full capacity.</p>
+            
+            <div id="queue-pos-display" style="font-size: 3.5rem; font-weight: bold; margin: 20px 0; color: #f57c00;">
+                #${pass.queuePosition}
+            </div>
+            
+            <p>You will be notified automatically when a spot opens up.</p>
+            
+            <button id="btn-cancel-waitlist" data-id="${pass.id}" 
+                style="padding: 15px 30px; font-size: 1.2rem; background: #c62828; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 30px;">
+                ❌ Cancel Request
+            </button>
+        </div>
+    `;
+}
+
+export function renderStudentAcceptScreen(pass) {
+    const container = document.getElementById("kiosk-main-widget");
+    container.innerHTML = `
+        <div class="kiosk-card panel" style="text-align: center; border-left: 10px solid #2e7d32; background: #e8f5e9;">
+            <h2 style="color: #2e7d32;">🎉 Your Spot is Ready!</h2>
+            <p>A spot opened up in <strong>${pass.destination}</strong>.</p>
+            <p>You have 2 minutes to claim this pass before it is offered to the next student.</p>
+            <button id="btn-accept-waitlist" data-id="${pass.id}" 
+                style="padding: 20px 40px; font-size: 1.5rem; background: #2e7d32; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px;">
+                ✅ Claim My Spot
+            </button>
+        </div>
+    `;
+}
+
+/**
+ * Dynamically calculates a student's place in line based on their timestamp
+ */
+export function calculateDynamicQueuePosition(myPass, allPasses) {
+    // 1. Get everyone waiting for the same destination
+    const othersWaiting = allPasses.filter(p => 
+        p.destination === myPass.destination && 
+        p.status === "waitlist"
+    );
+
+    // 2. Sort by time (oldest first)
+    othersWaiting.sort((a, b) => {
+        const timeA = a.createdAt?.toDate?.() || new Date(0);
+        const timeB = b.createdAt?.toDate?.() || new Date(0);
+        return timeA - timeB;
+    });
+
+    // 3. Find our index in that sorted list (+1 because humans count from 1)
+    const myIndex = othersWaiting.findIndex(p => p.id === myPass.id);
+    return myIndex + 1; // e.g., index 0 = #1 in line
+}

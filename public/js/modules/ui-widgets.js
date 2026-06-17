@@ -41,11 +41,9 @@ export function renderHeader(user, role) {
         adminToolbar.style.gap = "10px";
 
         adminToolbar.innerHTML = `
-            <!-- Row 1: Active Pass & Student Operations -->
             <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <button id="btn-emergency" class="danger-btn toolbar-btn" style="border: none;">🚨 Emergency Controls</button>
                 
-                <!-- 🚦 NEW BUTTON ADDED HERE -->
                 <button id="btn-location-limits" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">🚦 Set Location Limits</button>
                 
                 <button id="btn-open-send-pass" class="toolbar-btn" style="background-color: #2e7d32; color: white; border: none;">🎫 Send Student a Pass</button>
@@ -53,7 +51,6 @@ export function renderHeader(user, role) {
                 <button id="btn-open-management" class="toolbar-btn" style="background-color: #0277bd; color: white; border: none;">👥 Student Management</button>
             </div>
             
-            <!-- Row 2: Schedules & Building Management Settings -->
             <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <button id="btn-open-teacher-management" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">👨‍🏫 Teacher Management</button>            
                 <button id="btn-open-teacher-schedule" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">📋 Teacher Schedule</button>
@@ -98,32 +95,59 @@ export function renderPassList(passes, containerId, countId) {
         let actionButtons = '';
         
         // Render control buttons depending on status context
-        if (pass.status === 'pending' || pass.status === 'pending_student') {
+        // 🌟 ADDED 'waitlist' so teachers can Approve (override) or Reject (cancel) waitlisted passes
+        if (pass.status === 'pending' || pass.status === 'pending_student' || pass.status === 'pending_restricted' || pass.status === 'waitlist') {
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button class="card-btn" data-id="${pass.id}" data-action="active" style="padding: 8px 15px; font-size: 0.9rem; background-color: #2e7d32; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Approve</button>
-                    <button class="card-btn" data-id="${pass.id}" data-action="rejected" style="padding: 8px 15px; font-size: 0.9rem; background-color: #c62828; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Reject</button>
+                    <button class="card-btn" data-id="${pass.id}" data-action="active" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #2e7d32; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Approve</button>
+                    <button class="card-btn" data-id="${pass.id}" data-action="rejected" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #c62828; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Reject</button>
                 </div>
             `;
-        } else if (pass.status === 'active') {
+        // 🌟 ADDED 'active_bypassed' so it gets the End Pass button
+        } else if (pass.status === 'active' || pass.status === 'active_bypassed') {
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button class="card-btn" data-id="${pass.id}" data-action="returned" style="padding: 8px 15px; font-size: 0.9rem; background-color: #0277bd; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">End Pass (Return)</button>
+                    <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #0277bd; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">End Pass (Return)</button>
+                </div>
+            `;
+        // 🌟 ADDED 'returned_bypassed' block for the Admin Clear button
+        } else if (pass.status === 'returned_bypassed') {
+            actionButtons = `
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button class="card-btn" data-id="${pass.id}" data-action="archived" data-current-status="${pass.status}" style="width: 100%; padding: 10px; font-size: 1rem; background-color: #757575; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Clear Alert</button>
                 </div>
             `;
         }
         
-        // 🌟 NEW: Format the destination to include the teacher's name if we have it!
+        // Format the destination to include the teacher's name if we have it!
         const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown") 
             ? ` (${pass.targetTeacher})` 
             : "";
+            
+        // 🌟 CHECK RESTRICTION STATUS FOR CARD BACKGROUND
+        const isRestricted = ['pending_restricted', 'active_bypassed', 'returned_bypassed'].includes(pass.status);
+        const cardBgColor = isRestricted ? '#ffebee' : '#ffffff'; // Light Red or White
+        const cardBorderColor = isRestricted ? '#ef5350' : '#eaedf2'; // Red outer border or Default
         
+        // 🌟 THE FIX: The left border now STRICTLY represents the phase, not the restriction!
+        let leftBorderColor = '#0277bd'; // Default fallback (Blue)
+        // 🟢 Added 'waitlist' to the orange pending color check
+        if (pass.status.includes('pending') || pass.status === 'waitlist') leftBorderColor = '#ff9800'; // Pending/Waitlist is always Yellow/Orange
+        if (pass.status.includes('active')) leftBorderColor = '#4caf50'; // Active is always Green
+        if (pass.status.includes('returned') || pass.status === 'archived') leftBorderColor = '#757575'; // Grey for ended passes
+        
+        // 🟢 NEW: Render a highly visible badge if the pass is waitlisted
+        const waitlistBadgeHTML = pass.status === 'waitlist' 
+            ? `<div style="margin-bottom: 8px;"><span style="background-color: #f57c00; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">⏳ Waitlisted (#${pass.queuePosition})</span></div>` 
+            : '';
+
         return `
-            <div class="pass-card" style="background: white; border: 1px solid #eaedf2; border-left: 5px solid ${pass.status === 'active' ? '#4caf50' : '#ff9800'}; padding: 15px; margin-bottom: 12px; border-radius: var(--radius, 8px); box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+            <div class="pass-card" style="background: ${cardBgColor}; border: 1px solid ${cardBorderColor}; border-left: 5px solid ${leftBorderColor}; padding: 15px; margin-bottom: 12px; border-radius: var(--radius, 8px); box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 5px;">
                     <span style="font-size: 1.1rem; color: var(--text-dark, #1a1a1a);">👤 ${pass.studentDisplayName}</span>
                     <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee;">${pass.type}</span>
                 </div>
+                ${waitlistBadgeHTML}
                 <div style="color: #555; font-size: 0.95rem; margin-bottom: 5px;">
                     📍 Destination: <strong>${pass.destination}${teacherText}</strong>
                 </div>

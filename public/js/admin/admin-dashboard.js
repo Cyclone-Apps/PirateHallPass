@@ -4,6 +4,7 @@ import {
     listenToPendingPasses, 
     listenToActivePasses, 
     listenToScheduledPasses,
+    listenToBypassedPasses,
     updatePassStatus // 🌟 IMPORTED: Needed for cancellation
 } from "../modules/pass-engine.js";
 import { renderPassList } from "../modules/ui-widgets.js";
@@ -54,6 +55,13 @@ export function initDashboardManagement() {
         });
     }
 
+    // 🌟 NEW: Start Bypassed Passes Listener for the 4th Column!
+    if (typeof listenToBypassedPasses === "function") {
+        listenToBypassedPasses((passes) => {
+            renderPassList(passes, "list-bypassed-passes", "bypassed-count");
+        });
+    }
+
     // 2. Bind Filters ONLY for the Sent/Scheduled Passes
     const filterTeacherBtn = document.getElementById("filter-sent-teacher");
     const filterStudentBtn = document.getElementById("filter-sent-student");
@@ -68,20 +76,30 @@ export function initDashboardManagement() {
 
 // Bind Event Delegation for Pass Action Buttons (Approve, Reject, End)
     document.addEventListener("click", async (e) => {
-        // Check if what we clicked was one of our dynamic buttons
         if (e.target && e.target.classList.contains("card-btn")) {
             const passId = e.target.getAttribute("data-id");
-            const newStatus = e.target.getAttribute("data-action");
+            let newStatus = e.target.getAttribute("data-action");
+            const currentStatus = e.target.getAttribute("data-current-status"); // Grab current status
 
             if (!passId || !newStatus) return;
 
-            // Change the button text so the user knows it's working
+            // 🌟 1. WARNING INTERCEPT
+            if (currentStatus === "pending_restricted" && newStatus === "active") {
+                const proceed = confirm("⚠️ ADMIN WARNING: You are about to override a restricted pass. Admin will be notified and may inquire why. Do you wish to proceed?");
+                if (!proceed) return; 
+                newStatus = "active_bypassed";
+            }
+
+            // 🌟 2. RETURN INTERCEPT
+            if (currentStatus === "active_bypassed" && newStatus === "returned") {
+                newStatus = "returned_bypassed";
+            }
+
             const originalText = e.target.innerText;
             e.target.innerText = "⏳...";
             e.target.disabled = true;
 
             try {
-                // Call the pass engine function!
                 await updatePassStatus(passId, newStatus);
             } catch (error) {
                 console.error("Failed to update pass:", error);

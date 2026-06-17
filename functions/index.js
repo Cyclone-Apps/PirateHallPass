@@ -44,20 +44,11 @@ exports.syncGoogleCalendars = onSchedule({
 
         // 🍽️ HELPER TO PARSE THE DESCRIPTION ONLY AND REPLACE LINE BREAKS WITH " / "
         const processMealEvent = (e) => {
-            // Fallback to title only if description is completely empty
             if (!e.description) return e.summary || ""; 
             
-            // 1. Convert Google Calendar <br> tags into standard newlines
             let desc = e.description.replace(/<br\s*[\/]?>/gi, "\n");
-            
-            // 2. Remove all other HTML formatting Google might sneak in
             desc = desc.replace(/(<([^>]+)>)/gi, "");
-            
-            // 3. Fix weird spacing entities
             desc = desc.replace(/&nbsp;/gi, " ");
-            
-            // 4. Split the text by the line breaks, clean up spacing, and rejoin with " / "
-            // This turns "L-Tacos \n\n Fiesta Rice" directly into "L-Tacos / Fiesta Rice"
             desc = desc.split(/\n+/).map(line => line.trim()).filter(line => line.length > 0).join(" / ");
             
             return desc;
@@ -96,4 +87,95 @@ exports.syncGoogleCalendars = onSchedule({
 
 exports.manualCalendarSync = onCall(async (request) => {
     return { status: "Manual sync hook verified on backend." };
+});
+
+// ⏱️ AUTOMATED WAITLIST TIMEOUT SWEEPER (Runs every 1 minute)
+exports.waitlistTimeoutSweep = onSchedule({
+    schedule: "* * * * *", // Every minute
+    timeZone: "America/Chicago"
+}, async (event) => {
+    try {
+        const now = Date.now();
+        
+        // Fetch dynamic timeout setting
+        const settingsSnap = await db.collection("system").doc("settings").get();
+        let timeoutSeconds = 120; 
+        if (settingsSnap.exists && settingsSnap.data().waitlistTimeoutSeconds) {
+            timeoutSeconds = settingsSnap.data().waitlistTimeoutSeconds;
+        }
+        
+        const TIMEOUT_MS = timeoutSeconds * 1000;
+        const passesRef = db.collection("passes");
+        
+        // Find passes waiting for the student to accept ("pending_student")
+        const snapshot = await passesRef.where("status", "==", "pending_student").get();
+        if (snapshot.empty) return null;
+
+        const batch = db.batch();
+        const timeoutsToProcess = [];
+
+        // Identify who has timed out
+        snapshot.forEach(doc => {
+            const pass = doc.data();
+            if (pass.promotedAt) {
+                const promotedTime = pass.promotedAt.toDate().getTime();
+                if (now - promotedTime > TIMEOUT_MS) {
+                    timeoutsToProcess.push({ doc, pass });
+                }
+            }
+        });
+
+        // Process the "Swaps"
+        for (const item of timeoutsToProcess) {
+            const timedOutDoc = item.doc;
+            const passData = item.pass;
+            const roomId = passData.destination;
+
+            // Find the NEXT person in line for this specific room
+            const waitlistSnap = await passesRef
+                .where("destination", "==", roomId)
+                .where("status", "==", "waitlist")
+                .orderBy("createdAt", "asc")
+                .limit(1) 
+                .get();
+
+            if (!waitlistSnap.empty) {
+                const nextPassDoc = waitlistSnap.docs[0];
+                const nextPassData = nextPassDoc.data();
+                
+                // SAFE TIMESTAMP CALCULATION: 1 millisecond behind
+                const nextTimeMillis = nextPassData.createdAt.toDate().getTime();
+                const newTimeForA = new Date(nextTimeMillis + 1); 
+
+                // 1. Demote Student A to waitlist, slipping them right behind Student B
+                batch.update(timedOutDoc.ref, {
+                    status: "waitlist",
+                    createdAt: newTimeForA,
+                    promotedAt: null 
+                });
+
+                // 2. Promote Student B to the active spot
+                batch.update(nextPassDoc.ref, {
+                    status: "pending_student",
+                    promotedAt: new Date() 
+                });
+                
+                console.log(`Swapped timed out pass ${timedOutDoc.id} with next in line ${nextPassDoc.id}`);
+            } else {
+                // No one is behind them in line. Put back on waitlist.
+                batch.update(timedOutDoc.ref, {
+                    status: "waitlist",
+                    createdAt: new Date(),
+                    promotedAt: null
+                });
+                console.log(`Pass ${timedOutDoc.id} timed out. No one behind them. Placed back on waitlist.`);
+            }
+        }
+
+        await batch.commit();
+        return null;
+    } catch (error) {
+        console.error("Critical error in waitlist sweep:", error);
+        return null;
+    }
 });

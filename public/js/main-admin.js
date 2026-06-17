@@ -4,7 +4,7 @@
 // 📦 CORE IMPORTS
 // ==========================================
 import { db } from "./firebase-config.js";
-import { doc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, setDoc, collection, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { initializeTimeEngine } from "./modules/time-engine.js";
 import { renderHeader } from "./modules/ui-widgets.js";
@@ -65,13 +65,61 @@ document.addEventListener("click", (e) => {
         }
     }
 
-    // --- 🚦 Admin Location Capacity Limits Trigger ---
+    // ==========================================
+    // 🚦 LOCATION SETTINGS & WAITLIST MENUS
+    // ==========================================
+
+    // 1. Open the Intermediate Menu (Fetches current saved time)
     const capacityBtn = e.target.closest("#btn-location-limits");
     if (capacityBtn) {
         e.preventDefault();
+        const settingsModal = document.getElementById("location-settings-modal");
+        if (!settingsModal) return;
+
+        // Fetch the current saved timeout from database so the input box is accurate
+        getDoc(doc(db, "system", "settings")).then(snap => {
+            const timeoutInput = document.getElementById("input-waitlist-timeout");
+            if (snap.exists() && snap.data().waitlistTimeoutSeconds) {
+                timeoutInput.value = snap.data().waitlistTimeoutSeconds;
+            } else {
+                timeoutInput.value = 120; // Default to 120 if never set
+            }
+            settingsModal.classList.remove("hidden");
+        }).catch(err => console.error("Error fetching settings:", err));
+    }
+
+    // 2. Close the Intermediate Menu
+    if (e.target.closest("#btn-close-location-settings")) {
+        e.preventDefault();
+        document.getElementById("location-settings-modal").classList.add("hidden");
+    }
+
+    // 3. Save the Waitlist Time
+    if (e.target.closest("#btn-save-timeout")) {
+        e.preventDefault();
+        const timeoutInput = document.getElementById("input-waitlist-timeout").value;
+        const seconds = parseInt(timeoutInput, 10);
+        
+        if (!isNaN(seconds) && seconds > 0) {
+            // Save to the global 'system' -> 'settings' document
+            setDoc(doc(db, "system", "settings"), { waitlistTimeoutSeconds: seconds }, { merge: true })
+                .then(() => alert(`✅ Waitlist timeout saved at ${seconds} seconds!`))
+                .catch(err => console.error("Error saving timeout:", err));
+        } else {
+            alert("Please enter a valid number of seconds.");
+        }
+    }
+
+    // 4. Open the Map to set Room Limits (The old logic moved here!)
+    if (e.target.closest("#btn-open-capacity-map")) {
+        e.preventDefault();
+        
+        // Hide the intermediate menu
+        document.getElementById("location-settings-modal").classList.add("hidden");
+        
+        // Show the map popout
         const mapModal = document.getElementById("map-popout-modal");
         if (!mapModal) return;
-
         mapModal.classList.remove("hidden");
         mapModal.style.zIndex = "10000";
         
@@ -86,16 +134,14 @@ document.addEventListener("click", (e) => {
                 currentLimits[document.id] = document.data().maxCapacity;
             });
 
-            // CLEAR the container to prevent the "double click listener" bug!
             const mapContainer = document.getElementById("full-map-container");
             mapContainer.innerHTML = ""; 
 
             window.currentCapacityMap = new MapController({
                 containerId: "full-map-container",
                 mode: "admin_capacity",
-                capacityLimits: currentLimits, // Pass existing limits to the map
+                capacityLimits: currentLimits, 
                 onRoomSelect: async (selection) => {
-                    // Show current limit in the prompt if it exists
                     const existingLimit = currentLimits[selection.room] !== undefined ? currentLimits[selection.room] : "None";
                     const limitStr = prompt(`Set maximum capacity for ${selection.room}:\n(Currently: ${existingLimit} | Enter 0 to close room, leave blank to cancel)`);
                     
@@ -107,11 +153,9 @@ document.addEventListener("click", (e) => {
                                 const limitRef = doc(db, "location_limits", selection.room);
                                 await setDoc(limitRef, { maxCapacity: maxCapacity });
                                 
-                                // Update the map live without closing the window!
                                 currentLimits[selection.room] = maxCapacity;
                                 window.currentCapacityMap.capacityLimits = currentLimits;
                                 window.currentCapacityMap.applyHighlights();
-                                
                             } catch (error) {
                                 console.error("Error setting limit:", error);
                                 alert("Failed to save location limit.");
@@ -123,7 +167,6 @@ document.addEventListener("click", (e) => {
                 }
             });
         };
-        
         fetchAndRenderMap();
     }
 

@@ -11,7 +11,8 @@ import {
     addDoc,
     getDocs,
     deleteDoc,
-    getDoc 
+    getDoc,
+    orderBy // 🟢 ADDED: orderBy for waitlist sorting
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const passesRef = collection(db, "passes");
@@ -20,14 +21,42 @@ const passesRef = collection(db, "passes");
  * Listens for Pending Passes in real-time.
  */
 export function listenToPendingPasses(callback) {
-    // 🌟 Added "pending_restricted" so Phase 3 triggers and the teacher is notified!
-    const q = query(passesRef, where("status", "in", ["pending", "pending_student", "pending_restricted"]));
+    // 🟢 Pulls pending AND waitlisted passes
+    const q = query(passesRef, where("status", "in", ["pending", "pending_student", "pending_restricted", "waitlist"]));
     
     return onSnapshot(q, (snapshot) => {
         const passes = [];
         snapshot.forEach((doc) => {
             passes.push({ id: doc.id, ...doc.data() });
         });
+
+        // ==============================================================
+        // 🟢 DYNAMIC WAITLIST CALCULATION FOR TEACHER/ADMIN UI
+        // ==============================================================
+        // Grab only the waitlisted passes to compare
+        const waitlistPasses = passes.filter(p => p.status === "waitlist");
+        
+        passes.forEach(pass => {
+            if (pass.status === "waitlist") {
+                // Find everyone waiting for this exact same room
+                const sameRoom = waitlistPasses.filter(p => p.destination === pass.destination);
+                
+                // Sort them by time created (oldest first)
+                sameRoom.sort((a, b) => {
+                    const timeA = a.createdAt?.toDate?.() || new Date(0);
+                    const timeB = b.createdAt?.toDate?.() || new Date(0);
+                    return timeA - timeB;
+                });
+                
+                // Find this specific pass's index in that line
+                const truePosition = sameRoom.findIndex(p => p.id === pass.id) + 1;
+                
+                // 🪄 OVERWRITE the static database number with the true dynamic number in memory!
+                pass.queuePosition = truePosition; 
+            }
+        });
+        // ==============================================================
+
         callback(passes); 
     }, (error) => {
         console.error("Error listening to pending passes:", error);
@@ -36,25 +65,30 @@ export function listenToPendingPasses(callback) {
 
 /**
  * Listens for Active Passes in real-time.
- * @param {function} callback - Function to run when data updates
  */
 export function listenToActivePasses(callback) {
-    const q = query(passesRef, where("status", "==", "active"));
+    const q = query(passesRef, where("status", "in", ["active", "active_bypassed"]));
     
     return onSnapshot(q, (snapshot) => {
         const passes = [];
-        snapshot.forEach((doc) => {
-            passes.push({ id: doc.id, ...doc.data() });
-        });
-        callback(passes);
-    }, (error) => {
-        console.error("Error listening to active passes:", error);
+        snapshot.forEach((doc) => passes.push({ id: doc.id, ...doc.data() }));
+        callback(passes); 
+    });
+}
+
+// Listens for passes that need Admin Review (Column 4)
+export function listenToBypassedPasses(callback) {
+    const q = query(passesRef, where("status", "in", ["active_bypassed", "returned_bypassed"]));
+    
+    return onSnapshot(q, (snapshot) => {
+        const passes = [];
+        snapshot.forEach((doc) => passes.push({ id: doc.id, ...doc.data() }));
+        callback(passes); 
     });
 }
 
 /**
  * Listens for Scheduled Passes in real-time.
- * @param {function} callback - Function to run when data updates
  */
 export function listenToScheduledPasses(callback) {
     const q = query(passesRef, where("status", "==", "scheduled"));
@@ -70,29 +104,80 @@ export function listenToScheduledPasses(callback) {
     });
 }
 
+// 🟢 NEW: Listens for Waitlisted Passes for a specific room
+export function listenToWaitlist(roomId, callback) {
+    const q = query(
+        passesRef, 
+        where("destination", "==", roomId), 
+        where("status", "==", "waitlist")
+    );
+    return onSnapshot(q, (snapshot) => {
+        const list = [];
+        snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        // Sort by queuePosition so top of list is first
+        callback(list.sort((a, b) => a.queuePosition - b.queuePosition));
+    });
+}
+
 /**
  * Updates the status of a pass (e.g., active, returned, rejected)
  */
 export async function updatePassStatus(passId, newStatus) {
     try {
         const passDoc = doc(db, "passes", passId);
+        
+        // Fetch current pass data so we know the room destination
+        const passSnap = await getDoc(passDoc);
+        const passData = passSnap.exists() ? passSnap.data() : null;
+
         const updateData = { status: newStatus };
         
         // Add timestamps based on the action
-        if (newStatus === "active") updateData.acceptedAt = serverTimestamp();
-        if (newStatus === "returned") updateData.returnedAt = serverTimestamp();
+        if (newStatus === "active" || newStatus === "active_bypassed") updateData.acceptedAt = serverTimestamp();
+        if (newStatus === "returned" || newStatus === "returned_bypassed") updateData.returnedAt = serverTimestamp();
+        if (newStatus === "archived") updateData.archivedAt = serverTimestamp();
         
         await updateDoc(passDoc, updateData);
         console.log(`Pass ${passId} updated to: ${newStatus}`);
+
+        // 🟢 FIXED: Now triggers room release on Reject and Cancel too!
+        if ((newStatus === "returned" || newStatus === "returned_bypassed" || newStatus === "rejected" || newStatus === "cancelled") && passData && passData.destination) {
+            await processRoomRelease(passData.destination);
+        }
+
     } catch (error) {
         console.error("Failed to update pass:", error);
         alert("Error updating pass. Check console.");
     }
 }
 
-/**
- * Creates a brand new pass in the database
- */
+// 🟢 NEW: Promotes the oldest waitlisted student when a spot opens up
+export async function processRoomRelease(roomId) {
+    try {
+        const waitlistQ = query(
+            passesRef, 
+            where("destination", "==", roomId), 
+            where("status", "==", "waitlist"),
+            orderBy("createdAt", "asc")
+        );
+        const snap = await getDocs(waitlistQ);
+        
+        if (!snap.empty) {
+            const nextPass = snap.docs[0];
+            
+            // Promote to "pending" (or pending_student) so they have 2 mins to accept
+            await updateDoc(doc(db, "passes", nextPass.id), {
+                status: "pending_student", // Student must click "Use" to accept
+                promotedAt: serverTimestamp() // We will use this in the Cloud Function!
+            });
+            
+            console.log(`Promoted pass ${nextPass.id} from waitlist.`);
+        }
+    } catch (error) {
+        console.error("Error processing room release:", error);
+    }
+}
+
 /**
  * Creates a brand new pass in the database (With Waitlist Gatekeeper)
  */
@@ -110,7 +195,7 @@ export async function createNewPass(passData) {
                 const activeQ = query(
                     passesRef, 
                     where("destination", "==", passData.destination), 
-                    where("status", "==", "active")
+                    where("status", "in", ["active", "active_bypassed"]) // 🟢 Catch bypassed passes too!
                 );
                 const activeSnaps = await getDocs(activeQ);
                 const currentCount = activeSnaps.size;
@@ -136,7 +221,6 @@ export async function createNewPass(passData) {
                     });
                     
                     console.log(`Location full. Placed on waitlist at position ${queuePosition}`);
-                    // Note: returning an object here so the UI knows they were waitlisted
                     return { success: true, status: "waitlist", position: queuePosition };
                 }
             }
@@ -163,7 +247,6 @@ export async function createNewPass(passData) {
  * Listens for a specific student's active, pending, or restricted passes
  */
 export function listenToStudentPass(studentName, callback) {
-    // We look for any passes belonging to this specific student
     const q = query(passesRef, where("studentDisplayName", "==", studentName));
     
     return onSnapshot(q, (snapshot) => {
@@ -172,13 +255,14 @@ export function listenToStudentPass(studentName, callback) {
         snapshot.forEach((doc) => {
             const pass = { id: doc.id, ...doc.data() };
             
-            // FIX: Added "pending_restricted" so the listener catches Red passes!
+            // 🟢 ADDED "waitlist" to student listeners so their app knows they are waiting
             if (
                 pass.status === "active" || 
                 pass.status === "pending" || 
                 pass.status === "pending_student" || 
                 pass.status === "pending_restricted" ||
-                pass.status === "scheduled" 
+                pass.status === "scheduled" ||
+                pass.status === "waitlist" 
             ) {
                 currentPass = pass; 
             }
@@ -221,22 +305,18 @@ export async function fetchAllStudents() {
         snapshot.forEach(doc => {
             const data = doc.data();
             
-            // 1. Find Name
             const sName = data.displayName || data.name || data.studentName || data.Name || data['Student Name'] || "Unknown Student";
             
             let sEmail = null;
 
-            // 2. Is the Email acting as the Document ID? (Very common with CSV updates!)
             if (doc.id.includes('@')) {
                 sEmail = doc.id;
             }
 
-            // 3. Check Standard CSV properties
             if (!sEmail) {
                 sEmail = data.email || data.Email || data.studentEmail || data['Student Email'] || data['Email Address'];
             }
 
-            // 4. DEEP DIVE: Search every nested folder and array in their profile for an email
             if (!sEmail) {
                 const searchForEmail = (obj) => {
                     for (let key in obj) {
@@ -251,7 +331,6 @@ export async function fetchAllStudents() {
                 sEmail = searchForEmail(data);
             }
             
-            // If they have a name, add them to the dropdown list!
             if (sName !== "Unknown Student") {
                 students.push({ 
                     id: doc.id, 
@@ -261,7 +340,6 @@ export async function fetchAllStudents() {
             }
         });
         
-        // Sort alphabetically by name
         return students.sort((a, b) => a.displayName.localeCompare(b.displayName));
     } catch (error) {
         console.error("Error fetching all students:", error);

@@ -31,7 +31,7 @@
             <div id="monitor-widget" class="monitor-container"></div>
         </div>
         
-        <div class="columns-container" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+        <div class="columns-container" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
             <div id="pending-passes-widget" class="dashboard-column">
                 <h2>Pending Requests <span id="pending-count" class="badge">0</span></h2>
                 <div id="list-pending-passes"></div>
@@ -48,15 +48,17 @@
                 <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                     <select id="filter-sent-teacher" style="flex: 1; padding: 6px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;">
                         <option value="ALL">All Teachers</option>
-                        </select>
-                    
+                    </select>
                     <select id="filter-sent-student" style="flex: 1; padding: 6px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;">
                         <option value="ALL">All Students</option>
-                        </select>
+                    </select>
                 </div>
+                <div id="list-sent-passes" class="pass-list-container"></div>
+            </div>
 
-                <div id="list-sent-passes" class="pass-list-container">
-                    </div>
+            <div id="bypassed-passes-widget" class="dashboard-column">
+                <h2 style="color: #c62828;">Bypassed Review <span id="bypassed-count" class="badge" style="background: #c62828;">0</span></h2>
+                <div id="list-bypassed-passes" class="pass-list-container"></div>
             </div>
         </div>
 
@@ -238,6 +240,29 @@
         <div id="full-map-container" style="flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; background: #fafafa; padding: 20px;">
             </div>
         
+    </div>
+
+    <div id="location-settings-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1100;">
+        <div style="background: white; padding: 30px; border-radius: 8px; width: 450px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+            <h2 style="margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 10px;">🚦 Location & Waitlist Settings</h2>
+            
+            <div style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 5px;">Waitlist Inactivity Timeout (Seconds)</label>
+                <p style="font-size: 0.85rem; color: #666; margin-top: 0;">How long a student has to click "Use" off the waitlist before they are moved out of line and the next person is alerted.</p>
+                <div style="display: flex; gap: 10px;">
+                    <input type="number" id="input-waitlist-timeout" value="120" style="flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem;">
+                    <button id="btn-save-timeout" class="primary-btn" style="background: #f57c00; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;">💾 Save Time</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 25px; padding: 15px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 5px;">Room Capacity Limits</label>
+                <p style="font-size: 0.85rem; color: #666; margin-top: 0;">Click the map to set maximum allowed active passes per room.</p>
+                <button id="btn-open-capacity-map" class="primary-btn" style="background: #2e7d32; color: white; border: none; padding: 12px 15px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; font-size: 1rem;">🗺️ Open Map to Set Limits</button>
+            </div>
+
+            <button id="btn-close-location-settings" style="width: 100%; padding: 12px; background: #ddd; color: #333; font-weight: bold; border: none; border-radius: 4px; cursor: pointer;">Cancel / Close</button>
+        </div>
     </div>
 
     <div id="bell-schedule-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">

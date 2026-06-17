@@ -6,9 +6,12 @@ import {
     renderStudentSidebar, 
     renderRecentTravelsSidebar,
     renderMapModal, 
-    renderStudentWaitingScreen, 
+    renderStudentWaitingScreen,
+    renderStudentWaitlistScreen,
+    renderStudentAcceptScreen, 
     renderStudentActiveScreen,
-    initializeRotationDayEngine // <-- ADD THIS IMPORT
+    initializeRotationDayEngine,
+    calculateDynamicQueuePosition
 } from "./modules/student-ui.js";
 import { createNewPass, listenToStudentPass, updatePassStatus, fetchStudentProfileByEmail } from "./modules/pass-engine.js";
 import { 
@@ -18,7 +21,7 @@ import {
     getAdjustedNow 
 } from "./modules/time-engine.js";
 import { db } from "./firebase-config.js";
-import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 let activeTimerInterval = null; 
 let elapsedSeconds = 0; 
@@ -165,53 +168,58 @@ async function initStudentApp(user, role) {
 
 
     // LISTEN TO THE DATABASE IN REAL-TIME
-    // In proxy mode, we format the name exactly as it saves in the database so the listener catches it!
     const activeListenerName = user.displayName;
+    
+    // 🟢 Keep track of the waitlist listener so we can turn it off when they leave the line
+    let activeWaitlistListener = null; 
+
     listenToStudentPass(activeListenerName, (currentPass) => {
         clearInterval(activeTimerInterval);
 
-        window.currentActivePass = currentPass; // 🌟 NEW: Save globally for the time engine
+        // 🟢 Clean up the waitlist listener if they are no longer waitlisted
+        if (activeWaitlistListener && (!currentPass || currentPass.status !== "waitlist")) {
+            activeWaitlistListener(); // Unsubscribe from the listener
+            activeWaitlistListener = null;
+        }
+
+        window.currentActivePass = currentPass;
 
         if (!currentPass) {
             renderStudentIdleScreen();
-            // Re-render sidebar to ensure it stays visible
             renderStudentSidebar(window.currentStudentProfile); 
             
-            // Clear message center if pass was cancelled/removed
             const msgCenter = document.getElementById("message-center");
             if (msgCenter) msgCenter.innerHTML = "";
         } 
         else if (currentPass.status === "scheduled") {
-            renderStudentIdleScreen(); 
-            renderStudentSidebar(window.currentStudentProfile);
-            
-            const msgCenter = document.getElementById("admin-messages-container");
-            
-            if (msgCenter) {
-                let timeText = currentPass.scheduledTime ? currentPass.scheduledTime : `Period ${currentPass.scheduledPeriod}`;
-                let requestingTeacher = currentPass.senderName || currentPass.teacherName || currentPass.originTeacher || "A teacher";
+            // ... (keep your existing scheduled pass code here) ...
+        }
+        else if (currentPass.status === "waitlist") {
+            renderStudentWaitlistScreen(currentPass);
+
+            // 🟢 START THE DYNAMIC COUNTDOWN LISTENER
+            if (!activeWaitlistListener) {
+                // Optimized query: Only pull the waitlist for THIS specific room
+                const q = query(
+                    collection(db, "passes"), 
+                    where("status", "==", "waitlist"),
+                    where("destination", "==", currentPass.destination)
+                );
                 
-                const passCard = `
-                    <div id="scheduled-pass-banner" style="background: #e3f2fd; border-left: 4px solid #1976d2; padding: 10px; margin-top: 10px; border-radius: 4px;">
-                        <strong style="color: #1565c0; font-size: 0.95rem;">📍 To: ${currentPass.destination}</strong><br>
-                        <span style="font-size: 0.85rem; color: #555;">📅 Time: <strong>${timeText}</strong></span>
-                        <div style="margin-top: 10px; display: flex; gap: 5px;">
-                            <!-- Button is hidden by default until the clock unlocks it -->
-                            <button id="btn-use-scheduled-pass" data-id="${currentPass.id}" style="display: none; background-color: #2e7d32; color: white; border: none; padding: 6px; font-size: 0.85rem; font-weight: bold; border-radius: 4px; cursor: pointer; flex: 1;">Use</button>
-                            <button class="btn-view-scheduled-pass" data-teacher="${requestingTeacher}" data-purpose="${currentPass.purpose || 'Not specified'}" data-dest="${currentPass.destination}" data-time="${timeText}" style="background-color: #1976d2; color: white; border: none; padding: 6px; font-size: 0.85rem; border-radius: 4px; cursor: pointer; flex: 1;">View</button>
-                            <button id="btn-delete-scheduled-pass" data-id="${currentPass.id}" style="background-color: #c62828; color: white; border: none; padding: 6px; font-size: 0.85rem; border-radius: 4px; cursor: pointer; flex: 1;">Delete</button>
-                        </div>
-                    </div>
-                `;
-                
-                if (msgCenter.innerHTML.includes("Loading announcements...") || msgCenter.innerHTML.includes("No active announcements.")) {
-                    msgCenter.innerHTML = "";
-                }
-                
-                if (!document.getElementById("btn-use-scheduled-pass")) {
-                    msgCenter.insertAdjacentHTML('beforeend', passCard);
-                }
+                activeWaitlistListener = onSnapshot(q, (snapshot) => {
+                    const allWaiting = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    
+                    // Recalculate their specific position
+                    const newPos = calculateDynamicQueuePosition(currentPass, allWaiting);
+                    
+                    // Update the giant number on the screen instantly
+                    const posEl = document.getElementById("queue-pos-display");
+                    if (posEl) posEl.innerText = `#${newPos}`;
+                });
             }
+        }
+        else if (currentPass.status === "pending_student") {
+            renderStudentAcceptScreen(currentPass);
         }
         else if (currentPass.status.startsWith("pending")) {
             const statusData = {
@@ -222,7 +230,7 @@ async function initStudentApp(user, role) {
             };
             renderStudentWaitingScreen(currentPass, statusData);
         }
-        else if (currentPass.status === "active") {
+        else if (currentPass.status === "active" || currentPass.status === "active_bypassed") {
             renderStudentActiveScreen(currentPass);
             
             // Start the massive timer
@@ -235,7 +243,7 @@ async function initStudentApp(user, role) {
                 const timerDisplay = document.getElementById("student-timer-display");
                 if (timerDisplay) {
                     timerDisplay.innerText = `${mins}:${secs}`;
-                    if (elapsedSeconds > 300) { // Over 5 minutes turns red
+                    if (elapsedSeconds > 300) { 
                         timerDisplay.style.color = "var(--pirate-red)";
                         timerDisplay.classList.add("pulse-warning");
                     }
@@ -413,6 +421,36 @@ document.addEventListener("click", async (e) => {
         if (teacherDisplay) {
             window.selectedDestinationTeacher = teacherDisplay.replace(/[()]/g, '').trim();
         }
+
+        // 🟢 NEW: Student accepts their waitlist spot!
+    if (e.target.id === "btn-accept-waitlist") {
+        const passId = e.target.getAttribute("data-id");
+        if (!passId) return;
+        
+        e.target.innerText = "Claiming...";
+        e.target.disabled = true;
+        
+        if (typeof updatePassStatus === "function") {
+            updatePassStatus(passId, "active");
+        }
+    }
+
+    // 🟢 NEW: Student cancels their waitlist spot!
+    if (e.target.id === "btn-cancel-waitlist") {
+        const passId = e.target.getAttribute("data-id");
+        if (!passId) return;
+        
+        if (confirm("Are you sure you want to cancel your pass request?")) {
+            e.target.innerText = "Canceling...";
+            e.target.disabled = true;
+            
+            if (typeof updatePassStatus === "function") {
+                // Rejecting the pass removes them from the queue safely
+                updatePassStatus(passId, "rejected");
+            }
+        }
+    }
+
     }
 
     // ==========================================
