@@ -145,9 +145,6 @@ export function evaluateCurrentTime(scheduleData) {
     // Sort chronologically
     periods.sort((a, b) => a.startMins - b.startMins);
 
-    // 🕵️ DEBUG LOGGER: Let's see exactly what the engine sees!
-    console.log(`⏱️ CURRENT TIME: ${now.toLocaleTimeString()} (Total Mins: ${currentMins})`);
-    console.table(periods);
 
     for (let i = 0; i < periods.length; i++) {
         const p = periods[i];

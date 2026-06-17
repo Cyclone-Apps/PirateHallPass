@@ -20,8 +20,8 @@ const passesRef = collection(db, "passes");
  * Listens for Pending Passes in real-time.
  */
 export function listenToPendingPasses(callback) {
-    // UPDATED: Now listens for BOTH student-initiated and teacher-initiated pending passes
-    const q = query(passesRef, where("status", "in", ["pending", "pending_student"]));
+    // 🌟 Added "pending_restricted" so Phase 3 triggers and the teacher is notified!
+    const q = query(passesRef, where("status", "in", ["pending", "pending_student", "pending_restricted"]));
     
     return onSnapshot(q, (snapshot) => {
         const passes = [];

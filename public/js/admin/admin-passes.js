@@ -142,9 +142,12 @@ function openSendPassModal() {
 }
 
 async function submitProxyPass(e) {
-    const studentName = document.getElementById("proxy-search-input").value.trim();
+    const rawName = document.getElementById("proxy-search-input").value.trim();
     const studentEmail = document.getElementById("proxy-email-input").value.trim();
     const passType = document.getElementById("proxy-pass-type").value;
+
+    // 🌟 Apply Name Cleaner: Strip "(Created by...)" tags and fix double spaces
+    const studentName = rawName.replace(/\s*\(Created by.*?\)\s*/gi, "").replace(/\s+/g, ' ').trim();
 
     if (!studentName || !studentEmail) {
         return alert("Please select a student from the list.");
@@ -200,7 +203,6 @@ async function submitProxyPass(e) {
             alert(`✅ Pass successfully pushed to ${studentName}!`);
         }
     } else {
-        // 🌟 FIX: Ensure errors aren't silent if the engine connection drops
         console.error("CRITICAL ERROR: 'createNewPass' function is completely unavailable.");
         alert("❌ Error: The database pass engine could not be reached. Check import links.");
     }
@@ -251,14 +253,18 @@ function closeEmulator() {
 }
 
 function launchVirtualKiosk() {
-    const pName = document.getElementById("input-proxy-name").value.trim();
+    const rawName = document.getElementById("input-proxy-name").value.trim();
     const pEmail = document.getElementById("input-proxy-email").value.trim();
     
-    if (!pName || !pEmail) return alert("Please enter both the student's name and email.");
+    if (!rawName || !pEmail) return alert("Please enter both the student's name and email.");
+    
+    // 🌟 Apply Name Cleaner: Strip tags and fix double spaces
+    const pName = rawName.replace(/\s*\(Created by.*?\)\s*/gi, "").replace(/\s+/g, ' ').trim();
     
     const creatorName = window.currentUser?.displayName || "Admin"; 
     const iframe = document.getElementById("proxy-iframe");
     
+    // Pass the perfectly clean name to the student screen!
     const proxyUrl = `student.html?proxy=true&studentName=${encodeURIComponent(pName)}&studentEmail=${encodeURIComponent(pEmail)}&teacherName=${encodeURIComponent(creatorName)}`;
     
     if (iframe) iframe.src = proxyUrl;

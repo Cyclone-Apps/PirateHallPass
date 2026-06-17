@@ -59,10 +59,12 @@ initAuthListener("teacher", async (user, role) => {
 
     // Hook up real-time Firestore listeners to UI components
     listenToPendingPasses((passes) => {
-        // 🌟 TEACHER FILTER: Only show passes where they are the Origin or Target
+        // 🌟 Checks Origin, Target, AND Sender (Fixes the Proxy pass missing from teacher screen)
         const myName = user.displayName;
         const myPendingPasses = passes.filter(pass => 
-            pass.targetTeacher === myName || pass.originTeacher === myName
+            pass.targetTeacher === myName || 
+            pass.originTeacher === myName ||
+            pass.senderName === myName 
         );
         
         renderPassList(myPendingPasses, "list-pending-passes", "pending-count");
@@ -308,9 +310,12 @@ document.addEventListener("click", async (e) => {
 
     // 3. Submit the Push Pass
     if (e.target.id === "btn-submit-proxy-pass") {
-        const studentName = document.getElementById("proxy-search-input").value.trim();
+        const rawName = document.getElementById("proxy-search-input").value.trim();
         const studentEmail = document.getElementById("proxy-email-input").value.trim();
         const passType = document.getElementById("proxy-pass-type").value; // tardy, request, required
+
+        // 🌟 Apply Name Cleaner: Strip "(Created by...)" tags and fix double spaces
+        const studentName = rawName.replace(/\s*\(Created by.*?\)\s*/gi, "").replace(/\s+/g, ' ').trim();
 
         if (!studentName || !studentEmail) {
             return alert("Please select a student from the list.");
@@ -353,7 +358,7 @@ document.addEventListener("click", async (e) => {
             passData.purpose = purpose;
             passData.destination = destination;
             
-            // 🌟 NEW: Grab the teacher name we saved earlier and put it in the payload!
+            // Grab the teacher name we saved earlier and put it in the payload!
             passData.targetTeacher = destInput?.dataset?.teacher || "Unknown";
 
             passData.scheduledDate = date;
@@ -367,6 +372,7 @@ document.addEventListener("click", async (e) => {
         if (typeof createNewPass === "function") {
             createNewPass(passData).then(success => {
                 if (success) {
+                    const sendPassModal = document.getElementById("modal-proxy-search");
                     if (typeof sendPassModal !== "undefined" && sendPassModal) sendPassModal.classList.add("hidden");
                     alert(`✅ Pass successfully sent to ${studentName}!`);
                 }
@@ -395,6 +401,32 @@ document.addEventListener("click", async (e) => {
         if (proxyEmulatorModal) proxyEmulatorModal.classList.add("hidden");
         const iframe = document.getElementById("proxy-iframe");
         if (iframe) iframe.src = ""; // Clear the iframe to stop background processes
+    }
+
+    // 🌟 VIRTUAL KIOSK LAUNCH (Consolidated & Cleaned)
+    if (e.target.id === "btn-launch-proxy") {
+        const rawName = document.getElementById("input-proxy-name").value.trim();
+        const pEmail = document.getElementById("input-proxy-email").value.trim();
+        
+        if (!rawName || !pEmail) return alert("Please enter both the student's name and email.");
+        
+        // 🌟 Apply Name Cleaner: Strip tags and fix double spaces
+        const pName = rawName.replace(/\s*\(Created by.*?\)\s*/gi, "").replace(/\s+/g, ' ').trim();
+        
+        // Note: For teachers, we use currentUser.displayName
+        const creatorName = window.currentUser?.displayName || "Teacher"; 
+        const iframe = document.getElementById("proxy-iframe");
+        
+        // Pass the perfectly clean name to the student screen!
+        const proxyUrl = `student.html?proxy=true&studentName=${encodeURIComponent(pName)}&studentEmail=${encodeURIComponent(pEmail)}&teacherName=${encodeURIComponent(creatorName)}`;
+        
+        if (iframe) iframe.src = proxyUrl;
+        
+        const proxySetupModal = document.getElementById("proxy-setup-modal");
+        const proxyEmulatorModal = document.getElementById("proxy-emulator-modal");
+        
+        if (proxySetupModal) proxySetupModal.classList.add("hidden");
+        if (proxyEmulatorModal) proxyEmulatorModal.classList.remove("hidden");
     }
 
     // Map Popout Modal (Handles both Admin Restrictions & Proxy Passes natively!)
@@ -456,25 +488,7 @@ document.addEventListener("click", async (e) => {
         if (mapModal) mapModal.classList.add("hidden");
     }
 
-    if (e.target.id === "btn-launch-proxy") {
-        const pName = document.getElementById("input-proxy-name").value.trim();
-        const pEmail = document.getElementById("input-proxy-email").value.trim();
-        
-        if (!pName || !pEmail) return alert("Please enter both the student's name and email.");
-        
-        // Grab the Admin or Teacher's name automatically!
-        const creatorName = window.currentUser.displayName; 
-        const iframe = document.getElementById("proxy-iframe");
-        
-        // Build the URL with the proxy flag so the student app knows it's being emulated
-        const proxyUrl = `student.html?proxy=true&studentName=${encodeURIComponent(pName)}&studentEmail=${encodeURIComponent(pEmail)}&teacherName=${encodeURIComponent(creatorName)}`;
-        
-        if (iframe) iframe.src = proxyUrl;
-        if (proxySetupModal) proxySetupModal.classList.add("hidden");
-        if (proxyEmulatorModal) proxyEmulatorModal.classList.remove("hidden");
-    }
-
-    // Submit New Pass
+        // Submit New Pass
     if (e.target.id === "btn-submit-pass") {
         const nameInput = document.getElementById("input-student-name");
         const destination = document.getElementById("input-destination").value;

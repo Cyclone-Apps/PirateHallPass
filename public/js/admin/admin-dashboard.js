@@ -66,6 +66,31 @@ export function initDashboardManagement() {
     }
 }
 
+// Bind Event Delegation for Pass Action Buttons (Approve, Reject, End)
+    document.addEventListener("click", async (e) => {
+        // Check if what we clicked was one of our dynamic buttons
+        if (e.target && e.target.classList.contains("card-btn")) {
+            const passId = e.target.getAttribute("data-id");
+            const newStatus = e.target.getAttribute("data-action");
+
+            if (!passId || !newStatus) return;
+
+            // Change the button text so the user knows it's working
+            const originalText = e.target.innerText;
+            e.target.innerText = "⏳...";
+            e.target.disabled = true;
+
+            try {
+                // Call the pass engine function!
+                await updatePassStatus(passId, newStatus);
+            } catch (error) {
+                console.error("Failed to update pass:", error);
+                e.target.innerText = originalText;
+                e.target.disabled = false;
+            }
+        }
+    });
+
 // ==========================================
 // 🔄 DYNAMIC DROPDOWN GENERATOR
 // ==========================================

@@ -445,9 +445,10 @@ document.addEventListener("click", async (e) => {
         if (window.currentUser && window.currentUser.displayName) {
             studentName = window.currentUser.displayName;
         }
-        const finalDisplayName = isProxyActive ? `${studentName} (Created by ${proxyTeacherName})` : studentName;
+        
+        // 🌟 Stop appending "(Created by...)" to the display name so the proxy listener catches it!
+        const finalDisplayName = studentName;
 
-        // 🌟 NEW: Figure out the student's CURRENT teacher based on their schedule
         let currentOriginTeacher = "Unknown";
         if (window.currentStudentProfile && window.currentStudentProfile.schedule) {
             const currentClass = window.currentStudentProfile.schedule[assignedPeriod];
@@ -460,10 +461,11 @@ document.addEventListener("click", async (e) => {
             studentDisplayName: finalDisplayName,
             destination: dest,
             targetTeacher: window.selectedDestinationTeacher || "Unknown", 
-            originTeacher: currentOriginTeacher, // 🌟 NEW: Saves their current teacher!
+            originTeacher: currentOriginTeacher, 
             period: assignedPeriod, 
             type: "standard",
             initiatedBy: isProxyActive ? "teacher_proxy" : "student",
+            senderName: isProxyActive ? proxyTeacherName : studentName, // Saves creator name without corrupting display name
             status: evaluation.statusLevel === 'red' ? "pending_restricted" : "pending", 
             restrictionLevel: evaluation.statusLevel || "none",
             restrictionType: evaluation.restrictionType || "",
@@ -476,12 +478,9 @@ document.addEventListener("click", async (e) => {
         if (success) {
             const mapModalElement = document.getElementById("map-modal");
             if (mapModalElement) mapModalElement.classList.add("hidden");
-            
             document.querySelectorAll(".map-node").forEach(node => node.classList.remove("selected"));
-            
             const labelElement = document.getElementById("selected-room-label");
             if (labelElement) labelElement.innerText = "Select a room on the map";
-            
             window.selectedDestination = null;
             window.selectedDestinationTeacher = null;
         }
@@ -493,21 +492,46 @@ document.addEventListener("click", async (e) => {
     // ==========================================
     // --- 2. TEACHER APPROVAL HANDOFF CONTROLS ---
     // ==========================================
-    if (e.target.id === "btn-teacher-approve") {
+    if (e.target && e.target.id === "btn-teacher-approve") {
         const passId = e.target.getAttribute("data-id");
-        if (typeof updatePassStatus === "function") updatePassStatus(passId, "active");
+        if (passId) {
+            e.target.innerText = "⏳ Approving...";
+            e.target.disabled = true;
+            updatePassStatus(passId, "active").catch(err => {
+                console.error(err);
+                e.target.innerText = "✅ Approve";
+                e.target.disabled = false;
+            });
+        }
     }
-    if (e.target.id === "btn-teacher-reject") {
+    
+    if (e.target && e.target.id === "btn-teacher-reject") {
         const passId = e.target.getAttribute("data-id");
-        if (typeof updatePassStatus === "function") updatePassStatus(passId, "rejected");
+        if (passId) {
+            e.target.innerText = "⏳ Rejecting...";
+            e.target.disabled = true;
+            updatePassStatus(passId, "rejected").catch(err => {
+                console.error(err);
+                e.target.innerText = "❌ Reject";
+                e.target.disabled = false;
+            });
+        }
     }
 
     // ==========================================
     // --- 3. TEACHER RETURN HANDOFF CONTROL ---
     // ==========================================
-    if (e.target.id === "btn-teacher-return") {
+    if (e.target && e.target.id === "btn-teacher-return") {
         const passId = e.target.getAttribute("data-id");
-        if (typeof updatePassStatus === "function") updatePassStatus(passId, "returned");
+        if (passId) {
+            e.target.innerText = "⏳ Ending Pass...";
+            e.target.disabled = true;
+            updatePassStatus(passId, "returned").catch(err => {
+                console.error(err);
+                e.target.innerText = "🛑 End Pass (Student Returned)";
+                e.target.disabled = false;
+            });
+        }
     }
 
     // ==========================================
