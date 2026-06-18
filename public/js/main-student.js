@@ -10,6 +10,7 @@ import {
     renderStudentWaitlistScreen,
     renderStudentAcceptScreen, 
     renderStudentActiveScreen,
+    renderStudentBlindRestrictionScreen,
     initializeRotationDayEngine,
     calculateDynamicQueuePosition
 } from "./modules/student-ui.js";
@@ -221,6 +222,10 @@ async function initStudentApp(user, role) {
         else if (currentPass.status === "pending_student") {
             renderStudentAcceptScreen(currentPass);
         }
+        // 🚨 ADD THIS BLOCK TO INTERCEPT RESTRICTED PASSES
+        else if (currentPass.status === "pending_restricted") {
+            renderStudentBlindRestrictionScreen(currentPass);
+        }
         else if (currentPass.status.startsWith("pending")) {
             const statusData = {
                 statusLevel: currentPass.restrictionLevel || 'green',
@@ -271,21 +276,6 @@ function startStopwatchTimer() {
             }
         }
     }, 1000);
-}
-
-// --- MOCK EVALUATION ENGINE ---
-function evaluateRestrictions(destination) {
-    if (destination.includes("Restroom")) {
-        return { statusLevel: "yellow", restrictionType: null, recentTravels: [{ destination: "Restroom", time: "15 mins ago" }], restrictionReason: null, waitlistPosition: null };
-    } else if (destination.includes("Nurse")) {
-        return { statusLevel: "red", restrictionType: "capacity", recentTravels: [], restrictionReason: "Destination at Maximum Capacity", waitlistPosition: 3 };
-    } else if (destination.includes("Gym")) {
-        return { statusLevel: "red", restrictionType: "temporary", recentTravels: [], restrictionReason: "Admin locked hallway due to spill.", waitlistPosition: null };
-    } else if (destination.includes("Parking") || destination.includes("Outside")) {
-        return { statusLevel: "red", restrictionType: "permanent", recentTravels: [], restrictionReason: "Student not permitted in unstructured outside areas.", waitlistPosition: null };
-    } else {
-        return { statusLevel: "green", restrictionType: null, recentTravels: [], restrictionReason: null, waitlistPosition: null };
-    }
 }
 
 // Global Event Listeners
@@ -463,10 +453,6 @@ document.addEventListener("click", async (e) => {
         e.target.innerText = "⏳ Requesting...";
         e.target.disabled = true;
 
-        const evaluation = typeof evaluateRestrictions === "function" 
-            ? evaluateRestrictions(dest) 
-            : { statusLevel: "pending", restrictionType: "", restrictionReason: "", waitlistPosition: 0, recentTravels: [] };
-
         let assignedPeriod = "Unknown";
         if (window.currentTimeState) {
             if (window.currentTimeState.isPassing && window.currentTimeState.nextPeriod) {
@@ -495,22 +481,30 @@ document.addEventListener("click", async (e) => {
             }
         }
 
-        const passData = {
-            studentDisplayName: finalDisplayName,
-            destination: dest,
-            targetTeacher: window.selectedDestinationTeacher || "Unknown", 
-            originTeacher: currentOriginTeacher, 
-            period: assignedPeriod, 
-            type: "standard",
-            initiatedBy: isProxyActive ? "teacher_proxy" : "student",
-            senderName: isProxyActive ? proxyTeacherName : studentName, // Saves creator name without corrupting display name
-            status: evaluation.statusLevel === 'red' ? "pending_restricted" : "pending", 
-            restrictionLevel: evaluation.statusLevel || "none",
-            restrictionType: evaluation.restrictionType || "",
-            restrictionReason: evaluation.restrictionReason || "",
-            waitlistPosition: evaluation.waitlistPosition || 0,
-            recentTravels: evaluation.recentTravels || []
-        };
+        // 🌟 1. Safely extract the ID depending on if it's a Proxy or a Real Student
+const safeStudentId = window.currentStudentProfile?.id || window.currentUser?.id || window.currentUser?.uid || "unknown";
+
+// 🌟 2. Build your passData using the safe ID
+const passData = {
+    studentId: safeStudentId, // ✅ This will never be 'undefined' now!
+    studentDisplayName: finalDisplayName,
+    destination: dest,
+    targetTeacher: window.selectedDestinationTeacher || "Unknown", 
+    originTeacher: currentOriginTeacher, 
+    period: assignedPeriod, 
+    type: "standard",
+    initiatedBy: isProxyActive ? "teacher_proxy" : "student",
+    senderName: isProxyActive ? proxyTeacherName : studentName, 
+    
+    // Default Statuses
+    status: "pending", 
+    restrictionLevel: "none",
+    restrictionType: "",
+    restrictionReason: "",
+    waitlistPosition: 0,
+    recentTravels: []
+};
+        
         const success = await createNewPass(passData);
         
         if (success) {
@@ -598,6 +592,19 @@ document.addEventListener("click", async (e) => {
         const time = e.target.getAttribute("data-time");
 
         alert(`📨 SCHEDULED PASS DETAILS\n\nSent By: ${teacher}\nDestination: ${dest}\nTime: ${time}\nPurpose: ${purpose}`);
+    }
+
+    // 🛑 CANCEL BLIND RESTRICTED PASS
+    if (e.target.id === "btn-cancel-restricted") {
+        const passId = e.target.getAttribute("data-id");
+        if (!passId) return;
+        
+        e.target.innerText = "Canceling...";
+        e.target.disabled = true;
+        
+        if (typeof updatePassStatus === "function") {
+            updatePassStatus(passId, "cancelled");
+        }
     }
 
     // 🔴 DELETE PASS (Removes it from the queue)

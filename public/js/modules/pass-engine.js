@@ -179,11 +179,49 @@ export async function processRoomRelease(roomId) {
 }
 
 /**
- * Creates a brand new pass in the database (With Waitlist Gatekeeper)
+ * Creates a brand new pass in the database (With Restriction & Waitlist Gatekeepers)
  */
 export async function createNewPass(passData) {
     try {
-        // --- 🚦 GATEKEEPER LOGIC ---
+        // =========================================================
+        // 🚨 1. PAIRING RESTRICTION GATEKEEPER
+        // =========================================================
+        if (passData.studentId) {
+            const restrictionDocRef = doc(db, "restrictions", passData.studentId);
+            const restrictionSnap = await getDoc(restrictionDocRef);
+            
+            if (restrictionSnap.exists()) {
+                const noContactList = restrictionSnap.data().noContact || [];
+                
+                // Check if any of these "no-contact" peers have an ACTIVE pass
+                for (const peerId of noContactList) {
+                    const activePeerQ = query(
+                        passesRef,
+                        where("studentId", "==", peerId), 
+                        where("status", "in", ["active", "active_bypassed"])
+                    );
+                    const activeSnaps = await getDocs(activePeerQ);
+                    
+                    if (!activeSnaps.empty) {
+                        // Conflict found! Block the pass and route to Admin Review.
+                        await addDoc(passesRef, {
+                            ...passData,
+                            status: "pending_restricted",
+                            restrictedPeer: peerId, // Helps the teacher see who caused the block
+                            restrictionReason: "Admin No-Contact Restriction",
+                            createdAt: serverTimestamp()
+                        });
+                        
+                        console.log(`Restriction Gatekeeper Blocked Pass: Peer ${peerId} is active.`);
+                        // Return the custom status so the front-end knows to show the Blind UI
+                        return { success: true, status: "blocked_blind" };
+                    }
+                }
+            }
+        }
+        // =========================================================
+        // 🚦 2. LOCATION CAPACITY GATEKEEPER (Your existing logic)
+        // =========================================================
         if (passData.destination) {
             const limitRef = doc(db, "location_limits", passData.destination);
             const limitSnap = await getDoc(limitRef);
@@ -195,7 +233,7 @@ export async function createNewPass(passData) {
                 const activeQ = query(
                     passesRef, 
                     where("destination", "==", passData.destination), 
-                    where("status", "in", ["active", "active_bypassed"]) // 🟢 Catch bypassed passes too!
+                    where("status", "in", ["active", "active_bypassed"]) // Catch bypassed passes too!
                 );
                 const activeSnaps = await getDocs(activeQ);
                 const currentCount = activeSnaps.size;
@@ -225,9 +263,11 @@ export async function createNewPass(passData) {
                 }
             }
         }
-        // --- END GATEKEEPER ---
+        // --- END GATEKEEPERS ---
 
-        // Proceed normally if no limit is set or capacity is not reached
+        // =========================================================
+        // ✅ 3. PROCEED NORMALLY (No restrictions, capacity open)
+        // =========================================================
         await addDoc(passesRef, {
             ...passData,
             createdAt: serverTimestamp()

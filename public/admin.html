@@ -10,6 +10,37 @@
     <style>
         /* Utility class to hide modals */
         .hidden { display: none !important; }
+
+        /* Sleek Admin Palette */
+.admin-dashboard-btn {
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease;
+            border-radius: 6px; 
+            font-weight: 600;
+            border: none;
+            padding: 10px 16px; /* Slightly taller for a better click target */
+            cursor: pointer;
+
+            /* 🌟 THE MAGIC SIZING PROPERTIES */
+            flex: 1;              /* Forces all buttons to grow equally and fill the row */
+            text-align: center;   /* Keeps the emojis and text perfectly centered */
+            white-space: nowrap;  /* Prevents the text from awkwardly wrapping to two lines */
+        }
+
+/* 1. Critical (Darkest Gray) */
+.btn-critical { background-color: #383b3c !important; color: #ffffff !important; }
+.btn-critical:hover { background-color: #262829 !important; }
+
+/* 2. Primary (Red) */
+.btn-primary { background-color: #ef1a14 !important; color: #ffffff !important; }
+.btn-primary:hover { background-color: #cc1510 !important; }
+
+/* 3. Light (Lightest Gray) */
+.btn-light { background-color: #f2f4f4 !important; color: #333333 !important; border: 1px solid #ced0d0 !important; }
+.btn-light:hover { background-color: #e5e8e8 !important; }
+
+/* 4. Base (Middle Gray) */
+.btn-base { background-color: #ced0d0 !important; color: #1a1a1a !important; }
+.btn-base:hover { background-color: #b3b5b5 !important; }
     </style>
 </head>
 <body id="admin-body">
