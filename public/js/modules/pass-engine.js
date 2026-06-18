@@ -22,7 +22,7 @@ const passesRef = collection(db, "passes");
  */
 export function listenToPendingPasses(callback) {
     // 🟢 Pulls pending AND waitlisted passes
-    const q = query(passesRef, where("status", "in", ["pending", "pending_student", "pending_restricted", "waitlist"]));
+    const q = query(passesRef, where("status", "in", ["pending", "pending_student", "pending_restricted", "pending_warning", "waitlist"]));
     
     return onSnapshot(q, (snapshot) => {
         const passes = [];
@@ -126,11 +126,24 @@ export async function updatePassStatus(passId, newStatus, extraFields = {}) {
     try {
         const passDoc = doc(db, "passes", passId);
         
-        // Fetch current pass data so we know the room destination
+        // Fetch current pass data so we know the room destination and current status
         const passSnap = await getDoc(passDoc);
         const passData = passSnap.exists() ? passSnap.data() : null;
 
-        // 🌟 Merge new status and any extra metadata payload (like bypassedBy)
+        // 🌟 AUTO-UPGRADE APPROVALS TO ADMIN REVIEW (BYPASSED)
+        if (passData) {
+            // If it was a restriction or warning and the teacher approved it
+            if (newStatus === "active" && (passData.status === "pending_restricted" || passData.status === "pending_warning")) {
+                newStatus = "active_bypassed";
+                extraFields.bypassedBy = extraFields.bypassedBy || "Teacher"; // Note who overrode it
+            }
+            // If it was bypassed and the student returns, keep it in the bypassed column
+            if (newStatus === "returned" && passData.status === "active_bypassed") {
+                newStatus = "returned_bypassed";
+            }
+        }
+
+        // Merge new status and any extra metadata payload
         const updateData = { 
             status: newStatus,
             ...extraFields 
@@ -144,7 +157,6 @@ export async function updatePassStatus(passId, newStatus, extraFields = {}) {
         await updateDoc(passDoc, updateData);
         console.log(`Pass ${passId} updated to: ${newStatus}`);
 
-        // 🟢 FIXED: Now triggers room release on Reject and Cancel too!
         if ((newStatus === "returned" || newStatus === "returned_bypassed" || newStatus === "rejected" || newStatus === "cancelled") && passData && passData.destination) {
             await processRoomRelease(passData.destination);
         }
@@ -183,12 +195,12 @@ export async function processRoomRelease(roomId) {
 }
 
 /**
- * Creates a brand new pass in the database (With Restriction & Waitlist Gatekeepers)
+ * Creates a brand new pass in the database (With Restriction, Cooldown & Waitlist Gatekeepers)
  */
 export async function createNewPass(passData) {
     try {
         // =========================================================
-        // 🚨 1. PAIRING RESTRICTION GATEKEEPER
+        // 🚨 1. PAIRING RESTRICTION GATEKEEPER (Red Screen)
         // =========================================================
         if (passData.studentId) {
             const restrictionDocRef = doc(db, "restrictions", passData.studentId);
@@ -197,7 +209,6 @@ export async function createNewPass(passData) {
             if (restrictionSnap.exists()) {
                 const noContactList = restrictionSnap.data().noContact || [];
                 
-                // Check if any of these "no-contact" peers have an ACTIVE pass
                 for (const peerId of noContactList) {
                     const activePeerQ = query(
                         passesRef,
@@ -207,29 +218,89 @@ export async function createNewPass(passData) {
                     const activeSnaps = await getDocs(activePeerQ);
                     
                     if (!activeSnaps.empty) {
-                        // 🌟 NEW: Grab the peer's name directly from their active pass!
                         const conflictingPassData = activeSnaps.docs[0].data();
                         const peerName = conflictingPassData.studentDisplayName || "Unknown Student";
 
-                        // Conflict found! Block the pass and route to Admin Review.
                         await addDoc(passesRef, {
                             ...passData,
                             status: "pending_restricted",
                             restrictedPeer: peerId, 
-                            restrictedPeerName: peerName, // 🌟 Save the name for the UI!
+                            restrictedPeerName: peerName,
                             restrictionReason: "Admin No-Contact Restriction",
                             createdAt: serverTimestamp()
                         });
                         
-                        console.log(`Restriction Gatekeeper Blocked Pass: Peer ${peerId} is active.`);
-                        // Return the custom status so the front-end knows to show the Blind UI
                         return { success: true, status: "blocked_blind" };
                     }
                 }
             }
         }
+
         // =========================================================
-        // 🚦 2. LOCATION CAPACITY GATEKEEPER (Your existing logic)
+        // ⚠️ 2. FREQUENT FLYER GATEKEEPER (Yellow Screen)
+        // =========================================================
+        let isYellowWarning = false;
+        let warningReason = "";
+        let dailyLog = [];
+
+        if (passData.studentId && passData.studentId !== "unknown" && passData.type !== "tardy") {
+            // Fetch the Global Restriction Settings
+            const settingsDoc = await getDoc(doc(db, "system", "settings"));
+            const settings = settingsDoc.exists() ? settingsDoc.data() : {};
+            const cooldownMinutes = settings.cooldownMinutes || 15; // Default 15m
+            const dailyMaxPasses = settings.dailyMaxPasses || 3;    // Default 3 passes
+
+            // Fetch the student's passes for TODAY
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+
+            const dailyQ = query(
+                passesRef,
+                where("studentId", "==", passData.studentId),
+                where("createdAt", ">=", startOfDay)
+            );
+            
+            const dailySnaps = await getDocs(dailyQ);
+            
+            // Build the daily log for the UI
+            dailySnaps.forEach(d => {
+                const p = d.data();
+                // Only count passes that were actually accepted/used
+                if (p.status.includes("active") || p.status.includes("returned") || p.status === "archived") {
+                    dailyLog.push(p);
+                }
+            });
+
+            // Check 1: Max Passes Exceeded?
+            if (dailyLog.length >= dailyMaxPasses) {
+                isYellowWarning = true;
+                warningReason = `Exceeded daily limit (${dailyMaxPasses} passes). This is pass #${dailyLog.length + 1}.`;
+            }
+
+            // Check 2: Cooldown Violated? (Only if not already flagged)
+            if (!isYellowWarning && dailyLog.length > 0) {
+                // Find the most recently returned/active pass
+                dailyLog.sort((a, b) => {
+                    const timeA = a.returnedAt?.toMillis() || a.acceptedAt?.toMillis() || a.createdAt?.toMillis();
+                    const timeB = b.returnedAt?.toMillis() || b.acceptedAt?.toMillis() || b.createdAt?.toMillis();
+                    return timeB - timeA; // Descending
+                });
+
+                const lastPass = dailyLog[0];
+                const lastTimeMillis = lastPass.returnedAt?.toMillis() || lastPass.acceptedAt?.toMillis() || lastPass.createdAt?.toMillis();
+                
+                if (lastTimeMillis) {
+                    const minutesSinceLastPass = (Date.now() - lastTimeMillis) / (1000 * 60);
+                    if (minutesSinceLastPass < cooldownMinutes) {
+                        isYellowWarning = true;
+                        warningReason = `Cooldown violation. Last pass was ${Math.round(minutesSinceLastPass)} minutes ago.`;
+                    }
+                }
+            }
+        }
+
+        // =========================================================
+        // 🚦 3. LOCATION CAPACITY GATEKEEPER 
         // =========================================================
         if (passData.destination) {
             const limitRef = doc(db, "location_limits", passData.destination);
@@ -238,28 +309,19 @@ export async function createNewPass(passData) {
             if (limitSnap.exists()) {
                 const maxCapacity = limitSnap.data().maxCapacity;
 
-                // 1. Count currently Active passes for this exact room
                 const activeQ = query(
                     passesRef, 
                     where("destination", "==", passData.destination), 
-                    where("status", "in", ["active", "active_bypassed"]) // Catch bypassed passes too!
+                    where("status", "in", ["active", "active_bypassed"]) 
                 );
                 const activeSnaps = await getDocs(activeQ);
                 const currentCount = activeSnaps.size;
 
-                // 2. If room is at or over capacity, route to WAITLIST
                 if (currentCount >= maxCapacity) {
-                    
-                    // Count how many people are already on the waitlist to find their position
-                    const waitlistQ = query(
-                        passesRef, 
-                        where("destination", "==", passData.destination), 
-                        where("status", "==", "waitlist")
-                    );
+                    const waitlistQ = query(passesRef, where("destination", "==", passData.destination), where("status", "==", "waitlist"));
                     const waitlistSnaps = await getDocs(waitlistQ);
                     const queuePosition = waitlistSnaps.size + 1;
 
-                    // Save as waitlist instead of pending/active
                     await addDoc(passesRef, {
                         ...passData,
                         status: "waitlist",
@@ -267,7 +329,6 @@ export async function createNewPass(passData) {
                         createdAt: serverTimestamp()
                     });
                     
-                    console.log(`Location full. Placed on waitlist at position ${queuePosition}`);
                     return { success: true, status: "waitlist", position: queuePosition };
                 }
             }
@@ -275,15 +336,20 @@ export async function createNewPass(passData) {
         // --- END GATEKEEPERS ---
 
         // =========================================================
-        // ✅ 3. PROCEED NORMALLY (No restrictions, capacity open)
+        // ✅ 4. FINAL CREATION (Proceed Normally OR Flag as Yellow)
         // =========================================================
+        // If flagged by the Frequent Flyer gatekeeper, change status and append log
+        const finalStatus = isYellowWarning ? "pending_warning" : (passData.status || "pending");
+        
         await addDoc(passesRef, {
             ...passData,
+            status: finalStatus,
+            warningReason: warningReason,
+            dailyLogCount: dailyLog.length,
             createdAt: serverTimestamp()
         });
         
-        console.log("New pass created successfully!");
-        return { success: true, status: passData.status || "pending" };
+        return { success: true, status: finalStatus };
         
     } catch (error) {
         console.error("Error creating pass:", error);
@@ -304,12 +370,13 @@ export function listenToStudentPass(studentName, callback) {
         snapshot.forEach((doc) => {
             const pass = { id: doc.id, ...doc.data() };
             
-            // 🟢 ADDED "waitlist" to student listeners so their app knows they are waiting
+            // 🌟 ADDED "pending_warning" so the student screen doesn't drop the pass!
             if (
                 pass.status === "active" || 
                 pass.status === "pending" || 
                 pass.status === "pending_student" || 
                 pass.status === "pending_restricted" ||
+                pass.status === "pending_warning" || 
                 pass.status === "scheduled" ||
                 pass.status === "waitlist" 
             ) {

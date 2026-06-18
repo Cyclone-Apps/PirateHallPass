@@ -11,6 +11,7 @@ import {
     renderStudentAcceptScreen, 
     renderStudentActiveScreen,
     renderStudentBlindRestrictionScreen,
+    renderStudentYellowWarningScreen,
     initializeRotationDayEngine,
     calculateDynamicQueuePosition
 } from "./modules/student-ui.js";
@@ -225,6 +226,10 @@ async function initStudentApp(user, role) {
         // 🚨 ADD THIS BLOCK TO INTERCEPT RESTRICTED PASSES
         else if (currentPass.status === "pending_restricted") {
             renderStudentBlindRestrictionScreen(currentPass);
+        }
+        // ⚠️ ADD THIS NEW YELLOW BLOCK
+        else if (currentPass.status === "pending_warning") {
+            renderStudentYellowWarningScreen(currentPass);
         }
         else if (currentPass.status.startsWith("pending")) {
             const statusData = {

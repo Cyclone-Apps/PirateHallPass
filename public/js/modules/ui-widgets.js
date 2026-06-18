@@ -103,9 +103,8 @@ export function renderPassList(passes, containerId, countId) {
         let actionButtons = '';
         
         // Render control buttons depending on status context
-        if (pass.status === 'pending' || pass.status === 'pending_student' || pass.status === 'pending_restricted' || pass.status === 'waitlist') {
+        if (pass.status === 'pending' || pass.status === 'pending_student' || pass.status === 'pending_restricted' || pass.status === 'waitlist' || pass.status === 'pending_warning') {
             
-            // 🚨 NEW: Dynamic Override text & color for restricted passes
             let approveBtnText = pass.status === 'pending_restricted' ? "⚠️ Override & Approve" : "Approve";
             let approveBtnBg = pass.status === 'pending_restricted' ? "#f57c00" : "#2e7d32";
 
@@ -115,14 +114,12 @@ export function renderPassList(passes, containerId, countId) {
                     <button class="card-btn" data-id="${pass.id}" data-action="rejected" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #c62828; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Reject</button>
                 </div>
             `;
-        // 'active_bypassed' gets the End Pass button
         } else if (pass.status === 'active' || pass.status === 'active_bypassed') {
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
                     <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #0277bd; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">End Pass (Return)</button>
                 </div>
             `;
-        // 'returned_bypassed' block for the Admin Clear button
         } else if (pass.status === 'returned_bypassed') {
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
@@ -131,41 +128,59 @@ export function renderPassList(passes, containerId, countId) {
             `;
         }
         
-        // Format the destination to include the teacher's name
-        const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown") 
-            ? ` (${pass.targetTeacher})` 
-            : "";
+        const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown") ? ` (${pass.targetTeacher})` : "";
             
-        // CHECK RESTRICTION STATUS FOR CARD BACKGROUND
-        const isRestricted = ['pending_restricted', 'active_bypassed', 'returned_bypassed'].includes(pass.status);
-        const cardBgColor = isRestricted ? '#ffebee' : '#ffffff'; 
-        const cardBorderColor = isRestricted ? '#ef5350' : '#eaedf2'; 
+        // 🌟 SMARTER COLOR LOGIC: Differentiates Bypassed Restrictions (Red) vs Bypassed Warnings (Yellow)
+        const isRestricted = ['pending_restricted'].includes(pass.status) || (pass.restrictedPeer && ['active_bypassed', 'returned_bypassed'].includes(pass.status));
+        const isWarning = pass.status === 'pending_warning' || (pass.warningReason && ['active_bypassed', 'returned_bypassed'].includes(pass.status));
         
-        // LEFT BORDER PHASE COLORING
+        let cardBgColor = '#ffffff'; 
+        let cardBorderColor = '#eaedf2'; 
+        
+        if (isRestricted) {
+            cardBgColor = '#ffebee';
+            cardBorderColor = '#ef5350';
+        } else if (isWarning) {
+            cardBgColor = '#fffde7'; 
+            cardBorderColor = '#fbc02d'; 
+        }
+        
         let leftBorderColor = '#0277bd'; 
         if (pass.status.includes('pending') || pass.status === 'waitlist') leftBorderColor = '#ff9800'; 
         if (pass.status.includes('active')) leftBorderColor = '#4caf50'; 
         if (pass.status.includes('returned') || pass.status === 'archived') leftBorderColor = '#757575'; 
         
-        // WAITLIST BADGE
         const waitlistBadgeHTML = pass.status === 'waitlist' 
             ? `<div style="margin-bottom: 8px;"><span style="background-color: #f57c00; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">⏳ Waitlisted (#${pass.queuePosition})</span></div>` 
             : '';
 
-        // 🚨 NEW: RESTRICTION WARNING BANNER (Visible on Pending, Active, and Admin Review)
-        let restrictionBannerHTML = '';
+        // 🚨 BANNER LOGIC
+        let bannerHTML = '';
         if (isRestricted) {
-            // Change the subtext based on whether it is waiting for approval or already bypassed
             const overrideText = pass.status === 'pending_restricted' 
                 ? "<em>Overriding notifies admin.</em>" 
-                : `<strong style='color: #c62828;'>⚠️ Restriction was bypassed by ${pass.bypassedBy || "Admin"}</strong>`;
+                : `<strong style='color: #c62828;'>⚠️ Restriction was bypassed by ${pass.bypassedBy || "Teacher"}</strong>`;
 
-            // Use restricted peer name/ID in the header instead of the pass requester
-            restrictionBannerHTML = `
+            bannerHTML = `
                 <div style="background: #ffcdd2; border-left: 5px solid #b71c1c; padding: 8px; margin-bottom: 8px; border-radius: 4px;">
                     <strong style="color: #b71c1c; font-size: 0.9rem;">🚨 RESTRICTED PEER CONFLICT WITH ${pass.restrictedPeerName || pass.restrictedPeer || "RESTRICTED PEER"}</strong><br>
                     <span style="font-size: 0.8rem; color: #444;">
                         <strong>Conflict:</strong> Student ID ${pass.restrictedPeer || "Admin Restriction"}<br>
+                        ${overrideText}
+                    </span>
+               </div>
+            `;
+        } else if (isWarning) {
+            const overrideText = pass.status === 'pending_warning'
+                ? ""
+                : `<strong style='color: #f57c00;'><br>⚠️ Warning was bypassed by ${pass.bypassedBy || "Teacher"}</strong>`;
+
+            bannerHTML = `
+                <div style="background: #fff9c4; border-left: 5px solid #fbc02d; padding: 8px; margin-bottom: 8px; border-radius: 4px;">
+                    <strong style="color: #f57f17; font-size: 0.9rem;">⚠️ FREQUENT FLYER WARNING</strong><br>
+                    <span style="font-size: 0.8rem; color: #444;">
+                        <strong>Reason:</strong> ${pass.warningReason || "High pass volume detected."}<br>
+                        <strong>Total Passes Today:</strong> ${pass.dailyLogCount || 0}
                         ${overrideText}
                     </span>
                </div>
@@ -179,7 +194,7 @@ export function renderPassList(passes, containerId, countId) {
                     <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee;">${pass.type}</span>
                 </div>
                 ${waitlistBadgeHTML}
-                ${restrictionBannerHTML}
+                ${bannerHTML}
                 <div style="color: #555; font-size: 0.95rem; margin-bottom: 5px;">
                     📍 Destination: <strong>${pass.destination}${teacherText}</strong>
                 </div>

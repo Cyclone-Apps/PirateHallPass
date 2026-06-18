@@ -711,3 +711,91 @@ export function renderStudentBlindRestrictionScreen(pass) {
         </div>
     `;
 }
+
+/**
+ * Renders the Yellow Frequent Flyer Warning Screen & Sidebar Log
+ */
+export async function renderStudentYellowWarningScreen(pass) {
+    const mainContainer = document.getElementById("kiosk-main-widget");
+    const sidebar = document.getElementById("kiosk-sidebar-widget");
+
+    // 1. Paint the Left Side Yellow
+    if (mainContainer) {
+        mainContainer.style.backgroundColor = ""; // Clear existing
+        mainContainer.innerHTML = `
+            <div class="kiosk-card panel" style="text-align: center; border: 4px solid #fbc02d; background: #fffde7; padding: 40px; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                <h1 style="color: #f57f17; font-size: 3rem; margin-bottom: 10px;">⚠️ Request Flagged</h1>
+                <h2 style="color: #f9a825; font-size: 1.8rem; margin-bottom: 20px;">${pass.warningReason || "High pass volume detected."}</h2>
+                <p style="font-size: 1.5rem; color: #333; margin-top: 20px; max-width: 80%;">
+                    Your teacher has been notified and is reviewing your pass history. Please wait for approval.
+                </p>
+                <button id="btn-cancel-restricted" data-id="${pass.id}" style="margin-top: 40px; font-size: 1.5rem; padding: 20px 40px; background-color: #c62828; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    ❌ Cancel Request
+                </button>
+            </div>
+        `;
+    }
+
+    // 2. Build the Daily Log for the Right Side
+    if (sidebar) {
+        sidebar.innerHTML = `<div class="kiosk-card panel" style="height: 100%; display: flex; justify-content: center; align-items: center;"><h2>Loading Log...</h2></div>`;
+
+        // Fetch today's log from Firebase
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const q = query(
+            collection(db, "passes"),
+            where("studentId", "==", pass.studentId),
+            where("createdAt", ">=", startOfDay)
+        );
+
+        try {
+            const snaps = await getDocs(q);
+            let logHtml = `<div class="kiosk-card panel" style="height: 100%; overflow-y: auto;">
+                <h2 style="margin-top: 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px;">📅 Today's Pass Log</h2>
+                <ul style="list-style: none; padding: 0;">`;
+
+            let count = 0;
+            
+            // Sort by most recent first
+            const sortedDocs = snaps.docs.map(d => d.data()).sort((a, b) => {
+                const timeA = a.createdAt?.toMillis() || 0;
+                const timeB = b.createdAt?.toMillis() || 0;
+                return timeB - timeA;
+            });
+
+            sortedDocs.forEach(p => {
+                // Only show passes that were actually used
+                if (p.status.includes("active") || p.status.includes("returned") || p.status === "archived") {
+                    count++;
+                    // Safely format timestamp
+                    let timeStr = "Unknown Time";
+                    if (p.acceptedAt) timeStr = new Date(p.acceptedAt.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    else if (p.createdAt) timeStr = new Date(p.createdAt.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                    let displayStatus = p.status.replace('_', ' ').toUpperCase();
+
+                    logHtml += `
+                        <li style="margin-bottom: 15px; padding: 15px; background: #f9f9f9; border-left: 5px solid #fbc02d; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <strong style="font-size: 1.1rem; color: #111;">📍 ${p.destination}</strong><br>
+                            <span style="font-size: 0.9rem; color: #555;">Approved: <strong>${timeStr}</strong></span><br>
+                            <span style="font-size: 0.8rem; color: #888;">Status: ${displayStatus}</span>
+                        </li>
+                    `;
+                }
+            });
+
+            if (count === 0) {
+                logHtml += `<p style="color: #666; font-style: italic; padding: 10px;">No completed passes today.</p>`;
+            }
+
+            logHtml += `</ul></div>`;
+            sidebar.innerHTML = logHtml; // Inject the log into the sidebar!
+
+        } catch (err) {
+            console.error("Error loading log:", err);
+            sidebar.innerHTML = `<div style="padding: 20px; color: red;">Failed to load log.</div>`;
+        }
+    }
+}
