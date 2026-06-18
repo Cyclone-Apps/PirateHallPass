@@ -46,7 +46,7 @@ export function renderHeader(user, role) {
             <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
                 <!-- Darkest Gray -->
                 <button id="btn-emergency" class="admin-dashboard-btn btn-critical">🚨 Emergency Controls</button>
-                <button id="btn-location-limits" class="admin-dashboard-btn btn-critical">🚦 Set Location Limits</button>
+                <button id="btn-location-limits" class="admin-dashboard-btn btn-critical">🚦 Restriction Settings</button>
                 
                 <!-- Red -->
                 <button id="btn-open-send-pass" class="admin-dashboard-btn btn-primary">🎫 Send Student a Pass</button>

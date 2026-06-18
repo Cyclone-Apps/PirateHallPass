@@ -94,19 +94,32 @@ document.addEventListener("click", (e) => {
         document.getElementById("location-settings-modal").classList.add("hidden");
     }
 
-    // 3. Save the Waitlist Time
-    if (e.target.closest("#btn-save-timeout")) {
+   // 3. Save Global Restriction Settings (Waitlist, Cooldown, Daily Limits)
+    if (e.target.closest("#btn-save-global-restrictions")) {
         e.preventDefault();
-        const timeoutInput = document.getElementById("input-waitlist-timeout").value;
-        const seconds = parseInt(timeoutInput, 10);
         
-        if (!isNaN(seconds) && seconds > 0) {
+        // Grab all three input values
+        const timeoutInput = document.getElementById("input-waitlist-timeout").value;
+        const cooldownInput = document.getElementById("input-cooldown-time").value;
+        const maxPassesInput = document.getElementById("input-max-passes").value;
+        
+        const seconds = parseInt(timeoutInput, 10);
+        const cooldownMinutes = parseInt(cooldownInput, 10);
+        const maxPasses = parseInt(maxPassesInput, 10);
+        
+        if (!isNaN(seconds) && seconds > 0 && !isNaN(cooldownMinutes) && !isNaN(maxPasses)) {
+            const settingsPayload = {
+                waitlistTimeoutSeconds: seconds,
+                cooldownMinutes: cooldownMinutes,
+                dailyMaxPasses: maxPasses
+            };
+
             // Save to the global 'system' -> 'settings' document
-            setDoc(doc(db, "system", "settings"), { waitlistTimeoutSeconds: seconds }, { merge: true })
-                .then(() => alert(`✅ Waitlist timeout saved at ${seconds} seconds!`))
-                .catch(err => console.error("Error saving timeout:", err));
+            setDoc(doc(db, "system", "settings"), settingsPayload, { merge: true })
+                .then(() => alert(`✅ Global Restrictions Saved!\nWaitlist: ${seconds}s\nCooldown: ${cooldownMinutes}m\nWarning Limit: ${maxPasses} passes`))
+                .catch(err => console.error("Error saving global settings:", err));
         } else {
-            alert("Please enter a valid number of seconds.");
+            alert("Please enter valid numbers in all fields.");
         }
     }
 
