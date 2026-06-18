@@ -690,7 +690,7 @@ export function calculateDynamicQueuePosition(myPass, allPasses) {
 }
 
 /**
- * Renders the Blind Restriction Screen (Generic Capacity Message)
+ * Renders the Blind Restriction Screen (Generic Denial Message)
  */
 export function renderStudentBlindRestrictionScreen(pass) {
     const container = document.getElementById("kiosk-main-widget");
@@ -701,10 +701,9 @@ export function renderStudentBlindRestrictionScreen(pass) {
     
     container.innerHTML = `
         <div class="kiosk-card panel" style="text-align: center; border: 4px solid #c62828; background: #ffebee; padding: 40px; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-            <h1 style="color: #c62828; font-size: 3rem; margin-bottom: 10px;">🛑 Request Paused</h1>
-            <h2 style="color: #b71c1c; font-size: 2rem;">Hallway Capacity Reached.</h2>
+            <h1 style="color: #c62828; font-size: 3rem; margin-bottom: 10px;">🛑 Request temporarily denied.</h1>
             <p style="font-size: 1.5rem; color: #333; margin-top: 20px; max-width: 80%;">
-                Please wait for clearance or see your teacher for assistance.
+                Please wait 5 minutes and try again.
             </p>
             <button id="btn-cancel-restricted" data-id="${pass.id}" style="margin-top: 40px; font-size: 1.5rem; padding: 20px 40px; background-color: #c62828; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                 ❌ Cancel Request

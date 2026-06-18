@@ -255,29 +255,34 @@ document.addEventListener("change", (e) => {
 document.addEventListener("click", async (e) => {
     
     // --- PASS ACTION BUTTONS ---
-    const btn = e.target.closest(".card-btn");
-    if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
-        const passId = btn.getAttribute("data-id");
-        let action = btn.getAttribute("data-action");
-        const currentStatus = btn.getAttribute("data-current-status"); // We will add this to HTML next
+const btn = e.target.closest(".card-btn");
+if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
+    const passId = btn.getAttribute("data-id");
+    let action = btn.getAttribute("data-action");
+    const currentStatus = btn.getAttribute("data-current-status"); 
+    
+    if (passId && action && typeof updatePassStatus === "function") {
+        let extraData = {}; // 🌟 Create a container for extra fields
         
-        if (passId && action && typeof updatePassStatus === "function") {
+        // 🌟 1. THE WARNING POP-UP INTERCEPT
+        if (currentStatus === "pending_restricted" && action === "active") {
+            const proceed = confirm("⚠️ ADMIN WARNING: You are about to override a restricted pass. Admin will be notified and may inquire why. Do you wish to proceed?");
+            if (!proceed) return; 
+            action = "active_bypassed"; // Reroute status!
             
-            // 🌟 1. THE WARNING POP-UP INTERCEPT
-            if (currentStatus === "pending_restricted" && action === "active") {
-                const proceed = confirm("⚠️ ADMIN WARNING: You are about to override a restricted pass. Admin will be notified and may inquire why. Do you wish to proceed?");
-                if (!proceed) return; 
-                action = "active_bypassed"; // Reroute status!
-            }
-            
-            // 🌟 2. THE RETURN INTERCEPT
-            if (currentStatus === "active_bypassed" && action === "returned") {
-                action = "returned_bypassed"; // Reroute status!
-            }
-
-            updatePassStatus(passId, action);
+            // 🚨 Record who is bypassing this restriction
+            extraData.bypassedBy = window.currentUser?.displayName || "Teacher";
         }
+        
+        // 🌟 2. THE RETURN INTERCEPT
+        if (currentStatus === "active_bypassed" && action === "returned") {
+            action = "returned_bypassed"; // Reroute status!
+        }
+
+        // Pass extraData as the 3rd argument
+        updatePassStatus(passId, action, extraData);
     }
+}
 
     // --- MODAL CONTROLS ---
     const modal = document.getElementById("new-pass-modal");

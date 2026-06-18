@@ -75,39 +75,45 @@ export function initDashboardManagement() {
 }
 
 // Bind Event Delegation for Pass Action Buttons (Approve, Reject, End)
-    document.addEventListener("click", async (e) => {
-        if (e.target && e.target.classList.contains("card-btn")) {
-            const passId = e.target.getAttribute("data-id");
-            let newStatus = e.target.getAttribute("data-action");
-            const currentStatus = e.target.getAttribute("data-current-status"); // Grab current status
+document.addEventListener("click", async (e) => {
+    if (e.target && e.target.classList.contains("card-btn")) {
+        const passId = e.target.getAttribute("data-id");
+        let newStatus = e.target.getAttribute("data-action");
+        const currentStatus = e.target.getAttribute("data-current-status"); 
 
-            if (!passId || !newStatus) return;
+        if (!passId || !newStatus) return;
 
-            // 🌟 1. WARNING INTERCEPT
-            if (currentStatus === "pending_restricted" && newStatus === "active") {
-                const proceed = confirm("⚠️ ADMIN WARNING: You are about to override a restricted pass. Admin will be notified and may inquire why. Do you wish to proceed?");
-                if (!proceed) return; 
-                newStatus = "active_bypassed";
-            }
+        let extraData = {}; // 🌟 Create a container for extra fields
 
-            // 🌟 2. RETURN INTERCEPT
-            if (currentStatus === "active_bypassed" && newStatus === "returned") {
-                newStatus = "returned_bypassed";
-            }
-
-            const originalText = e.target.innerText;
-            e.target.innerText = "⏳...";
-            e.target.disabled = true;
-
-            try {
-                await updatePassStatus(passId, newStatus);
-            } catch (error) {
-                console.error("Failed to update pass:", error);
-                e.target.innerText = originalText;
-                e.target.disabled = false;
-            }
+        // 🌟 1. WARNING INTERCEPT
+        if (currentStatus === "pending_restricted" && newStatus === "active") {
+            const proceed = confirm("⚠️ ADMIN WARNING: You are about to override a restricted pass. Admin will be notified and may inquire why. Do you wish to proceed?");
+            if (!proceed) return; 
+            newStatus = "active_bypassed";
+            
+            // 🚨 Record who is bypassing this restriction
+            extraData.bypassedBy = window.currentUser?.displayName || "Admin";
         }
-    });
+
+        // 🌟 2. RETURN INTERCEPT
+        if (currentStatus === "active_bypassed" && newStatus === "returned") {
+            newStatus = "returned_bypassed";
+        }
+
+        const originalText = e.target.innerText;
+        e.target.innerText = "⏳...";
+        e.target.disabled = true;
+
+        try {
+            // Pass extraData as the 3rd argument
+            await updatePassStatus(passId, newStatus, extraData);
+        } catch (error) {
+            console.error("Failed to update pass:", error);
+            e.target.innerText = originalText;
+            e.target.disabled = false;
+        }
+    }
+});
 
 // ==========================================
 // 🔄 DYNAMIC DROPDOWN GENERATOR

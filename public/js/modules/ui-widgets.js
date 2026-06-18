@@ -152,16 +152,25 @@ export function renderPassList(passes, containerId, countId) {
             ? `<div style="margin-bottom: 8px;"><span style="background-color: #f57c00; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">⏳ Waitlisted (#${pass.queuePosition})</span></div>` 
             : '';
 
-        // 🚨 NEW: RESTRICTION WARNING BANNER
-        const restrictionBannerHTML = pass.status === 'pending_restricted'
-            ? `<div style="background: #ffcdd2; border-left: 5px solid #b71c1c; padding: 8px; margin-bottom: 8px; border-radius: 4px;">
-                    <strong style="color: #b71c1c; font-size: 0.9rem;">🚨 RESTRICTED PEER CONFLICT</strong><br>
+        // 🚨 NEW: RESTRICTION WARNING BANNER (Visible on Pending, Active, and Admin Review)
+        let restrictionBannerHTML = '';
+        if (isRestricted) {
+            // Change the subtext based on whether it is waiting for approval or already bypassed
+            const overrideText = pass.status === 'pending_restricted' 
+                ? "<em>Overriding notifies admin.</em>" 
+                : `<strong style='color: #c62828;'>⚠️ Restriction was bypassed by ${pass.bypassedBy || "Admin"}</strong>`;
+
+            // Use restricted peer name/ID in the header instead of the pass requester
+            restrictionBannerHTML = `
+                <div style="background: #ffcdd2; border-left: 5px solid #b71c1c; padding: 8px; margin-bottom: 8px; border-radius: 4px;">
+                    <strong style="color: #b71c1c; font-size: 0.9rem;">🚨 RESTRICTED PEER CONFLICT WITH ${pass.restrictedPeerName || pass.restrictedPeer || "RESTRICTED PEER"}</strong><br>
                     <span style="font-size: 0.8rem; color: #444;">
                         <strong>Conflict:</strong> Student ID ${pass.restrictedPeer || "Admin Restriction"}<br>
-                        <em>Overriding notifies admin.</em>
+                        ${overrideText}
                     </span>
-               </div>`
-            : '';
+               </div>
+            `;
+        }
 
         return `
             <div class="pass-card" style="background: ${cardBgColor}; border: 1px solid ${cardBorderColor}; border-left: 5px solid ${leftBorderColor}; padding: 15px; margin-bottom: 12px; border-radius: var(--radius, 8px); box-shadow: 0 2px 5px rgba(0,0,0,0.05);">

@@ -122,7 +122,7 @@ export function listenToWaitlist(roomId, callback) {
 /**
  * Updates the status of a pass (e.g., active, returned, rejected)
  */
-export async function updatePassStatus(passId, newStatus) {
+export async function updatePassStatus(passId, newStatus, extraFields = {}) {
     try {
         const passDoc = doc(db, "passes", passId);
         
@@ -130,7 +130,11 @@ export async function updatePassStatus(passId, newStatus) {
         const passSnap = await getDoc(passDoc);
         const passData = passSnap.exists() ? passSnap.data() : null;
 
-        const updateData = { status: newStatus };
+        // 🌟 Merge new status and any extra metadata payload (like bypassedBy)
+        const updateData = { 
+            status: newStatus,
+            ...extraFields 
+        };
         
         // Add timestamps based on the action
         if (newStatus === "active" || newStatus === "active_bypassed") updateData.acceptedAt = serverTimestamp();
@@ -203,11 +207,16 @@ export async function createNewPass(passData) {
                     const activeSnaps = await getDocs(activePeerQ);
                     
                     if (!activeSnaps.empty) {
+                        // 🌟 NEW: Grab the peer's name directly from their active pass!
+                        const conflictingPassData = activeSnaps.docs[0].data();
+                        const peerName = conflictingPassData.studentDisplayName || "Unknown Student";
+
                         // Conflict found! Block the pass and route to Admin Review.
                         await addDoc(passesRef, {
                             ...passData,
                             status: "pending_restricted",
-                            restrictedPeer: peerId, // Helps the teacher see who caused the block
+                            restrictedPeer: peerId, 
+                            restrictedPeerName: peerName, // 🌟 Save the name for the UI!
                             restrictionReason: "Admin No-Contact Restriction",
                             createdAt: serverTimestamp()
                         });
