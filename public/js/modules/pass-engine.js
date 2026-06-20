@@ -186,6 +186,66 @@ export async function processRoomRelease(roomId) {
  * Creates a brand new pass in the database (With Restriction & Waitlist Gatekeepers)
  */
 export async function createNewPass(passData) {
+
+    // 📍 1. Define your Hallway Routing Dictionary (Mapped to your SVG coordinates!)
+    const hallwayRoutes = {
+        "Outside": ["Main Entrance", "Auditorium Lobby"], 
+        "Main Entrance": ["Outside", "100 Hallway"],
+        "100 Hallway": ["Main Entrance", "Main Vertical Hall"],
+        "Main Vertical Hall": ["100 Hallway", "Cross Corridor Block", "300 Hallway", "Fine Arts Corridor"],
+        "Cross Corridor Block": ["Main Vertical Hall", "Gym Lobby"],
+        "Gym Lobby": ["Cross Corridor Block", "Gym Vertical Hall"],
+        "Gym Vertical Hall": ["Gym Lobby", "Fine Arts Corridor"],
+        "300 Hallway": ["Main Vertical Hall", "Exit Hall 300s"],
+        "Exit Hall 300s": ["300 Hallway"],
+        "Fine Arts Corridor": ["Main Vertical Hall", "Gym Vertical Hall", "Auditorium Lobby"],
+        "Auditorium Lobby": ["Fine Arts Corridor", "Outside"],
+        "Unknown": [] // Failsafe for unmapped rooms
+    };
+
+    // 📍 2. Helper to find a path between origin and destination
+    function getPath(originCorridor, destCorridor, visited = new Set()) {
+        if (originCorridor === destCorridor) return [originCorridor];
+        visited.add(originCorridor);
+        const neighbors = hallwayRoutes[originCorridor] || [];
+        for (const neighbor of neighbors) {
+            if (!visited.has(neighbor)) {
+                const path = getPath(neighbor, destCorridor, visited);
+                if (path) return [originCorridor, ...path];
+            }
+        }
+        return null; // No path found
+    }
+
+    // 📍 3. Pre-Flight Check: Hallway Lockdown
+    const lockedCorridors = window.lockedCorridors || []; 
+
+    if (lockedCorridors.length > 0) {
+        const origin = passData.originCorridor || "Unknown"; 
+        const dest = passData.destCorridor || "Unknown";
+        
+        // Calculate the physical route they must walk
+        const calculatedRoute = getPath(origin, dest) || [origin, dest];
+        
+        // Check if any corridor in their route is currently locked down
+        const blockedCorridor = calculatedRoute.find(corridor => lockedCorridors.includes(corridor));
+        
+        if (blockedCorridor) {
+            // Conflict found! Block the pass.
+            await addDoc(passesRef, {
+                ...passData,
+                status: "pending_restricted",
+                restrictionType: "area_lockdown", 
+                lockedAreaName: blockedCorridor, 
+                createdAt: serverTimestamp()
+            });
+            
+            // This triggers your blind denial screen for the student perfectly.
+            return { success: true, status: "blocked_blind" }; 
+        }
+    }
+    
+    
     try {
         // =========================================================
         // 🚨 1. PAIRING RESTRICTION GATEKEEPER

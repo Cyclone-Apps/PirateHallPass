@@ -30,6 +30,17 @@ let selectedDestination = null;
 
 initializeTimeEngine();
 
+// 📍 Helper: Get Corridor from Map Node
+function getCorridorForRoom(roomName) {
+    if (!roomName) return "Unknown";
+    // Find the map node in the DOM using your exact data-id structure
+    const node = document.querySelector(`.map-node[data-id="${roomName}"]`);
+    if (node) {
+        return node.getAttribute("data-corridor") || "Unknown";
+    }
+    return "Unknown";
+}
+
 // --- 1. PROXY MODE DETECTION ---
 const urlParams = new URLSearchParams(window.location.search);
 const isProxy = urlParams.get('proxy') === 'true';
@@ -116,6 +127,9 @@ async function initStudentApp(user, role) {
         // Track BOTH lockdown states in global memory
         window.currentLoudLockdown = state.globalLockdown;
         window.currentQuietLockdown = state.quietLockdown;
+        
+        // 🌟 NEW: Track Area Lockdowns for pass-engine.js routing!
+        window.lockedCorridors = state.lockedCorridors || [];
         
         // Trigger the visual update instantly
         if (typeof window.updateEmergencyUI === "function") {
@@ -301,45 +315,23 @@ document.addEventListener("click", async (e) => {
         mapSvg.style.transition = "width 0.3s ease";
 
         if (mapSvg.style.width === "150vw") {
-            // ------------------------------------------
-            // WE ARE ZOOMED IN -> ZOOM OUT
-            // ------------------------------------------
             mapSvg.style.width = "100%";
             mapSvg.style.height = "100%";
-            
-            // Restore Flexbox centering for the zoomed-out view
             mapContainer.style.display = "flex";
             mapContainer.style.justifyContent = "center";
             mapContainer.style.alignItems = "center";
-
             iconText.textContent = "🔍+"; 
-            
             if (typeof window.hideTeacherNamesOnMap === "function") window.hideTeacherNamesOnMap();
         } else {
-            // ------------------------------------------
-            // WE CLICKED PLUS -> ZOOM IN (Massive 1.5x Scale)
-            // ------------------------------------------
-            
-            // CRITICAL FIX 1: Turn off Flexbox layout. This guarantees 
-            // scrollbars will generate for all 4 directions natively.
             mapContainer.style.display = "block";
-            
-            // Clear any restrictive CSS or SVG cropping rules
             mapSvg.style.maxWidth = "none";
             mapSvg.style.maxHeight = "none";
             mapSvg.removeAttribute("preserveAspectRatio");
-
-            // CRITICAL FIX 2: Set Width to 400vw (Massive Zoom) and Height to 'auto'.
-            // 'auto' forces the map to retain its exact natural shape without 
-            // ANY cropping or generating empty white space!
             mapSvg.style.width = "150vw";
             mapSvg.style.height = "auto";
-            
             iconText.textContent = "🔍-"; 
-            
             if (typeof window.showTeacherNamesOnMap === "function") window.showTeacherNamesOnMap();
             
-            // Wait 320ms for the animation to finish growing before calculating the center!
             setTimeout(() => {
                 mapContainer.scrollLeft = (mapContainer.scrollWidth - mapContainer.clientWidth) / 2;
                 mapContainer.scrollTop = (mapContainer.scrollHeight - mapContainer.clientHeight) / 2;
@@ -361,17 +353,14 @@ document.addEventListener("click", async (e) => {
     if (mapNode) {
         e.preventDefault();
         
-        // 1. Get the room identifier exactly how your map stores it
         const selectedDestination = mapNode.getAttribute("data-id") || mapNode.id || "";
         const matchKey = selectedDestination.toLowerCase().replace(/^room\s+/i, '').trim();
         
         if (!selectedDestination) return;
 
-        // 2. Use your existing CSS rules to handle the selection highlight perfectly!
         document.querySelectorAll(".map-node").forEach(node => node.classList.remove("selected"));
         mapNode.classList.add("selected");
 
-        // 3. Figure out which Teacher is in this room right now!
         let activePeriod = "1"; 
         if (window.currentTimeState && window.currentTimeState.currentPeriod) {
             activePeriod = String(window.currentTimeState.currentPeriod);
@@ -394,25 +383,25 @@ document.addEventListener("click", async (e) => {
             }
         }
 
-        // 4. Update your exact text label with the Room + Teacher Name
         const labelElement = document.getElementById("selected-room-label");
         if (labelElement) {
             labelElement.innerText = `Destination: Room ${selectedDestination.toUpperCase()}${teacherDisplay}`;
         }
 
-        // 5. Unlock the confirm button exactly like your old code did
         const confirmBtn = document.getElementById("btn-confirm-destination");
         if (confirmBtn) {
             confirmBtn.disabled = false;
         }
 
-        // 6. Save selection globally so the submit pass code can read it
         window.selectedDestination = selectedDestination;
         if (teacherDisplay) {
             window.selectedDestinationTeacher = teacherDisplay.replace(/[()]/g, '').trim();
         }
+    }
 
-        // 🟢 NEW: Student accepts their waitlist spot!
+    // ==========================================
+    // 🟢 FIXED: GLOBAL WAITLIST CONTROLS (Moved out of mapNode nesting!)
+    // ==========================================
     if (e.target.id === "btn-accept-waitlist") {
         const passId = e.target.getAttribute("data-id");
         if (!passId) return;
@@ -425,7 +414,6 @@ document.addEventListener("click", async (e) => {
         }
     }
 
-    // 🟢 NEW: Student cancels their waitlist spot!
     if (e.target.id === "btn-cancel-waitlist") {
         const passId = e.target.getAttribute("data-id");
         if (!passId) return;
@@ -435,12 +423,9 @@ document.addEventListener("click", async (e) => {
             e.target.disabled = true;
             
             if (typeof updatePassStatus === "function") {
-                // Rejecting the pass removes them from the queue safely
                 updatePassStatus(passId, "rejected");
             }
         }
-    }
-
     }
 
     // ==========================================
@@ -453,15 +438,6 @@ document.addEventListener("click", async (e) => {
         e.target.innerText = "⏳ Requesting...";
         e.target.disabled = true;
 
-        let assignedPeriod = "Unknown";
-        if (window.currentTimeState) {
-            if (window.currentTimeState.isPassing && window.currentTimeState.nextPeriod) {
-                assignedPeriod = window.currentTimeState.nextPeriod;
-            } else if (window.currentTimeState.currentPeriod) {
-                assignedPeriod = window.currentTimeState.currentPeriod;
-            }
-        }
-
         const isProxyActive = typeof isProxy !== "undefined" ? isProxy : false;
         const proxyTeacherName = typeof proxyTeacher !== "undefined" ? proxyTeacher : "";
         
@@ -470,40 +446,37 @@ document.addEventListener("click", async (e) => {
             studentName = window.currentUser.displayName;
         }
         
-        // 🌟 Stop appending "(Created by...)" to the display name so the proxy listener catches it!
         const finalDisplayName = studentName;
+        const safeStudentId = window.currentStudentProfile?.id || window.currentUser?.id || window.currentUser?.uid || "unknown";
 
-        let currentOriginTeacher = "Unknown";
-        if (window.currentStudentProfile && window.currentStudentProfile.schedule) {
-            const currentClass = window.currentStudentProfile.schedule[assignedPeriod];
-            if (currentClass && currentClass.teacher) {
-                currentOriginTeacher = currentClass.teacher;
-            }
-        }
-
-        // 🌟 1. Safely extract the ID depending on if it's a Proxy or a Real Student
-const safeStudentId = window.currentStudentProfile?.id || window.currentUser?.id || window.currentUser?.uid || "unknown";
-
-// 🌟 2. Build your passData using the safe ID
-const passData = {
-    studentId: safeStudentId, // ✅ This will never be 'undefined' now!
-    studentDisplayName: finalDisplayName,
-    destination: dest,
-    targetTeacher: window.selectedDestinationTeacher || "Unknown", 
-    originTeacher: currentOriginTeacher, 
-    period: assignedPeriod, 
-    type: "standard",
-    initiatedBy: isProxyActive ? "teacher_proxy" : "student",
-    senderName: isProxyActive ? proxyTeacherName : studentName, 
-    
-    // Default Statuses
-    status: "pending", 
-    restrictionLevel: "none",
-    restrictionType: "",
-    restrictionReason: "",
-    waitlistPosition: 0,
-    recentTravels: []
-};
+        // 🌟 FIXED: Full payload context attached for Area Lockdown tracking!
+        const passData = {
+            studentId: safeStudentId, 
+            studentDisplayName: finalDisplayName,
+            destination: dest,
+            targetTeacher: window.selectedDestinationTeacher || "Unknown", 
+            
+            // Time Engine tracking values
+            origin: window.currentRoom || "Unknown",
+            originTeacher: window.currentOriginTeacher || "Unknown", 
+            period: window.currentPeriod || "Unknown", 
+            
+            type: "standard",
+            initiatedBy: isProxyActive ? "teacher_proxy" : "student",
+            senderName: isProxyActive ? proxyTeacherName : studentName, 
+            
+            // Dual Corridor Lockdown checks
+            destCorridor: getCorridorForRoom(dest),
+            originCorridor: getCorridorForRoom(window.currentRoom || "Unknown"),
+            
+            // Default Statuses
+            status: "pending", 
+            restrictionLevel: "none",
+            restrictionType: "",
+            restrictionReason: "",
+            waitlistPosition: 0,
+            recentTravels: []
+        };
         
         const success = await createNewPass(passData);
         
@@ -569,57 +542,44 @@ const passData = {
     // ==========================================
     // --- 4. STUDENT SCHEDULED PASS CONTROLS ---
     // ==========================================
-    
-    // 🟢 USE PASS (Routes to CURRENT teacher for approval first!)
     if (e.target.id === "btn-use-scheduled-pass") {
         const passId = e.target.getAttribute("data-id");
         if (!passId) return;
         
         e.target.innerText = "Requesting...";
         e.target.disabled = true;
-        
         if (typeof updatePassStatus === "function") {
-            // 🌟 Changed from "active" to "pending"
             updatePassStatus(passId, "pending");
         }
     }
 
-    // 🔵 VIEW PASS (Shows details popup without accepting)
     if (e.target.classList.contains("btn-view-scheduled-pass")) {
         const teacher = e.target.getAttribute("data-teacher");
         const purpose = e.target.getAttribute("data-purpose");
         const dest = e.target.getAttribute("data-dest");
         const time = e.target.getAttribute("data-time");
-
         alert(`📨 SCHEDULED PASS DETAILS\n\nSent By: ${teacher}\nDestination: ${dest}\nTime: ${time}\nPurpose: ${purpose}`);
     }
 
-    // 🛑 CANCEL BLIND RESTRICTED PASS
     if (e.target.id === "btn-cancel-restricted") {
         const passId = e.target.getAttribute("data-id");
         if (!passId) return;
-        
         e.target.innerText = "Canceling...";
         e.target.disabled = true;
-        
         if (typeof updatePassStatus === "function") {
             updatePassStatus(passId, "cancelled");
         }
     }
 
-    // 🔴 DELETE PASS (Removes it from the queue)
     if (e.target.id === "btn-delete-scheduled-pass") {
         const passId = e.target.getAttribute("data-id");
         if (!passId) return;
-        
         if (confirm("Are you sure you want to delete this scheduled pass?")) {
             e.target.innerText = "Deleting...";
             e.target.disabled = true;
-            
             if (typeof updatePassStatus === "function") {
                 updatePassStatus(passId, "cancelled");
             }
         }
     }
-
 });

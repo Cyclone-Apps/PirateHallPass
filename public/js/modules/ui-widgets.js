@@ -155,20 +155,31 @@ export function renderPassList(passes, containerId, countId) {
         // 🚨 NEW: RESTRICTION WARNING BANNER (Visible on Pending, Active, and Admin Review)
         let restrictionBannerHTML = '';
         if (isRestricted) {
-            // Change the subtext based on whether it is waiting for approval or already bypassed
+            // Keep this! It defines the override text for both types of restrictions.
             const overrideText = pass.status === 'pending_restricted' 
                 ? "<em>Overriding notifies admin.</em>" 
                 : `<strong style='color: #c62828;'>⚠️ Restriction was bypassed by ${pass.bypassedBy || "Admin"}</strong>`;
 
-            // Use restricted peer name/ID in the header instead of the pass requester
+            // Use restricted peer name/ID or Area Lockdown info in the header
+            let restrictionReason = "";
+            
+            if (pass.restrictionType === "area_lockdown") {
+                 // 🌟 Area Lockdown Custom Badge
+                 restrictionReason = `Area Locked: <strong>${pass.lockedAreaName}</strong> is currently restricted.`;
+            } else {
+                 // Existing Co-Restriction Badge
+                 // We keep your existing layout, just swapping the variables!
+                 restrictionReason = `<strong style="font-size: 0.9rem;">🚨 RESTRICTED PEER CONFLICT WITH ${pass.restrictedPeerName || pass.restrictedPeer || "RESTRICTED PEER"}</strong><br>
+                                      <span style="font-size: 0.8rem; color: #444;"><strong>Conflict:</strong> Student ID ${pass.restrictedPeer || "Admin Restriction"}</span>`;
+            }
+
             restrictionBannerHTML = `
-                <div style="background: #ffcdd2; border-left: 5px solid #b71c1c; padding: 8px; margin-bottom: 8px; border-radius: 4px;">
-                    <strong style="color: #b71c1c; font-size: 0.9rem;">🚨 RESTRICTED PEER CONFLICT WITH ${pass.restrictedPeerName || pass.restrictedPeer || "RESTRICTED PEER"}</strong><br>
-                    <span style="font-size: 0.8rem; color: #444;">
-                        <strong>Conflict:</strong> Student ID ${pass.restrictedPeer || "Admin Restriction"}<br>
-                        ${overrideText}
-                    </span>
-               </div>
+                <div style="background: #ffcdd2; border-left: 5px solid #b71c1c; padding: 8px; margin-bottom: 8px; border-radius: 4px; font-size: 0.85rem;">
+                    <span style="color: #b71c1c; font-weight: 500;">
+                        ${restrictionReason}
+                    </span><br>
+                    <span style="font-size: 0.8rem; color: #444;">${overrideText}</span>
+                </div>
             `;
         }
 

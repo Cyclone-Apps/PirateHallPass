@@ -215,4 +215,101 @@ document.addEventListener("click", (e) => {
             }
         });
     }
+
+    // 🚨 Area Lockdown Map Popout (Multi-Select & Visual Toggle)
+    const areaLockdownBtn = e.target.closest("#btn-modify-area-lockdown");
+    if (areaLockdownBtn) {
+        e.preventDefault(); 
+        const mapModal = document.getElementById("map-popout-modal");
+        if (!mapModal) return;
+        
+        // Close the emergency modal if it's sitting on top of the map
+        const emergencyModal = document.getElementById("emergency-modal");
+        if (emergencyModal) emergencyModal.classList.add("hidden");
+        
+        mapModal.classList.remove("hidden");
+        mapModal.style.zIndex = "10000"; 
+        
+        const modalTitle = mapModal.querySelector("h2");
+        if (modalTitle) {
+            modalTitle.innerHTML = "🗺️ Select Corridors to Toggle Lockdown";
+            // 🚫 Green button code completely removed from here! Use your existing red button!
+        }
+
+        // Helper function to paint the map using your built-in SVG hazard stripes!
+        const paintLockedCorridors = async () => {
+            const settingsRef = doc(db, "settings", "emergencyState");
+            const snap = await getDoc(settingsRef);
+            const currentLocked = snap.exists() ? snap.data().lockedCorridors || [] : [];
+            
+            const mapSvg = document.getElementById("interactive-school-map");
+            if (!mapSvg) return;
+
+            mapSvg.querySelectorAll(".map-node").forEach(node => {
+                const id = node.getAttribute("data-id");
+                const box = node.querySelector(".corridor-box, .zone-box");
+                
+                if (box) {
+                    if (currentLocked.includes(id)) {
+                        box.style.fill = "url(#hazard-stripes)";
+                    } else {
+                        box.style.fill = ""; 
+                    }
+                }
+            });
+        };
+
+        // Initialize Map Controller JUST for the UI/Zoom rendering
+        new MapController({
+            containerId: "full-map-container",
+            mode: "admin_restrictions", 
+            onRoomSelect: () => {} // We ignore this now because it blocks hallways!
+        });
+
+        // 🌟 THE FIX: We bypass MapController's filters and attach a direct listener!
+        const mapContainer = document.getElementById("full-map-container");
+        
+        // Remove old listener if it exists to prevent double-clicks
+        if (window.lockdownClickListener) {
+            mapContainer.removeEventListener("click", window.lockdownClickListener);
+        }
+
+        window.lockdownClickListener = async (e) => {
+            // 🛑 SELF-DESTRUCT: If your red "Done" button hid the modal, clean up and stop!
+            if (mapModal.classList.contains("hidden") || modalTitle.innerHTML !== "🗺️ Select Corridors to Toggle Lockdown") {
+                mapContainer.removeEventListener("click", window.lockdownClickListener);
+                return;
+            }
+
+            const mapNode = e.target.closest(".map-node");
+            if (!mapNode) return;
+
+            // Grab the EXACT ID of what was clicked
+            const selectedCorridor = mapNode.getAttribute("data-id");
+            if (!selectedCorridor) return;
+
+            // Fetch the current lockdown list
+            const settingsRef = doc(db, "settings", "emergencyState");
+            const snap = await getDoc(settingsRef);
+            let currentLocked = snap.exists() ? snap.data().lockedCorridors || [] : [];
+            
+            // 🔄 TOGGLE LOGIC: If it's locked, unlock it. If it's unlocked, lock it!
+            if (currentLocked.includes(selectedCorridor)) {
+                currentLocked = currentLocked.filter(c => c !== selectedCorridor);
+            } else {
+                currentLocked.push(selectedCorridor);
+            }
+            
+            // Save to Firebase and instantly repaint the map
+            await setDoc(settingsRef, { lockedCorridors: currentLocked }, { merge: true });
+            paintLockedCorridors();
+        };
+
+        // Attach it to the container to catch the raw clicks
+        mapContainer.addEventListener("click", window.lockdownClickListener);
+
+        // Paint the map as soon as it opens
+        setTimeout(paintLockedCorridors, 150); 
+    }
+
 });

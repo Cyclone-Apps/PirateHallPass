@@ -189,6 +189,20 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
     const nextPeriod = timeMetrics?.nextPeriod || null;
     const sched = profile.schedule;
 
+    // 🚨 NEW: GLOBALLY TRACK STUDENT LOCATION FOR PASS CREATION
+    // If they are in a passing period, we assume the pass belongs to their NEXT class.
+    const activeP = "1" || nextPeriod; 
+    
+    if (activeP && sched[activeP]) {
+        window.currentRoom = sched[activeP].room || "Unknown";
+        window.currentOriginTeacher = sched[activeP].teacher || "Unknown";
+        window.currentPeriod = activeP;
+    } else {
+        window.currentRoom = "Unknown";
+        window.currentOriginTeacher = "Unknown";
+        window.currentPeriod = "Unknown";
+    }
+
     let html = '';
     
     if (currentPeriod && sched[currentPeriod]) {

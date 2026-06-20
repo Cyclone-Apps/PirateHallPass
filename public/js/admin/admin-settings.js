@@ -189,7 +189,8 @@ async function handleEmergencyToggle(type) {
             globalLockdown: newState ? false : currentEmergencyState.globalLockdown
         });
     } else if (type === "area") {
-        alert("Area Lockdown mapping requires the Time Engine to be completed first. Moving to Time Engine task next!");
+        // 🚫 Alert removed! 
+        // The map popout is now handled entirely by the custom listener in main-admin.js
     }
 }
 
