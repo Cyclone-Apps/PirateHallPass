@@ -569,7 +569,7 @@ onSnapshot(doc(db, "settings", "master_schedule"), (docSnap) => {
 
 window.showTeacherNamesOnMap = function() {
     // 1. Identify current running school period
-    let activePeriod = "1"; 
+    let activePeriod = currentPeriod || nextPeriod; 
     if (window.currentTimeState) {
         if (window.currentTimeState.isPassing && window.currentTimeState.nextPeriod) {
             activePeriod = String(window.currentTimeState.nextPeriod);
