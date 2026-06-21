@@ -199,7 +199,7 @@ export async function processRoomRelease(roomId) {
  */
 export async function createNewPass(passData) {
 
-    // 📍 1. Define your Hallway Routing Dictionary (Mapped to your SVG coordinates!)
+    // 📍 1. Define your Hallway Routing Dictionary 
     const hallwayRoutes = {
         "Outside": ["Main Entrance", "Auditorium Lobby"], 
         "Main Entrance": ["Outside", "100 Hallway"],
@@ -212,32 +212,75 @@ export async function createNewPass(passData) {
         "Exit Hall 300s": ["300 Hallway"],
         "Fine Arts Corridor": ["Main Vertical Hall", "Gym Vertical Hall", "Auditorium Lobby"],
         "Auditorium Lobby": ["Fine Arts Corridor", "Outside"],
-        "Unknown": [] // Failsafe for unmapped rooms
+        "Unknown": [] 
     };
 
-    // 📍 2. Helper to find a path between origin and destination
-    function getPath(originCorridor, destCorridor, visited = new Set()) {
-        if (originCorridor === destCorridor) return [originCorridor];
-        visited.add(originCorridor);
-        const neighbors = hallwayRoutes[originCorridor] || [];
-        for (const neighbor of neighbors) {
-            if (!visited.has(neighbor)) {
-                const path = getPath(neighbor, destCorridor, visited);
-                if (path) return [originCorridor, ...path];
+    // 📍 2. Bulletproof Room-to-Corridor Dictionary
+    const roomToCorridor = {
+        "Room 112": "100 Hallway", "Room 110": "100 Hallway", "Room 108": "100 Hallway", "Room 106": "100 Hallway", "Room 104": "100 Hallway", "Room 102": "100 Hallway", "Room 100B": "100 Hallway", "Room 100": "100 Hallway", "HS Office": "100 Hallway", "Main Entrance": "100 Hallway", "Room 107": "100 Hallway", "Room 103": "100 Hallway", "Room 101": "100 Hallway", "Custodial": "100 Hallway", "Girls Restroom 100s": "100 Hallway", "Mechanical": "100 Hallway", "Boys Restroom 100s": "100 Hallway", "Room 109": "100 Hallway", "Room 105": "100 Hallway",
+        
+        "Room 200": "Main Vertical Hall", "Room 202": "Main Vertical Hall", "Mechanical 2": "Main Vertical Hall", "District Office": "Main Vertical Hall", "Room 201A": "Main Vertical Hall", "Room 201": "Main Vertical Hall", "Restroom 200s": "Main Vertical Hall", "Girls Locker Room": "Main Vertical Hall", "LR Office": "Main Vertical Hall", "Boys Locker Room": "Main Vertical Hall", "Trainer's Office": "Main Vertical Hall",
+        
+        "Gym Lobby": "Cross Corridor Block", "Main Gym": "Cross Corridor Block",
+        
+        "Room 312": "300 Hallway", "Room 310": "300 Hallway", "Room 308": "300 Hallway", "Room 306": "300 Hallway", "Room 304": "300 Hallway", "Room 302": "300 Hallway", "Room 300C": "300 Hallway", "Room 300B": "300 Hallway", "Room 300A": "300 Hallway", "Mechanical 3": "300 Hallway", "Room 313": "300 Hallway", "Room 311": "300 Hallway", "Room 309": "300 Hallway", "Room 307": "300 Hallway", "Room 305": "300 Hallway", "Room 303": "300 Hallway", "Room 301": "300 Hallway", "Guidance": "300 Hallway",
+        
+        "Band Room": "Fine Arts Corridor", "Vocal Music": "Fine Arts Corridor", "NICC": "Fine Arts Corridor", "Room 400": "Fine Arts Corridor", "Room 401": "Fine Arts Corridor", "Auditorium": "Fine Arts Corridor", "Auditorium Lobby": "Fine Arts Corridor", "Auditorium RR": "Fine Arts Corridor",
+        
+        "Elementary Office/Other": "Outside", "Nurse": "Outside", "Library": "Outside"
+    };
+
+    // Forgiving lookup: Strips out "Room ", spaces, and cases so "301", "room 301", and "Room 301" all match instantly.
+    function resolveCorridor(roomName) {
+        if (!roomName) return "Unknown";
+        
+        const searchStr = String(roomName).toLowerCase().replace(/^(room|rm)\s*/i, "").trim();
+
+        for (const [key, value] of Object.entries(roomToCorridor)) {
+            const cleanKey = key.toLowerCase().replace(/^(room|rm)\s*/i, "").trim();
+            if (cleanKey === searchStr) {
+                return value;
             }
         }
-        return null; // No path found
+        return "Unknown";
     }
 
-    // 📍 3. Pre-Flight Check: Hallway Lockdown
+    // 📍 3. Shortest-Path Router (Breadth-First Search)
+    function getShortestPath(start, end) {
+        if (start === end) return [start];
+        if (!hallwayRoutes[start] || !hallwayRoutes[end]) return null;
+
+        const queue = [[start]];
+        const visited = new Set([start]);
+
+        while (queue.length > 0) {
+            const path = queue.shift();
+            const current = path[path.length - 1];
+
+            for (const neighbor of (hallwayRoutes[current] || [])) {
+                if (neighbor === end) return [...path, neighbor];
+                if (!visited.has(neighbor)) {
+                    visited.add(neighbor);
+                    queue.push([...path, neighbor]);
+                }
+            }
+        }
+        return null;
+    }
+
+    // 📍 4. Pre-Flight Check: Hallway Lockdown
     const lockedCorridors = window.lockedCorridors || []; 
 
     if (lockedCorridors.length > 0) {
-        const origin = passData.originCorridor || "Unknown"; 
-        const dest = passData.destCorridor || "Unknown";
+        const origin = resolveCorridor(passData.origin);
+        const dest = resolveCorridor(passData.destination);
+        
+        // Save these corrected values so the database is accurate
+        passData.originCorridor = origin;
+        passData.destCorridor = dest;
         
         // Calculate the physical route they must walk
-        const calculatedRoute = getPath(origin, dest) || [origin, dest];
+        const calculatedRoute = getShortestPath(origin, dest) || [origin, dest];
         
         // Check if any corridor in their route is currently locked down
         const blockedCorridor = calculatedRoute.find(corridor => lockedCorridors.includes(corridor));
@@ -249,14 +292,13 @@ export async function createNewPass(passData) {
                 status: "pending_restricted",
                 restrictionType: "area_lockdown", 
                 lockedAreaName: blockedCorridor, 
+                debugCalculatedRoute: calculatedRoute, // Added for debugging in Firebase
                 createdAt: serverTimestamp()
             });
             
-            // This triggers your blind denial screen for the student perfectly.
             return { success: true, status: "blocked_blind" }; 
         }
     }
-    
     
     try {
         // =========================================================
@@ -421,8 +463,9 @@ export async function createNewPass(passData) {
 /**
  * Listens for a specific student's active, pending, or restricted passes
  */
-export function listenToStudentPass(studentName, callback) {
-    const q = query(passesRef, where("studentDisplayName", "==", studentName));
+export function listenToStudentPass(studentId, callback) {
+    // 🔒 CHANGED: Now strictly queries by studentId instead of studentDisplayName
+    const q = query(passesRef, where("studentId", "==", studentId));
     
     return onSnapshot(q, (snapshot) => {
         let currentPass = null;
@@ -430,7 +473,7 @@ export function listenToStudentPass(studentName, callback) {
         snapshot.forEach((doc) => {
             const pass = { id: doc.id, ...doc.data() };
             
-            // 🌟 ADDED "pending_warning" so the student screen doesn't drop the pass!
+            // Keep active passes on screen
             if (
                 pass.status === "active" || 
                 pass.status === "pending" || 

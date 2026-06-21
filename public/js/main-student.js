@@ -184,12 +184,13 @@ async function initStudentApp(user, role) {
 
 
     // LISTEN TO THE DATABASE IN REAL-TIME
-    const activeListenerName = user.displayName;
+    // 🔒 CHANGED: Pass the actual studentId instead of their name
+    const activeListenerId = window.currentStudentProfile?.id || user.uid;
     
     // 🟢 Keep track of the waitlist listener so we can turn it off when they leave the line
     let activeWaitlistListener = null; 
 
-    listenToStudentPass(activeListenerName, (currentPass) => {
+    listenToStudentPass(activeListenerId, (currentPass) => {
         clearInterval(activeTimerInterval);
 
         // 🟢 Clean up the waitlist listener if they are no longer waitlisted

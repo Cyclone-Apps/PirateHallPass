@@ -42,32 +42,50 @@ export function initAuthListener(requiredRole, onAuthenticated) {
         const btn = document.getElementById("btn-google-login");
 
         if (user) {
-            if(btn) btn.innerText = "🔍 User found! Reading Firestore...";
+            // ==========================================
+            // 🎓 STUDENT LOGIN BYPASS
+            // ==========================================
+            if (requiredRole === "student") {
+                if(btn) btn.innerText = "✅ Student Authenticated!";
+                loginScreen.style.display = "none";
+                dashboardScreen.style.display = "";
+                onAuthenticated(user, "student");
+                return; // Stop here, do not check the staff database!
+            }
+
+            // ==========================================
+            // 👨‍🏫 STAFF LOGIN CHECK
+            // ==========================================
+            if(btn) btn.innerText = "🔍 Checking Staff Directory...";
             
             try {
-                // Check Firestore for user role using their Email Address!
+                // Check Firestore for user role using their Email Address
                 const userEmail = user.email.toLowerCase();
                 const userRef = doc(db, "users", userEmail);
                 const userSnap = await getDoc(userRef);
 
-                let role = "teacher"; 
+                let role = ""; 
                 
                 if (userSnap.exists()) {
                     role = userSnap.data().role;
                     if(btn) btn.innerText = `✅ Role found: ${role}`;
                 } else {
-                    if(btn) btn.innerText = "📝 Creating new user profile...";
-                    await setDoc(userRef, {
-                        name: user.displayName,
-                        email: user.email,
-                        role: "teacher" 
-                    });
+                    // KICK OUT UNAUTHORIZED USERS
+                    if(btn) btn.innerText = "🛑 Access Denied";
+                    alert(`ACCESS DENIED!\n\nYour account (${userEmail}) is not registered as a staff member in the system.\n\nPlease see Mr. Orr to be added.`);
+                    await signOut(auth);
+                    
+                    loginScreen.style.display = "flex";
+                    dashboardScreen.style.display = "none";
+                    btn.innerText = "Sign in with Google";
+                    return; 
                 }
 
                 // Verify they are on the right page
                 if (requiredRole === "admin" && role !== "admin") {
                     if(btn) btn.innerText = "🛑 Access Denied";
-                    alert(`ACCESS DENIED!\n\nYour account was created, but your role is: "${role}".\n\nTo view this Admin page, go to your Firebase Console -> Firestore Database, find your user in the 'users' collection, and change your role to "admin". Then refresh this page.`);
+                    alert(`ACCESS DENIED!\n\nYou are logged in as a "${role}", but this page requires Admin access.\n\nPlease see Mr. Orr if you need your permissions upgraded.`);
+                    await signOut(auth);
                     return; 
                 }
 
@@ -79,7 +97,7 @@ export function initAuthListener(requiredRole, onAuthenticated) {
 
             } catch (error) {
                 if(btn) btn.innerText = "❌ Database Error";
-                alert("Firestore Error: " + error.message + "\n\nMake sure your Firestore Database is set up and rules allow reading/writing!");
+                alert("Firestore Error: " + error.message);
             }
         } else {
             // Not logged in
