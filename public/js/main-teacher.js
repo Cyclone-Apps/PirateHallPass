@@ -2,7 +2,7 @@
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { renderHeader, renderPassList, setupStudentAutocomplete } from "./modules/ui-widgets.js";
 // 🌟 FIX: Added listenToScheduledPasses to the import list
-import { listenToPendingPasses, listenToActivePasses, listenToScheduledPasses, updatePassStatus, createNewPass, cancelScheduledPass, fetchAllStudents } from "./modules/pass-engine.js";
+import { listenToPendingPasses, listenToActivePasses, listenToScheduledPasses, updatePassStatus, createNewPass, cancelScheduledPass, fetchAllStudents, listenToPassHistory, editPassHistory, flagPassFraudulent } from "./modules/pass-engine.js";
 import { listenToEmergencyState } from "./modules/admin-engine.js";
 import { MapController } from "./modules/map-engine.js";
 
@@ -144,6 +144,192 @@ initAuthListener("teacher", async (user, role) => {
         });
     }
     
+// =======================================================
+    // 🌟 NEW: HISTORY PASSES (4th Column)
+    // =======================================================
+    let allHistoryPasses = []; 
+    let currentHistoryTab = 'today'; 
+
+    // 🟢 CUSTOM RENDERER FOR HISTORY PASSES (Shows Times, Edits & Fraud Flags)
+    function renderHistoryPasses(passes, containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = "";
+
+        if (passes.length === 0) {
+            container.innerHTML = `<div style="padding: 15px; color: #777; text-align: center; border: 1px dashed #ccc; border-radius: 8px;">No history available.</div>`;
+            return;
+        }
+
+        passes.forEach(pass => {
+            // Extract and format times safely
+            const startObj = pass.acceptedAt?.toDate?.() || pass.createdAt?.toDate?.();
+            const endObj = pass.returnedAt?.toDate?.();
+            
+            // Extract ORIGINAL times if they were edited
+            const origStartObj = pass.originalAcceptedAt?.toDate?.();
+            const origEndObj = pass.originalReturnedAt?.toDate?.();
+            
+            const formatTime = (dateObj) => dateObj ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Unknown";
+            const inputFormat = (dateObj) => dateObj ? dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "";
+            
+            const startTimeStr = formatTime(startObj);
+            const endTimeStr = formatTime(endObj);
+
+            // Calculate duration in minutes
+            let durationStr = "";
+            if (startObj && endObj) {
+                const diffMins = Math.round((endObj - startObj) / 60000);
+                durationStr = `(${diffMins}m)`;
+            }
+
+            // ========================================================
+            // 🟢 STRIKETHROUGH EDITS & FRAUD FLAGS
+            // ========================================================
+            let destinationDisplay = `<strong>${pass.destination}</strong>`;
+            let editNoteHTML = '';
+            let fraudNoteHTML = '';
+            let leftBorderColor = '#607d8b'; // Default history gray/blue
+
+            // 1. Destination Strikethrough
+            if (pass.originalDestination && pass.originalDestination !== pass.destination) {
+                destinationDisplay = `<del style="color: #d32f2f;">${pass.originalDestination}</del> <strong style="color: #d32f2f; margin-left: 5px;">${pass.destination}</strong>`;
+            }
+            
+            // 2. Time Strikethroughs (NEW)
+            let startTimeDisplay = startTimeStr;
+            if (origStartObj) {
+                startTimeDisplay = `<del style="color: #d32f2f;">${formatTime(origStartObj)}</del> <span style="color: #d32f2f;">${startTimeStr}</span>`;
+            }
+            
+            let endTimeDisplay = endTimeStr;
+            if (origEndObj) {
+                endTimeDisplay = `<del style="color: #d32f2f;">${formatTime(origEndObj)}</del> <span style="color: #d32f2f;">${endTimeStr}</span>`;
+            }
+            
+            // 3. Show who edited it
+            if (pass.editedBy) {
+                editNoteHTML = `<div style="font-size: 0.8rem; color: #e65100; font-style: italic; margin-top: 4px; margin-bottom: 8px;">✏️ Edited by ${pass.editedBy}</div>`;
+            }
+
+            // 4. Show Fraudulent Flag Warning
+            if (pass.status === 'fraudulent_review' || pass.fraudExplanation) {
+                leftBorderColor = '#c62828'; // Turn border Stark Red
+                fraudNoteHTML = `
+                    <div style="background: #ffebee; border: 1px solid #ffcdd2; color: #c62828; padding: 6px; border-radius: 4px; font-size: 0.85rem; margin-bottom: 10px;">
+                        <strong>🚩 Fraudulent Flag:</strong> ${pass.fraudExplanation || "Sent to Admin for review."}
+                    </div>
+                `;
+            }
+
+            const card = document.createElement("div");
+            card.style.cssText = `background: white; border: 1px solid #eaedf2; border-left: 5px solid ${leftBorderColor}; padding: 15px; margin-bottom: 12px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`;
+            
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 5px;">
+                    <span style="font-size: 1.1rem; color: #1a1a1a;">🧑‍🎓 ${pass.studentDisplayName || pass.studentName || "Unknown"}</span>
+                    <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee; padding: 2px 6px; border-radius: 4px;">${pass.type || "Pass"}</span>
+                </div>
+                ${fraudNoteHTML}
+                <div style="color: #555; font-size: 0.95rem; margin-bottom: 4px;">
+                    📍 To: ${destinationDisplay}
+                </div>
+                ${editNoteHTML}
+                <div style="background: #f8f9fa; border: 1px solid #e0e0e0; padding: 6px 10px; border-radius: 4px; display: inline-block; font-size: 0.85rem; color: #333; margin-bottom: 10px;">
+                    ⏱️ <strong>${startTimeDisplay} - ${endTimeDisplay}</strong> <span style="color: #d32f2f; font-weight: bold; margin-left: 5px;">${durationStr}</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn-edit-history" 
+                        data-id="${pass.id}" 
+                        data-dest="${pass.destination}" 
+                        data-start-val="${inputFormat(startObj)}" 
+                        data-end-val="${inputFormat(endObj)}"
+                        data-start-ms="${startObj ? startObj.getTime() : ''}"
+                        data-end-ms="${endObj ? endObj.getTime() : ''}"
+                        data-orig-start-ms="${origStartObj ? origStartObj.getTime() : ''}"
+                        data-orig-end-ms="${origEndObj ? origEndObj.getTime() : ''}"
+                        style="background: #fb8c00; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; width: 100%;">
+                        ✏️ Edit / Flag Pass
+                    </button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+    
+    function renderHistoryTab() {
+        const myName = user.displayName;
+        
+        // Define Today & Yesterday midnight boundaries
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        
+        const yesterdayStart = new Date(todayStart);
+        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
+        // Filter 1: Pass MUST involve this teacher (Origin, Destination, or Sender)
+        const myHistory = allHistoryPasses.filter(pass => 
+            pass.targetTeacher === myName || 
+            pass.originTeacher === myName ||
+            pass.senderName === myName 
+        );
+
+        // Filter 2: Sort by Today vs Yesterday
+        let filteredPasses = [];
+
+        if (currentHistoryTab === 'today') {
+            filteredPasses = myHistory.filter(p => {
+                const passDate = p.returnedAt?.toDate?.() || p.createdAt?.toDate?.() || new Date(0);
+                return passDate >= todayStart;
+            });
+            renderHistoryPasses(filteredPasses, "list-history-today");
+            
+            // Toggle UI View
+            document.getElementById("list-history-today").classList.remove("hidden");
+            document.getElementById("list-history-yesterday").classList.add("hidden");
+            document.getElementById("tab-history-today").style.background = "#0277bd";
+            document.getElementById("tab-history-today").style.color = "white";
+            document.getElementById("tab-history-yesterday").style.background = "#e0e0e0";
+            document.getElementById("tab-history-yesterday").style.color = "#333";
+            
+        } else {
+            filteredPasses = myHistory.filter(p => {
+                const passDate = p.returnedAt?.toDate?.() || p.createdAt?.toDate?.() || new Date(0);
+                return passDate >= yesterdayStart && passDate < todayStart;
+            });
+            
+            // ✅ CORRECTED LINE:
+            renderHistoryPasses(filteredPasses, "list-history-yesterday");
+            
+            // Toggle UI View
+            document.getElementById("list-history-today").classList.add("hidden");
+            document.getElementById("list-history-yesterday").classList.remove("hidden");
+            document.getElementById("tab-history-today").style.background = "#e0e0e0";
+            document.getElementById("tab-history-today").style.color = "#333";
+            document.getElementById("tab-history-yesterday").style.background = "#0277bd";
+            document.getElementById("tab-history-yesterday").style.color = "white";
+        }
+    }
+
+    // Attach Click Listeners to the Tabs
+    const tabToday = document.getElementById("tab-history-today");
+    const tabYesterday = document.getElementById("tab-history-yesterday");
+    if (tabToday) tabToday.addEventListener("click", () => { currentHistoryTab = 'today'; renderHistoryTab(); });
+    if (tabYesterday) tabYesterday.addEventListener("click", () => { currentHistoryTab = 'yesterday'; renderHistoryTab(); });
+
+    // Activate the real-time Firebase Listener
+    if (typeof listenToPassHistory === "function") {
+        listenToPassHistory((passes) => {
+            // Sort by most recently returned at the top
+            allHistoryPasses = passes.sort((a, b) => {
+                const timeA = a.returnedAt?.toDate?.() || new Date(0);
+                const timeB = b.returnedAt?.toDate?.() || new Date(0);
+                return timeB - timeA; 
+            });
+            renderHistoryTab();
+        });
+    }
+
     // Listen for Emergencies and drop down the banner
     listenToEmergencyState((state) => {
         const banner = document.getElementById("emergency-alert-banner");
@@ -540,6 +726,184 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
         
         // Reset button
         e.target.innerText = "Send Pass";
+        e.target.disabled = false;
+    }
+});
+
+// =======================================================
+// ✏️ EDIT HISTORY & FRAUD FLAG MODAL LOGIC
+// =======================================================
+document.addEventListener("click", async (e) => {
+    
+    // =======================================================
+    // 🗺️ MAP LAUNCHER FOR EDIT HISTORY MODAL
+    // =======================================================
+    if (e.target.id === "btn-edit-history-map") {
+        const mapModal = document.getElementById("map-popout-modal");
+        const mapContainer = document.getElementById("full-map-container");
+        
+        if (mapModal && mapContainer) {
+            mapContainer.innerHTML = ""; // Clear existing map to prevent duplicates
+            mapModal.classList.remove("hidden");
+            
+            // Launch the map in 'student' mode so it allows single-room selection
+            new MapController({
+                containerId: "full-map-container",
+                mode: "student",
+                onRoomSelect: (data) => { // 🟢 FIX: Handle the object passed by map-engine.js
+                    const destInput = document.getElementById("edit-history-destination");
+                    if (destInput && data && data.room) {
+                        destInput.value = data.room; // Pull the room string out of the object
+                    }
+                    mapModal.classList.add("hidden"); // Auto-close map after selection
+                }
+            });
+        }
+    }
+    
+    // 1. Open the Edit Modal
+    if (e.target.closest(".btn-edit-history")) {
+        const btn = e.target.closest(".btn-edit-history");
+        const passId = btn.getAttribute("data-id");
+        const currentDest = btn.getAttribute("data-dest");
+        
+        document.getElementById("edit-history-pass-id").value = passId;
+        document.getElementById("edit-history-destination").value = currentDest;
+        document.getElementById("edit-history-destination").setAttribute("data-original", currentDest);
+        
+        // Store millisecond timestamps AND string values
+        document.getElementById("edit-history-pass-id").setAttribute("data-start-ms", btn.getAttribute("data-start-ms"));
+        document.getElementById("edit-history-pass-id").setAttribute("data-end-ms", btn.getAttribute("data-end-ms"));
+        document.getElementById("edit-history-pass-id").setAttribute("data-orig-start-ms", btn.getAttribute("data-orig-start-ms"));
+        document.getElementById("edit-history-pass-id").setAttribute("data-orig-end-ms", btn.getAttribute("data-orig-end-ms"));
+        
+        // 🟢 FIX: Store the "HH:MM" string to prevent false-positive edits
+        document.getElementById("edit-history-pass-id").setAttribute("data-start-str", btn.getAttribute("data-start-val"));
+        document.getElementById("edit-history-pass-id").setAttribute("data-end-str", btn.getAttribute("data-end-val"));
+        
+        // Pre-fill the time inputs
+        const startInput = document.getElementById("edit-history-start-time");
+        const endInput = document.getElementById("edit-history-end-time");
+        if(startInput) startInput.value = btn.getAttribute("data-start-val");
+        if(endInput) endInput.value = btn.getAttribute("data-end-val");
+
+        // Reset Fraud toggle state
+        document.getElementById("fraud-explanation-container").classList.add("hidden");
+        document.getElementById("edit-history-fraud-reason").value = "";
+        document.getElementById("btn-toggle-fraud").innerText = "🚩 Flag as Fraudulent";
+        
+        document.getElementById("modal-edit-history").classList.remove("hidden");
+    }
+
+    // 2. Close the Edit Modal
+    if (e.target.id === "close-edit-history-modal") {
+        document.getElementById("modal-edit-history").classList.add("hidden");
+    }
+
+    // 3. Toggle the Fraud Explanation Textbox
+    if (e.target.id === "btn-toggle-fraud") {
+        const container = document.getElementById("fraud-explanation-container");
+        if (container.classList.contains("hidden")) {
+            container.classList.remove("hidden");
+            e.target.innerText = "❌ Cancel Fraud Flag";
+        } else {
+            container.classList.add("hidden");
+            e.target.innerText = "🚩 Flag as Fraudulent";
+            document.getElementById("edit-history-fraud-reason").value = "";
+        }
+    }
+
+    // 4. Save Changes to Firebase
+    if (e.target.id === "btn-save-history-edit") {
+        const passId = document.getElementById("edit-history-pass-id").value;
+        const originalDest = document.getElementById("edit-history-destination").getAttribute("data-original");
+        const newDest = document.getElementById("edit-history-destination").value.trim();
+        
+        const startInput = document.getElementById("edit-history-start-time")?.value;
+        const endInput = document.getElementById("edit-history-end-time")?.value;
+        
+        const startMs = document.getElementById("edit-history-pass-id").getAttribute("data-start-ms");
+        const endMs = document.getElementById("edit-history-pass-id").getAttribute("data-end-ms");
+        const origStartMs = document.getElementById("edit-history-pass-id").getAttribute("data-orig-start-ms");
+        const origEndMs = document.getElementById("edit-history-pass-id").getAttribute("data-orig-end-ms");
+        
+        // 🟢 FIX: Fetch original strings to compare
+        const origStartStr = document.getElementById("edit-history-pass-id").getAttribute("data-start-str");
+        const origEndStr = document.getElementById("edit-history-pass-id").getAttribute("data-end-str");
+        
+        const isFraudOpen = !document.getElementById("fraud-explanation-container").classList.contains("hidden");
+        const fraudReason = document.getElementById("edit-history-fraud-reason").value.trim();
+
+        if (!passId) return;
+
+        e.target.innerText = "⏳ Saving...";
+        e.target.disabled = true;
+
+        let success = true;
+        let updates = {};
+
+        // Process Destination Change
+        if (newDest && newDest !== originalDest) {
+            updates.destination = newDest;
+            if (!document.getElementById("edit-history-destination").getAttribute("data-has-orig")) {
+                 updates.originalDestination = originalDest;
+            }
+        }
+
+        // Helper to apply a new "HH:MM" string to an existing date
+        const applyTimeToDate = (msString, timeString) => {
+            if (!msString || !timeString) return null;
+            const dateObj = new Date(parseInt(msString));
+            const [hours, minutes] = timeString.split(":");
+            dateObj.setHours(hours, minutes, 0, 0);
+            return dateObj;
+        };
+
+        // 🟢 Process Start Time Change (ONLY if the text actually changed)
+        if (startInput && startInput !== origStartStr) {
+            const newStartDate = applyTimeToDate(startMs, startInput);
+            if (newStartDate) {
+                updates.acceptedAt = newStartDate;
+                if (!origStartMs && startMs) {
+                    updates.originalAcceptedAt = new Date(parseInt(startMs));
+                }
+            }
+        }
+        
+        // 🟢 Process End Time Change (ONLY if the text actually changed)
+        if (endInput && endInput !== origEndStr) {
+            const newEndDate = applyTimeToDate(endMs, endInput);
+            if (newEndDate) {
+                updates.returnedAt = newEndDate;
+                if (!origEndMs && endMs) {
+                    updates.originalReturnedAt = new Date(parseInt(endMs));
+                }
+            }
+        }
+
+        // Execute Updates
+        if (Object.keys(updates).length > 0) {
+            success = await editPassHistory(passId, updates, window.currentUser.displayName);
+        }
+
+        // Process Fraud Flag
+        if (isFraudOpen && fraudReason) {
+            success = await flagPassFraudulent(passId, fraudReason);
+        } else if (isFraudOpen && !fraudReason) {
+            alert("Please provide an explanation for the admin regarding this fraud flag.");
+            e.target.innerText = "Save Changes";
+            e.target.disabled = false;
+            return;
+        }
+
+        if (success) {
+            document.getElementById("modal-edit-history").classList.add("hidden");
+        } else {
+            alert("Error saving changes.");
+        }
+        
+        // Reset button
+        e.target.innerText = "Save Changes";
         e.target.disabled = false;
     }
 });

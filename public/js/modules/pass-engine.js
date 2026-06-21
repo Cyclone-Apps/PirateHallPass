@@ -581,3 +581,55 @@ export async function cancelScheduledPass(passId) {
         return false;
     }
 }
+
+// ==============================================================
+// 🟢 NEW: HISTORICAL PASS ENGINE (Teacher Pass History & Edits)
+// ==============================================================
+
+/**
+ * Listens for Returned, Archived, and Fraudulent passes
+ */
+export function listenToPassHistory(callback) {
+    const q = query(passesRef, where("status", "in", ["returned", "returned_bypassed", "archived", "fraudulent_review"]));
+    return onSnapshot(q, (snapshot) => {
+        const passes = [];
+        snapshot.forEach((doc) => passes.push({ id: doc.id, ...doc.data() }));
+        callback(passes); 
+    });
+}
+
+/**
+ * Edits a past pass's destination and/or start/end times
+ */
+export async function editPassHistory(passId, updates, editorName) {
+    try {
+        const passDoc = doc(db, "passes", passId);
+        await updateDoc(passDoc, {
+            ...updates, // 🟢 Now accepts destination, acceptedAt, and returnedAt dynamically!
+            editedBy: editorName,
+            editedAt: serverTimestamp()
+        });
+        return true;
+    } catch (error) {
+        console.error("Failed to edit pass:", error);
+        return false;
+    }
+}
+
+/**
+ * Flags a pass as fraudulent and moves it to Admin Review
+ */
+export async function flagPassFraudulent(passId, explanation) {
+    try {
+        const passDoc = doc(db, "passes", passId);
+        await updateDoc(passDoc, {
+            status: "fraudulent_review", // This status triggers it to move to the Admin column
+            fraudExplanation: explanation,
+            flaggedAt: serverTimestamp()
+        });
+        return true;
+    } catch (error) {
+        console.error("Failed to flag pass:", error);
+        return false;
+    }
+}

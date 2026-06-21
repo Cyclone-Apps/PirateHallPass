@@ -40,28 +40,21 @@ export function renderHeader(user, role) {
         adminToolbar.style.flexDirection = "column";
         adminToolbar.style.gap = "10px";
 
-        // Inside ui-widgets.js -> renderHeader() -> adminToolbar block
-
         adminToolbar.innerHTML = `
             <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
-                <!-- Darkest Gray -->
                 <button id="btn-emergency" class="admin-dashboard-btn btn-critical">🚨 Emergency Controls</button>
                 <button id="btn-location-limits" class="admin-dashboard-btn btn-critical">🚦 Restriction Settings</button>
                 
-                <!-- Red -->
                 <button id="btn-open-send-pass" class="admin-dashboard-btn btn-primary">🎫 Send Student a Pass</button>
                 <button id="btn-open-proxy-setup" class="admin-dashboard-btn btn-primary">💻 Open Pass As Student</button>
                 
-                <!-- Base Gray -->
                 <button id="btn-open-management" class="admin-dashboard-btn btn-base">👥 Student Management</button>
             </div>
             
             <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <!-- Lightest Gray -->
                 <button id="btn-open-teacher-management" class="admin-dashboard-btn btn-light">👨‍🏫 Teacher Management</button>            
                 <button id="btn-open-teacher-schedule" class="admin-dashboard-btn btn-light">📋 Teacher Schedule</button>
                 
-                <!-- Base Gray -->
                 <button id="btn-open-bell-schedule" class="admin-dashboard-btn btn-base">⏱️ Bell Schedules</button>
                 <button id="btn-open-academic-cal-modal" class="admin-dashboard-btn btn-base">📅 Academic Calendar</button>
                 <button id="btn-open-gcal-modal" class="admin-dashboard-btn btn-base">⚙️ Google Calendar Setup</button>
@@ -79,7 +72,7 @@ export function renderHeader(user, role) {
             <button id="btn-emergency" class="danger-btn toolbar-btn" style="border: none;">🚨 Emergency</button>
         `;
     }
-} // End of renderHeader function
+} 
 
 /**
  * Dynamically renders pass cards into designated dashboard containers
@@ -95,7 +88,7 @@ export function renderPassList(passes, containerId, countId) {
     if (!container) return;
     
     if (passes.length === 0) {
-        container.innerHTML = `<p style="color: #666; font-style: italic; padding: 15px 5px;">No active or pending passes.</p>`;
+        container.innerHTML = `<p style="color: #666; font-style: italic; padding: 15px 5px;">No passes.</p>`;
         return;
     }
     
@@ -105,7 +98,6 @@ export function renderPassList(passes, containerId, countId) {
         // Render control buttons depending on status context
         if (pass.status === 'pending' || pass.status === 'pending_student' || pass.status === 'pending_restricted' || pass.status === 'waitlist') {
             
-            // 🚨 NEW: Dynamic Override text & color for restricted passes
             let approveBtnText = pass.status === 'pending_restricted' ? "⚠️ Override & Approve" : "Approve";
             let approveBtnBg = pass.status === 'pending_restricted' ? "#f57c00" : "#2e7d32";
 
@@ -115,26 +107,28 @@ export function renderPassList(passes, containerId, countId) {
                     <button class="card-btn" data-id="${pass.id}" data-action="rejected" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #c62828; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Reject</button>
                 </div>
             `;
-        // 'active_bypassed' gets the End Pass button
         } else if (pass.status === 'active' || pass.status === 'active_bypassed') {
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
                     <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #0277bd; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">End Pass (Return)</button>
                 </div>
             `;
-        // 'returned_bypassed' block for the Admin Clear button
         } else if (pass.status === 'returned_bypassed') {
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
                     <button class="card-btn" data-id="${pass.id}" data-action="archived" data-current-status="${pass.status}" style="width: 100%; padding: 10px; font-size: 1rem; background-color: #757575; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Clear Alert</button>
                 </div>
             `;
+        } else if (pass.status === 'returned' || pass.status === 'archived' || pass.status === 'fraudulent_review') {
+            // NEW: Historical passes get an Edit button
+            actionButtons = `
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button class="card-btn btn-edit-history" data-id="${pass.id}" data-dest="${pass.destination}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #fbc02d; border: none; color: #333; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✏️ Edit / Flag</button>
+                </div>
+            `;
         }
         
-        // Format the destination to include the teacher's name
-        const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown") 
-            ? ` (${pass.targetTeacher})` 
-            : "";
+        const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown") ? ` (${pass.targetTeacher})` : "";
             
         // CHECK RESTRICTION STATUS FOR CARD BACKGROUND
         const isRestricted = ['pending_restricted', 'active_bypassed', 'returned_bypassed'].includes(pass.status);
@@ -145,30 +139,25 @@ export function renderPassList(passes, containerId, countId) {
         let leftBorderColor = '#0277bd'; 
         if (pass.status.includes('pending') || pass.status === 'waitlist') leftBorderColor = '#ff9800'; 
         if (pass.status.includes('active')) leftBorderColor = '#4caf50'; 
-        if (pass.status.includes('returned') || pass.status === 'archived') leftBorderColor = '#757575'; 
+        if (pass.status.includes('returned') || pass.status === 'archived' || pass.status === 'fraudulent_review') leftBorderColor = '#757575'; 
+        if (pass.status === 'fraudulent_review') leftBorderColor = '#c62828'; // Make fraud border stark red
         
         // WAITLIST BADGE
         const waitlistBadgeHTML = pass.status === 'waitlist' 
             ? `<div style="margin-bottom: 8px;"><span style="background-color: #f57c00; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">⏳ Waitlisted (#${pass.queuePosition})</span></div>` 
             : '';
 
-        // 🚨 NEW: RESTRICTION WARNING BANNER (Visible on Pending, Active, and Admin Review)
+        // RESTRICTION WARNING BANNER 
         let restrictionBannerHTML = '';
         if (isRestricted) {
-            // Keep this! It defines the override text for both types of restrictions.
             const overrideText = pass.status === 'pending_restricted' 
                 ? "<em>Overriding notifies admin.</em>" 
                 : `<strong style='color: #c62828;'>⚠️ Restriction was bypassed by ${pass.bypassedBy || "Admin"}</strong>`;
 
-            // Use restricted peer name/ID or Area Lockdown info in the header
             let restrictionReason = "";
-            
             if (pass.restrictionType === "area_lockdown") {
-                 // 🌟 Area Lockdown Custom Badge
                  restrictionReason = `Area Locked: <strong>${pass.lockedAreaName}</strong> is currently restricted.`;
             } else {
-                 // Existing Co-Restriction Badge
-                 // We keep your existing layout, just swapping the variables!
                  restrictionReason = `<strong style="font-size: 0.9rem;">🚨 RESTRICTED PEER CONFLICT WITH ${pass.restrictedPeerName || pass.restrictedPeer || "RESTRICTED PEER"}</strong><br>
                                       <span style="font-size: 0.8rem; color: #444;"><strong>Conflict:</strong> Student ID ${pass.restrictedPeer || "Admin Restriction"}</span>`;
             }
@@ -183,6 +172,30 @@ export function renderPassList(passes, containerId, countId) {
             `;
         }
 
+        // ========================================================
+        // NEW: STRIKETHROUGH EDITS & FRAUD FLAGS FOR HISTORICAL PASSES
+        // ========================================================
+        let destinationDisplay = `<strong>${pass.destination}${teacherText}</strong>`;
+        let editNoteHTML = '';
+        let fraudNoteHTML = '';
+
+        // If the pass was edited, cross out the old one
+        if (pass.originalDestination && pass.originalDestination !== pass.destination) {
+            destinationDisplay = `<del style="color: #999;">${pass.originalDestination}</del> <strong style="color: #2e7d32;">${pass.destination}</strong>`;
+        }
+        
+        // Show who edited it
+        if (pass.editedBy) {
+            editNoteHTML = `<div style="font-size: 0.8rem; color: #e65100; font-style: italic; margin-top: 4px;">✏️ Edited by ${pass.editedBy}</div>`;
+        }
+
+        // Show Fraudulent Flag Warning
+        if (pass.status === 'fraudulent_review' || pass.fraudExplanation) {
+            fraudNoteHTML = `<div style="background: #ffebee; border: 1px solid #ffcdd2; color: #c62828; padding: 6px; border-radius: 4px; font-size: 0.85rem; margin-top: 8px;">
+                                <strong>🚩 Fraudulent Flag:</strong> ${pass.fraudExplanation || "Sent to Admin for review."}
+                             </div>`;
+        }
+
         return `
             <div class="pass-card" style="background: ${cardBgColor}; border: 1px solid ${cardBorderColor}; border-left: 5px solid ${leftBorderColor}; padding: 15px; margin-bottom: 12px; border-radius: var(--radius, 8px); box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 5px;">
@@ -192,9 +205,11 @@ export function renderPassList(passes, containerId, countId) {
                 ${waitlistBadgeHTML}
                 ${restrictionBannerHTML}
                 <div style="color: #555; font-size: 0.95rem; margin-bottom: 5px;">
-                    📍 Destination: <strong>${pass.destination}${teacherText}</strong>
+                    📍 Destination: ${destinationDisplay}
                 </div>
-                ${pass.senderName ? `<div style="color: #888; font-size: 0.85rem; font-style: italic;">Initiated by: ${pass.senderName}</div>` : ''}
+                ${editNoteHTML}
+                ${fraudNoteHTML}
+                ${pass.senderName ? `<div style="color: #888; font-size: 0.85rem; font-style: italic; margin-top: 4px;">Initiated by: ${pass.senderName}</div>` : ''}
                 ${actionButtons}
             </div>
         `;
@@ -204,33 +219,23 @@ export function renderPassList(passes, containerId, countId) {
 /**
  * UNIVERSAL AUTOCOMPLETE TOOL
  * Attaches a dynamic dropdown to any input field.
- * @param {HTMLElement} inputElement - The search text box
- * @param {HTMLElement} dropdownElement - The empty div for the dropdown list
- * @param {Array} studentList - The array of student objects from Firebase
- * @param {Function} onSelectCallback - A function to run when a student is clicked
- * @param {HTMLElement} displayEmailElement - (Optional) Element to visually show the email
- * @param {HTMLElement} hiddenEmailElement - (Optional) Hidden input to store the email value
  */
 export function setupStudentAutocomplete(inputElement, dropdownElement, studentList, onSelectCallback = null, displayEmailElement = null, hiddenEmailElement = null) {
     if (!inputElement || !dropdownElement) return;
 
-    // 1. Prevent clicks on the dropdown itself from hiding it
     dropdownElement.addEventListener("click", (evt) => {
         evt.stopPropagation();
     });
 
-    // 2. Prevent clicks on the input from bubbling to the document (This fixes the flash!)
     inputElement.addEventListener("click", (evt) => {
         evt.stopPropagation();
         renderList(inputElement.value);
     });
 
-    // 3. Still allow keyboard tab-focus to open the list
     inputElement.addEventListener("focus", () => {
         renderList(inputElement.value);
     });
     
-    // Filter list as they type
     inputElement.addEventListener("input", () => {
         renderList(inputElement.value);
         if (hiddenEmailElement) hiddenEmailElement.value = "";
@@ -240,7 +245,6 @@ export function setupStudentAutocomplete(inputElement, dropdownElement, studentL
         }
     });
 
-    // Hide dropdown if clicked completely outside
     document.addEventListener("click", (evt) => {
         if (evt.target !== inputElement && !dropdownElement.contains(evt.target)) {
             dropdownElement.classList.add("hidden");
@@ -251,7 +255,6 @@ export function setupStudentAutocomplete(inputElement, dropdownElement, studentL
         dropdownElement.innerHTML = "";
         const term = (searchTerm || "").toLowerCase();
 
-        // Check name OR email
         const filtered = studentList.filter(s => 
             (s.displayName || "").toLowerCase().includes(term) || 
             (s.email || "").toLowerCase().includes(term)
@@ -263,7 +266,6 @@ export function setupStudentAutocomplete(inputElement, dropdownElement, studentL
             return;
         }
 
-        // Build the dropdown options
         filtered.forEach(student => {
             const div = document.createElement("div");
             div.style.padding = "10px";
@@ -272,7 +274,6 @@ export function setupStudentAutocomplete(inputElement, dropdownElement, studentL
             
             div.innerHTML = `<strong>${student.displayName || "Unknown"}</strong> <span style="font-size: 0.85rem; color: #888; margin-left: 5px;">(${student.email || "No Email"})</span>`;
 
-            // Click behavior for individual items
             div.addEventListener("click", (evt) => {
                 evt.stopPropagation(); 
                 inputElement.value = student.displayName || "";
@@ -283,11 +284,9 @@ export function setupStudentAutocomplete(inputElement, dropdownElement, studentL
                 }
                 dropdownElement.classList.add("hidden");
                 
-                // Trigger any custom action the specific page asked for
                 if (onSelectCallback) onSelectCallback(student);
             });
 
-            // Hover effects
             div.addEventListener("mouseover", () => div.style.background = "#f0f8ff");
             div.addEventListener("mouseout", () => div.style.background = "transparent");
 
