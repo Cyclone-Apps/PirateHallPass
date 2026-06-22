@@ -157,7 +157,7 @@ export function initDashboardManagement() {
     });
 
 
-    // 🟢 Apply All Filters & Dynamically Update Dropdowns
+    // 🟢 Apply All Filters & Dynamically Update Dropdowns 
     function applyAdminHistoryFilters() {
         const startDateVal = document.getElementById("filter-history-start-date").value;
         const endDateVal = document.getElementById("filter-history-end-date").value;
