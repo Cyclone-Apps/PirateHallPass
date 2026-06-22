@@ -299,6 +299,75 @@ function startStopwatchTimer() {
 }
 
 // Global Event Listeners
+
+// ==========================================
+// 🟢 OVERRIDE: FORCE CORRECT MAP LABELS ON ZOOM
+// ==========================================
+window.showTeacherNamesOnMap = function() {
+    const mapSvg = document.getElementById("interactive-school-map");
+    if (!mapSvg) return;
+    
+    let activePeriod = "1"; 
+    if (window.currentTimeState && window.currentTimeState.currentPeriod) {
+        activePeriod = String(window.currentTimeState.currentPeriod);
+    }
+    
+    let currentDayNum = 1; 
+    if (window.currentRotationDayText) {
+        const parsed = parseInt(window.currentRotationDayText.replace(/\D/g, ''));
+        if (!isNaN(parsed)) currentDayNum = parsed;
+    }
+
+    const scheduleData = window.liveMasterSchedule || window.currentLiveScheduleData;
+    
+    mapSvg.querySelectorAll(".map-node").forEach(node => {
+        const dataId = node.getAttribute("data-id") || "";
+        const matchKey = dataId.toLowerCase().replace(/^room\s+/i, '').trim();
+        let rawName = null;
+
+        // 1st Priority: Locked Rooms
+        if (scheduleData && scheduleData.lockedRooms && scheduleData.lockedRooms[matchKey]) {
+            rawName = scheduleData.lockedRooms[matchKey];
+        } 
+        // 2nd Priority: Normal Schedule
+        else if (scheduleData && scheduleData[activePeriod]) {
+            const assignments = scheduleData[activePeriod][matchKey];
+            if (assignments && assignments.length > 0) {
+                let activeTeacher = assignments.find(a => a.days.includes(currentDayNum));
+                if (!activeTeacher) activeTeacher = assignments[0]; 
+                rawName = activeTeacher.teacher;
+            }
+        }
+
+        if (rawName) {
+            let cleanName = rawName.trim();
+            if (cleanName.includes(",")) {
+                cleanName = cleanName.split(",")[0].trim();
+            } else {
+                const parts = cleanName.split(/\s+/);
+                if (parts.length > 1) {
+                    const titles = ["mr.", "mrs.", "ms.", "miss", "dr.", "coach"];
+                    const firstWord = parts[0].toLowerCase();
+                    if (titles.includes(firstWord)) cleanName = parts[0] + " " + parts[parts.length - 1];
+                    else cleanName = parts[parts.length - 1];
+                }
+            }
+
+            const textEl = node.querySelector("text.lbl-room, text.lbl-large");
+            if (textEl) {
+                if (!textEl.hasAttribute("data-orig-text")) {
+                    textEl.setAttribute("data-orig-text", textEl.textContent);
+                    textEl.setAttribute("data-orig-font", textEl.getAttribute("font-size") || "");
+                    textEl.setAttribute("data-orig-fill", textEl.getAttribute("fill") || "");
+                }
+                textEl.textContent = cleanName;
+                textEl.setAttribute("fill", "#0277bd");
+                textEl.setAttribute("font-size", cleanName.length > 12 ? "10" : "13");
+            }
+        }
+    });
+};
+
 document.addEventListener("click", async (e) => {
 
     // ==========================================
@@ -379,6 +448,44 @@ document.addEventListener("click", async (e) => {
         }
 
         let teacherDisplay = "";
+
+        // 🟢 NEW: Unified Logic matching map-engine.js!
+        let rawName = null;
+        const scheduleData = window.liveMasterSchedule || window.currentLiveScheduleData;
+
+        // 1st Priority - Locked Room Override
+        if (scheduleData && scheduleData.lockedRooms && scheduleData.lockedRooms[matchKey]) {
+            rawName = scheduleData.lockedRooms[matchKey];
+        } 
+        // 2nd Priority - Normal Schedule Check
+        else if (scheduleData && scheduleData[activePeriod]) {
+            const assignments = scheduleData[activePeriod][matchKey];
+            if (assignments && assignments.length > 0) {
+                let activeTeacher = assignments.find(a => a.days.includes(currentDayNum));
+                if (!activeTeacher) activeTeacher = assignments[0]; 
+                rawName = activeTeacher.teacher;
+            }
+        }
+
+        if (rawName) {
+            // FORMAT NAME: Strip first name
+            let cleanName = rawName.trim();
+            if (cleanName.includes(",")) {
+                cleanName = cleanName.split(",")[0].trim();
+            } else {
+                const parts = cleanName.split(/\s+/);
+                if (parts.length > 1) {
+                    const titles = ["mr.", "mrs.", "ms.", "miss", "dr.", "coach"];
+                    const firstWord = parts[0].toLowerCase();
+                    if (titles.includes(firstWord)) {
+                        cleanName = parts[0] + " " + parts[parts.length - 1];
+                    } else {
+                        cleanName = parts[parts.length - 1];
+                    }
+                }
+            }
+            teacherDisplay = ` (${cleanName})`;
+        }
 
         if (window.liveMasterSchedule && window.liveMasterSchedule[activePeriod]) {
             const assignments = window.liveMasterSchedule[activePeriod][matchKey];

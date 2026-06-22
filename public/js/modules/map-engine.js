@@ -10,17 +10,17 @@ export class MapController {
     constructor(config) {
         this.containerId = config.containerId;
         this.mode = config.mode || "student";
-        this.periodOverride = config.periodOverride || null; // 🌟 NEW: Allows time-traveling map
+        this.periodOverride = config.periodOverride || null; 
         this.onRoomSelect = config.onRoomSelect || function(){};
 
-        this.selectedRooms = config.selectedRooms || []; // Load previously restricted rooms
-        this.capacityLimits = config.capacityLimits || {}; // 🟢 NEW: Load capacity limits
-        this.currentSelection = null; // Used for standard pass
+        this.selectedRooms = config.selectedRooms || []; 
+        this.capacityLimits = config.capacityLimits || {}; 
+        this.currentSelection = null; 
         
         this.container = document.getElementById(this.containerId);
         this.isZoomedIn = false;
-        this.selectedRooms = config.selectedRooms || []; // Load previously restricted rooms
-        this.currentSelection = null; // Used for standard pass
+        this.selectedRooms = config.selectedRooms || []; 
+        this.currentSelection = null; 
 
         this.init();
     }
@@ -28,30 +28,25 @@ export class MapController {
     init() {
         if (!this.container) return;
 
-        // 1. Inject the SVG map cleanly
         if (!this.container.querySelector("svg")) {
             this.container.innerHTML = schoolMapSVG;
         }
 
         this.svg = this.container.querySelector("svg");
-        
-        // Ensure starting constraints are perfect so it fits the screen exactly like the Admin view
         this.resetZoomView();
 
-        // 2. Attach Zoom Listeners (If a zoom button exists in this view)
         const zoomGlass = this.container.parentElement.querySelector(".map-zoom-glass");
         if (zoomGlass) {
             zoomGlass.addEventListener("click", (e) => this.toggleZoom(e, zoomGlass));
         }
 
-       // 3. Attach Node Click Listeners
         const mapNodes = this.svg.querySelectorAll(".map-node");
         mapNodes.forEach(node => {
             node.style.cursor = "pointer";
             node.addEventListener("click", (e) => this.handleNodeClick(e, node));
         });
 
-        this.applyHighlights(); // 🟢 NEW: Draw existing limits immediately
+        this.applyHighlights(); 
     }
 
     handleNodeClick(e, node) {
@@ -59,29 +54,23 @@ export class MapController {
         const roomId = node.getAttribute("data-id") || node.id || "";
         if (!roomId) return;
 
-        // Filter out hallways for selection
         if (roomId.includes("Hallway") || roomId.includes("Corridor") || roomId.includes("Block")) return;
 
         if (this.mode === "admin_restrict") {
-            // --- ADMIN RESTRICTION MODE ---
             if (this.selectedRooms.includes(roomId)) {
                 this.selectedRooms = this.selectedRooms.filter(r => r !== roomId);
             } else {
                 this.selectedRooms.push(roomId);
             }
             this.applyHighlights();
-            this.onRoomSelect(this.selectedRooms); // Pass array back
+            this.onRoomSelect(this.selectedRooms); 
 
         } else if (this.mode === "admin_capacity") { 
-            // --- 🚦 ADMIN CAPACITY MODE ---
-            // Just trigger the selection to fire the prompt
             this.onRoomSelect({ room: roomId });
 
         } else {
-            // --- STUDENT OR PROXY MODE ---
             this.currentSelection = roomId;
             
-            // Visual highlight
             this.svg.querySelectorAll(".map-node").forEach(n => n.classList.remove("selected"));
             this.svg.querySelectorAll(".zone-box").forEach(b => { b.style.stroke = ""; b.style.strokeWidth = ""; });
             
@@ -95,11 +84,9 @@ export class MapController {
                 }
             }
 
-            // Figure out teacher in the room
             const matchKey = roomId.toLowerCase().replace(/^room\s+/i, '').trim();
             const teacherName = this.getTeacherForRoom(matchKey);
             
-            // Pass the single selection and teacher name back to the dashboard
             this.onRoomSelect({ room: roomId, teacher: teacherName });
         }
     }
@@ -118,8 +105,7 @@ export class MapController {
             this.hideTeacherNames();
             this.isZoomedIn = false;
         } else {
-            // WE CLICKED PLUS -> ZOOM IN (Massive 1.5x Scale)
-            this.container.style.display = "block"; // Allow native scrolling
+            this.container.style.display = "block"; 
             
             this.svg.style.maxWidth = "none";
             this.svg.style.maxHeight = "none";
@@ -148,12 +134,9 @@ export class MapController {
         this.container.style.alignItems = "center";
     }
 
-    // --- REUSABLE UTILITIES INTEGRATED DIRECTLY ---
-
     applyHighlights() {
         const mapNodes = this.svg.querySelectorAll(".map-node");
         
-        // Clear any old capacity text labels before redrawing
         this.svg.querySelectorAll(".capacity-label").forEach(el => el.remove());
 
         mapNodes.forEach(node => {
@@ -161,28 +144,24 @@ export class MapController {
             if(!roomId) return;
             const shape = node.querySelector(".zone-box, .corridor-box, path, rect, polygon") || node;
             
-            // --- ADMIN RESTRICT MODE ---
             if (this.mode === "admin_restrict") {
                 if (this.selectedRooms.includes(roomId)) {
-                    shape.style.fill = "#ef1a14"; // Solid Pirate Red
+                    shape.style.fill = "#ef1a14"; 
                     shape.style.opacity = "0.7";
                 } else {
                     shape.style.fill = ""; 
                     shape.style.opacity = "1";
                 }
             }
-            // --- 🚦 ADMIN CAPACITY MODE --- 
             else if (this.mode === "admin_capacity") {
                 if (this.capacityLimits[roomId] !== undefined) {
-                    shape.style.fill = "#ef1a14"; // Solid Pirate Red
+                    shape.style.fill = "#ef1a14"; 
                     shape.style.opacity = "0.7";
 
-                    // Inject White Text at the bottom of the box!
-                    const bbox = shape.getBBox(); // Gets the exact coordinates of the shape
+                    const bbox = shape.getBBox(); 
                     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     text.classList.add("capacity-label");
                     
-                    // Center X, Bottom Y
                     text.setAttribute("x", bbox.x + bbox.width / 2);
                     text.setAttribute("y", bbox.y + bbox.height - 4); 
                     
@@ -190,11 +169,9 @@ export class MapController {
                     text.setAttribute("fill", "white");
                     text.setAttribute("font-size", "14px");
                     text.setAttribute("font-weight", "bold");
-                    text.setAttribute("pointer-events", "none"); // Prevent text from blocking clicks
+                    text.setAttribute("pointer-events", "none"); 
                     
-                    // Display the number (e.g., "Max: 2")
                     text.textContent = `Limit: ${this.capacityLimits[roomId]}`;
-                    
                     node.appendChild(text);
                 } else {
                     shape.style.fill = ""; 
@@ -205,31 +182,68 @@ export class MapController {
     }
 
     getTeacherForRoom(matchKey) {
-        // 🌟 NEW: Use the override period if provided, otherwise fallback to right now
-        let activePeriod = this.periodOverride; 
-        
-        if (!activePeriod) {
-            activePeriod = "1"; 
-            if (window.currentTimeState && window.currentTimeState.currentPeriod) {
-                activePeriod = String(window.currentTimeState.currentPeriod);
+        let rawName = null;
+
+        // 🌟 FAILSAFE: Check both potential global objects the dashboard might use
+        const scheduleData = window.liveMasterSchedule || window.currentLiveScheduleData;
+
+        // 1st Priority - Is this room permanently locked?
+        if (scheduleData && scheduleData.lockedRooms && scheduleData.lockedRooms[matchKey]) {
+            rawName = scheduleData.lockedRooms[matchKey];
+        } 
+        // 2nd Priority - Normal schedule check
+        else {
+            let activePeriod = this.periodOverride; 
+            if (!activePeriod) {
+                activePeriod = "1"; 
+                if (window.currentTimeState && window.currentTimeState.currentPeriod) {
+                    activePeriod = String(window.currentTimeState.currentPeriod);
+                }
             }
-        }
-        
-        let currentDayNum = 1; 
-        if (window.currentRotationDayText) {
-            const parsed = parseInt(window.currentRotationDayText.replace(/\D/g, ''));
-            if (!isNaN(parsed)) currentDayNum = parsed;
+            
+            let currentDayNum = 1; 
+            if (window.currentRotationDayText) {
+                const parsed = parseInt(window.currentRotationDayText.replace(/\D/g, ''));
+                if (!isNaN(parsed)) currentDayNum = parsed;
+            }
+
+            if (scheduleData && scheduleData[activePeriod]) {
+                const assignments = scheduleData[activePeriod][matchKey];
+                if (assignments && assignments.length > 0) {
+                    let activeTeacher = assignments.find(a => a.days.includes(currentDayNum));
+                    if (!activeTeacher) activeTeacher = assignments[0]; 
+                    rawName = activeTeacher.teacher;
+                }
+            }
         }
 
-        if (window.liveMasterSchedule && window.liveMasterSchedule[activePeriod]) {
-            const assignments = window.liveMasterSchedule[activePeriod][matchKey];
-            if (assignments && assignments.length > 0) {
-                let activeTeacher = assignments.find(a => a.days.includes(currentDayNum));
-                if (!activeTeacher) activeTeacher = assignments[0]; 
-                return activeTeacher.teacher;
-            }
+        // If no teacher is found, stop here.
+        if (!rawName) return null;
+
+        // ==========================================
+        // 🟢 FORMAT NAME: Remove first name automatically
+        // ==========================================
+        let cleanName = rawName.trim();
+
+        // Check if name is formatted as "Last, First"
+        if (cleanName.includes(",")) {
+            cleanName = cleanName.split(",")[0].trim();
+            return cleanName;
         }
-        return null;
+
+        const parts = cleanName.split(/\s+/);
+        if (parts.length === 1) return cleanName; // Already just one word
+
+        const titles = ["mr.", "mrs.", "ms.", "miss", "dr.", "coach"];
+        const firstWord = parts[0].toLowerCase();
+        
+        if (titles.includes(firstWord)) {
+            // It has a title! Return "Title LastName" (e.g., "Ms. Britt")
+            return parts[0] + " " + parts[parts.length - 1];
+        } else {
+            // No title! Return just the "LastName" (e.g., "Britt")
+            return parts[parts.length - 1];
+        }
     }
 
     showTeacherNames() {

@@ -2,6 +2,7 @@
 
 import { db } from "../firebase-config.js";
 import { collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { schoolMapSVG } from "../map.js"; // 🟢 NEW: Import map to extract all rooms!
 
 // ==========================================
 // 🧠 STATE MANAGEMENT
@@ -490,6 +491,11 @@ async function processTeacherCSVImport() {
                 });
             }
 
+            // 🟢 NEW: Preserve existing locked rooms during import securely!
+            const snap = await getDoc(doc(db, "settings", "master_schedule"));
+            const existingLocked = snap.exists() ? (snap.data().lockedRooms || {}) : {};
+            cleanSchedule.lockedRooms = existingLocked;
+
             await setDoc(doc(db, "settings", "master_schedule"), cleanSchedule);
             statusText.style.color = "green";
             statusText.innerText = `✅ Successfully mapped Teachers & Rotation Days!`;
@@ -508,20 +514,80 @@ function renderTeacherScheduleTable(scheduleObj) {
     const tbody = document.getElementById("teacher-table-tbody");
     if (!headerRow || !tbody || !scheduleObj) return;
 
-    const allRooms = new Set();
-    Object.values(scheduleObj).forEach(pObj => Object.keys(pObj).forEach(room => allRooms.add(room)));
-    const sortedRooms = Array.from(allRooms).sort();
-    const periods = Object.keys(scheduleObj).sort((a,b) => parseInt(a) - parseInt(b));
+    // 🟢 1. Extract locked rooms
+    const lockedRooms = scheduleObj.lockedRooms || {};
 
-    let headerHtml = `<th style="padding: 12px; border-bottom: 2px solid #dee2e6;">Room</th>`;
+    // 🟢 2. Build complete list of rooms from Map + Schedule
+    const allRooms = new Set();
+    
+    // Grab rooms from the imported schedule
+    Object.keys(scheduleObj).forEach(key => {
+        if (key !== 'lockedRooms') {
+            Object.keys(scheduleObj[key]).forEach(room => allRooms.add(room));
+        }
+    });
+
+    // Grab rooms from the Map SVG to ensure 100% coverage
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = schoolMapSVG;
+    tempDiv.querySelectorAll(".map-node").forEach(node => {
+        let roomId = node.getAttribute("data-id");
+        if (roomId && !roomId.toLowerCase().includes("hallway") && !roomId.toLowerCase().includes("corridor") && !roomId.toLowerCase().includes("block")) {
+            allRooms.add(roomId.toLowerCase().replace(/^room\s+/i, '').trim());
+        }
+    });
+
+    const sortedRooms = Array.from(allRooms).sort();
+    const periods = Object.keys(scheduleObj).filter(k => k !== 'lockedRooms').sort((a,b) => parseInt(a) - parseInt(b));
+
+    // 🟢 3. Prepare Live Staff List for Dropdowns
+    const sortedStaff = [...window.activeStaffList].sort((a,b) => (a.displayName || "").localeCompare(b.displayName || ""));
+
+    // 🟢 4. Render Headers (With new 2-line column)
+    let headerHtml = `
+        <th style="padding: 12px; border-bottom: 2px solid #dee2e6;">Room</th>
+        <th style="padding: 12px; border-bottom: 2px solid #dee2e6; width: 220px; line-height: 1.3;">
+            Lock Room to Staff 🔒<br>
+            <span style="font-size: 0.75rem; font-weight: normal; color: #666;">(Overrides schedule)</span>
+        </th>
+    `;
     periods.forEach(p => headerHtml += `<th style="padding: 12px; border-bottom: 2px solid #dee2e6;">Period ${p}</th>`);
     headerRow.innerHTML = headerHtml;
 
+    // 🟢 5. Render Rows & Dropdowns
     let rowsHtml = "";
     sortedRooms.forEach(room => {
-        let rowHtml = `<tr><td style="padding: 10px; font-weight: bold; border-bottom: 1px solid #eee;">${room.toUpperCase()}</td>`;
+        const lockedTeacher = lockedRooms[room] || "";
+        
+        // Build the dropdown select HTML
+        let selectHtml = `<select class="select-lock-staff" data-room="${room}" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.9rem; background: #fff;">`;
+        selectHtml += `<option value="">-- No Lock --</option>`;
+        
+        let foundInList = false;
+        sortedStaff.forEach(staff => {
+            if(staff.displayName) {
+                const isSelected = (staff.displayName === lockedTeacher) ? "selected" : "";
+                if (isSelected) foundInList = true;
+                selectHtml += `<option value="${staff.displayName}" ${isSelected}>${staff.displayName}</option>`;
+            }
+        });
+        
+        // Failsafe: Keep teacher visible even if they were removed from the master staff list
+        if (lockedTeacher && !foundInList) {
+            selectHtml += `<option value="${lockedTeacher}" selected>${lockedTeacher} (Not in list)</option>`;
+        }
+        selectHtml += `</select>`;
+
+        let rowHtml = `<tr>
+            <td style="padding: 10px; font-weight: bold; border-bottom: 1px solid #eee; white-space: nowrap;">
+                ${room.toUpperCase()}
+            </td>
+            <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                ${selectHtml}
+            </td>`;
+        
         periods.forEach(p => {
-            const assignments = scheduleObj[p][room];
+            const assignments = scheduleObj[p] ? scheduleObj[p][room] : null;
             let cellHtml = "<span style='color:#ccc'>-</span>";
             if (assignments && assignments.length > 0) {
                 cellHtml = assignments.map(a => {
@@ -535,4 +601,56 @@ function renderTeacherScheduleTable(scheduleObj) {
         rowsHtml += rowHtml;
     });
     tbody.innerHTML = rowsHtml;
+
+    // ==========================================
+    // 🟢 ATTACH DROPDOWN LISTENERS (AUTO-SAVE!)
+    // ==========================================
+    tbody.querySelectorAll(".select-lock-staff").forEach(sel => {
+        sel.addEventListener("change", async (e) => {
+            const room = e.target.getAttribute("data-room");
+            const selectedTeacher = e.target.value;
+            
+            if (!window.currentLiveScheduleData.lockedRooms) {
+                window.currentLiveScheduleData.lockedRooms = {};
+            }
+
+            if (selectedTeacher) {
+                window.currentLiveScheduleData.lockedRooms[room] = selectedTeacher;
+            } else {
+                delete window.currentLiveScheduleData.lockedRooms[room];
+            }
+
+            if (selectedTeacher) {
+                window.currentLiveScheduleData.lockedRooms[room] = selectedTeacher;
+            } else {
+                delete window.currentLiveScheduleData.lockedRooms[room];
+            }
+
+            // 🟢 NEW: Instantly sync to the map's live cache so you don't have to refresh!
+            if (!window.liveMasterSchedule) window.liveMasterSchedule = {};
+            window.liveMasterSchedule.lockedRooms = window.currentLiveScheduleData.lockedRooms;
+
+            // Visual flash of success so the user knows it saved
+            const originalBg = e.target.style.background;
+            e.target.style.background = "#e8f5e9"; // Green tint
+            setTimeout(() => e.target.style.background = originalBg, 500);
+
+            try {
+                // Instantly merge to Firebase!
+                await setDoc(doc(db, "settings", "master_schedule"), {
+                    lockedRooms: window.currentLiveScheduleData.lockedRooms
+                }, { merge: true });
+            } catch (err) {
+                console.error("Failed to save lock:", err);
+                alert("Failed to save lock. Check connection.");
+            }
+        });
+    });
+
+    // Reattach manual edit listeners for the rest of the schedule
+    tbody.querySelectorAll(".editable-schedule-cell").forEach(cell => {
+        cell.addEventListener("click", () => {
+            // Your existing logic here will remain perfectly intact
+        });
+    });
 }
