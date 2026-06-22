@@ -76,14 +76,19 @@ export function listenToActivePasses(callback) {
     });
 }
 
-// Listens for passes that need Admin Review (Column 4)
+/**
+ * Listens for Bypassed OR Fraudulent Passes for the Admin Dashboard
+ */
 export function listenToBypassedPasses(callback) {
-    const q = query(passesRef, where("status", "in", ["active_bypassed", "returned_bypassed"]));
+    // 🟢 ADDED: "fraudulent_review" so flagged passes route to the Admin Bypassed Review column
+    const q = query(passesRef, where("status", "in", ["active_bypassed", "returned_bypassed", "fraudulent_review"]));
     
     return onSnapshot(q, (snapshot) => {
         const passes = [];
-        snapshot.forEach((doc) => passes.push({ id: doc.id, ...doc.data() }));
-        callback(passes); 
+        snapshot.forEach((doc) => {
+            passes.push({ id: doc.id, ...doc.data() });
+        });
+        callback(passes);
     });
 }
 
@@ -631,5 +636,25 @@ export async function flagPassFraudulent(passId, explanation) {
     } catch (error) {
         console.error("Failed to flag pass:", error);
         return false;
+    }
+}
+
+/**
+ * 📜 ADMIN HISTORY ENGINE
+ * Fetches all completed/archived passes for the Admin History Viewer.
+ * We use getDocs here instead of onSnapshot to prevent downloading 
+ * potentially 10,000+ passes in real-time constantly.
+ */
+export async function fetchAdminPassHistory() {
+    // We grab all returned, archived, and fraudulent passes
+    const q = query(passesRef, where("status", "in", ["returned", "returned_bypassed", "archived", "fraudulent_review"]));
+    try {
+        const snapshot = await getDocs(q);
+        const passes = [];
+        snapshot.forEach((doc) => passes.push({ id: doc.id, ...doc.data() }));
+        return passes;
+    } catch (error) {
+        console.error("Error fetching admin history:", error);
+        return [];
     }
 }

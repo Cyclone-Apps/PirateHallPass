@@ -37,28 +37,25 @@ export function renderHeader(user, role) {
     if (adminToolbar) {
         adminToolbar.className = "admin-toolbar"; 
         adminToolbar.style.display = "flex";
-        adminToolbar.style.flexDirection = "column";
+        adminToolbar.style.flexWrap = "wrap"; // 🟢 Allows fluid wrapping
+        adminToolbar.style.flexDirection = "row"; // 🟢 Resets it from column to horizontal
         adminToolbar.style.gap = "10px";
 
         adminToolbar.innerHTML = `
-            <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
-                <button id="btn-emergency" class="admin-dashboard-btn btn-critical">🚨 Emergency Controls</button>
-                <button id="btn-location-limits" class="admin-dashboard-btn btn-critical">🚦 Restriction Settings</button>
-                
-                <button id="btn-open-send-pass" class="admin-dashboard-btn btn-primary">🎫 Send Student a Pass</button>
-                <button id="btn-open-proxy-setup" class="admin-dashboard-btn btn-primary">💻 Open Pass As Student</button>
-                
-                <button id="btn-open-management" class="admin-dashboard-btn btn-base">👥 Student Management</button>
-            </div>
+            <button id="btn-emergency" class="admin-dashboard-btn btn-critical">🚨 Emergency Controls</button>
+            <button id="btn-location-limits" class="admin-dashboard-btn btn-critical">🚦 Restriction Settings</button>
             
-            <div class="toolbar-row" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <button id="btn-open-teacher-management" class="admin-dashboard-btn btn-light">👨‍🏫 Teacher Management</button>            
-                <button id="btn-open-teacher-schedule" class="admin-dashboard-btn btn-light">📋 Teacher Schedule</button>
-                
-                <button id="btn-open-bell-schedule" class="admin-dashboard-btn btn-base">⏱️ Bell Schedules</button>
-                <button id="btn-open-academic-cal-modal" class="admin-dashboard-btn btn-base">📅 Academic Calendar</button>
-                <button id="btn-open-gcal-modal" class="admin-dashboard-btn btn-base">⚙️ Google Calendar Setup</button>
-            </div>
+            <button id="btn-open-send-pass" class="admin-dashboard-btn btn-primary">🎫 Send Student a Pass</button>
+            <button id="btn-open-proxy-setup" class="admin-dashboard-btn btn-primary">💻 Open Pass As Student</button>
+            <button id="btn-open-admin-history" class="admin-dashboard-btn btn-primary">📜 Pass History</button>
+            
+            <button id="btn-open-management" class="admin-dashboard-btn btn-base">👥 Student Management</button>
+            <button id="btn-open-teacher-management" class="admin-dashboard-btn btn-light">👨‍🏫 Teacher Management</button>            
+            <button id="btn-open-teacher-schedule" class="admin-dashboard-btn btn-light">📋 Teacher Schedule</button>
+            
+            <button id="btn-open-bell-schedule" class="admin-dashboard-btn btn-base">⏱️ Bell Schedules</button>
+            <button id="btn-open-academic-cal-modal" class="admin-dashboard-btn btn-base">📅 Academic Calendar</button>
+            <button id="btn-open-gcal-modal" class="admin-dashboard-btn btn-base">⚙️ Google Calendar Setup</button>
         `;
     }
     

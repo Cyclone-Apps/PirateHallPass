@@ -11,19 +11,19 @@
         /* Utility class to hide modals */
         .hidden { display: none !important; }
 
-        /* Sleek Admin Palette */
-.admin-dashboard-btn {
+/* Sleek Admin Palette */
+        .admin-dashboard-btn {
             transition: background-color 0.2s ease-in-out, transform 0.1s ease;
             border-radius: 6px; 
             font-weight: 600;
             border: none;
-            padding: 10px 16px; /* Slightly taller for a better click target */
+            padding: 10px 16px;
             cursor: pointer;
 
-            /* 🌟 THE MAGIC SIZING PROPERTIES */
-            flex: 1;              /* Forces all buttons to grow equally and fill the row */
-            text-align: center;   /* Keeps the emojis and text perfectly centered */
-            white-space: nowrap;  /* Prevents the text from awkwardly wrapping to two lines */
+            /* 🌟 THE MAGIC SIZING PROPERTIES UPDATED FOR FLUID WRAPPING */
+            flex: 1 1 180px;      /* Grow evenly, shrink evenly, wrap if smaller than 180px */
+            text-align: center;   
+            white-space: nowrap;  
         }
 
 /* 1. Critical (Darkest Gray) */
@@ -661,6 +661,56 @@
                 </div>
 
                 <button class="card-btn" id="btn-submit-proxy-pass" style="width: 100%; padding: 15px; margin-top: 10px; background-color: #2e7d32; color: white; border: none; font-weight: bold; font-size: 1.1rem; border-radius: 6px; cursor: pointer;" disabled>Send Pass</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-admin-history" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #f4f6f8; display: flex; flex-direction: column; z-index: 3000;">
+        <div style="background: #383b3c; color: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10;">
+            <h2 style="margin: 0;">📜 School Pass History</h2>
+            <button id="btn-close-admin-history" style="background: var(--pirate-red, #c62828); color: white; border: none; padding: 10px 20px; font-size: 1rem; font-weight: bold; border-radius: 6px; cursor: pointer;">Close History</button>
+        </div>
+        
+        <div style="display: flex; flex: 1; overflow: hidden;">
+            <div style="width: 250px; background: white; border-right: 1px solid #ccc; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.05); z-index: 5;">
+                <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #0277bd; padding-bottom: 5px;">Filters</h3>
+                
+                <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #e0e0e0;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem;">Start Date:</label>
+                    <input type="date" id="filter-history-start-date" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px;">
+                    
+                    <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem;">End Date:</label>
+                    <input type="date" id="filter-history-end-date" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                    
+                    <button id="btn-clear-history-dates" style="margin-top: 10px; width: 100%; padding: 5px; font-size: 0.8rem; background: #eee; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; color: #555;">Clear Dates</button>
+                </div>
+
+                <div>
+                    <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem;">Student:</label>
+                    <input type="text" id="filter-history-student" list="list-history-students" placeholder="Type name..." style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                    <datalist id="list-history-students"></datalist>
+                    <button id="btn-clear-history-student" style="margin-top: 5px; width: 100%; padding: 5px; font-size: 0.8rem; background: #eee; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; color: #555;">Clear Student</button>
+                </div>
+
+                <div>
+                    <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem;">Teacher / Staff:</label>
+                    <input type="text" id="filter-history-teacher" list="list-history-teachers" placeholder="Type name..." style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                    <datalist id="list-history-teachers"></datalist>
+                    <button id="btn-clear-history-teacher" style="margin-top: 5px; width: 100%; padding: 5px; font-size: 0.8rem; background: #eee; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; color: #555;">Clear Teacher</button>
+                </div>
+
+                <div>
+                    <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem;">Room:</label>
+                    <input type="text" id="filter-history-room" list="list-history-rooms" placeholder="Type room..." style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                    <datalist id="list-history-rooms"></datalist>
+                    <button id="btn-clear-history-room" style="margin-top: 5px; width: 100%; padding: 5px; font-size: 0.8rem; background: #eee; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; color: #555;">Clear Room</button>
+                </div>            
+            </div>
+            
+            <div style="flex: 1; padding: 20px; overflow-y: auto; background: #f4f6f8;">
+                <div id="admin-history-results-count" style="margin-bottom: 15px; font-weight: bold; color: #555; font-size: 1.1rem;">Select a date or apply filters to load history.</div>
+                <div id="admin-history-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 15px; align-content: flex-start;">
+                    </div>
             </div>
         </div>
     </div>
