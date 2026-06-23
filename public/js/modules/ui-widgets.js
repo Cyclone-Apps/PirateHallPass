@@ -92,11 +92,19 @@ export function renderPassList(passes, containerId, countId) {
     container.innerHTML = passes.map(pass => {
         let actionButtons = '';
         
-        // Render control buttons depending on status context
-        if (pass.status === 'pending' || pass.status === 'pending_student' || pass.status === 'pending_restricted' || pass.status === 'waitlist') {
+        // 🟢 ADDED 'pending_warning' to show Approve/Reject buttons!
+        if (['pending', 'pending_student', 'pending_restricted', 'pending_warning', 'waitlist'].includes(pass.status)) {
             
-            let approveBtnText = pass.status === 'pending_restricted' ? "⚠️ Override & Approve" : "Approve";
-            let approveBtnBg = pass.status === 'pending_restricted' ? "#f57c00" : "#2e7d32";
+            let approveBtnText = "Approve";
+            let approveBtnBg = "#2e7d32";
+
+            if (pass.status === 'pending_restricted') {
+                approveBtnText = "⚠️ Override & Approve";
+                approveBtnBg = "#f57c00";
+            } else if (pass.status === 'pending_warning') {
+                approveBtnText = "⚠️ Approve Warning";
+                approveBtnBg = "#fbc02d"; // Yellow/Orange
+            }
 
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
@@ -117,7 +125,6 @@ export function renderPassList(passes, containerId, countId) {
                 </div>
             `;
         } else if (pass.status === 'returned' || pass.status === 'archived' || pass.status === 'fraudulent_review') {
-            // NEW: Historical passes get an Edit button
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
                     <button class="card-btn btn-edit-history" data-id="${pass.id}" data-dest="${pass.destination}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #fbc02d; border: none; color: #333; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✏️ Edit / Flag</button>
@@ -127,24 +134,44 @@ export function renderPassList(passes, containerId, countId) {
         
         const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown") ? ` (${pass.targetTeacher})` : "";
             
-        // CHECK RESTRICTION STATUS FOR CARD BACKGROUND
-        const isRestricted = ['pending_restricted', 'active_bypassed', 'returned_bypassed'].includes(pass.status);
-        const cardBgColor = isRestricted ? '#ffebee' : '#ffffff'; 
-        const cardBorderColor = isRestricted ? '#ef5350' : '#eaedf2'; 
+        // ========================================================
+        // 🟢 NEW: DYNAMIC CARD BACKGROUND COLORS (Smarter Bypasses)
+        // ========================================================
+        const isBypassedStatus = ['active_bypassed', 'returned_bypassed'].includes(pass.status);
+        
+        // If it's bypassed AND has a warningReason, it's a Yellow Warning. Otherwise, it's a Red Restriction.
+        const isWarning = pass.status === 'pending_warning' || (isBypassedStatus && pass.warningReason);
+        const isRestricted = pass.status === 'pending_restricted' || (isBypassedStatus && !pass.warningReason);
+        
+        const isNormalActiveOrPending = ['pending', 'pending_student', 'waitlist', 'active'].includes(pass.status);
+
+        let cardBgColor = '#ffffff'; 
+        let cardBorderColor = '#eaedf2'; 
+
+        if (isRestricted) {
+            cardBgColor = '#ffebee'; // Light Red
+            cardBorderColor = '#ef5350';
+        } else if (isWarning) {
+            cardBgColor = '#fffde7'; // Light Yellow
+            cardBorderColor = '#fbc02d';
+        } else if (isNormalActiveOrPending) {
+            cardBgColor = '#e8f5e9'; // Light Green
+            cardBorderColor = '#81c784';
+        }
         
         // LEFT BORDER PHASE COLORING
         let leftBorderColor = '#0277bd'; 
         if (pass.status.includes('pending') || pass.status === 'waitlist') leftBorderColor = '#ff9800'; 
         if (pass.status.includes('active')) leftBorderColor = '#4caf50'; 
         if (pass.status.includes('returned') || pass.status === 'archived' || pass.status === 'fraudulent_review') leftBorderColor = '#757575'; 
-        if (pass.status === 'fraudulent_review') leftBorderColor = '#c62828'; // Make fraud border stark red
+        if (pass.status === 'fraudulent_review') leftBorderColor = '#c62828'; 
         
         // WAITLIST BADGE
         const waitlistBadgeHTML = pass.status === 'waitlist' 
             ? `<div style="margin-bottom: 8px;"><span style="background-color: #f57c00; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">⏳ Waitlisted (#${pass.queuePosition})</span></div>` 
             : '';
 
-        // RESTRICTION WARNING BANNER 
+        // RESTRICTION / WARNING BANNER 
         let restrictionBannerHTML = '';
         if (isRestricted) {
             const overrideText = pass.status === 'pending_restricted' 
@@ -161,32 +188,32 @@ export function renderPassList(passes, containerId, countId) {
 
             restrictionBannerHTML = `
                 <div style="background: #ffcdd2; border-left: 5px solid #b71c1c; padding: 8px; margin-bottom: 8px; border-radius: 4px; font-size: 0.85rem;">
-                    <span style="color: #b71c1c; font-weight: 500;">
-                        ${restrictionReason}
-                    </span><br>
+                    <span style="color: #b71c1c; font-weight: 500;">${restrictionReason}</span><br>
                     <span style="font-size: 0.8rem; color: #444;">${overrideText}</span>
+                </div>
+            `;
+        } else if (isWarning) {
+            // 🟢 NEW: Handles Yellow banner for both Pending AND Active passes!
+            const bypassNote = isBypassedStatus ? `<br><span style="font-size: 0.8rem; color: #444;"><em>Approved by teacher</em></span>` : "";
+            restrictionBannerHTML = `
+                <div style="background: #fff3cd; border-left: 5px solid #fbc02d; padding: 8px; margin-bottom: 8px; border-radius: 4px; font-size: 0.85rem;">
+                    <span style="color: #856404; font-weight: 500;">⚠️ <strong>Flagged:</strong> ${pass.warningReason || "High pass volume detected."}</span>${bypassNote}
                 </div>
             `;
         }
 
-        // ========================================================
-        // NEW: STRIKETHROUGH EDITS & FRAUD FLAGS FOR HISTORICAL PASSES
-        // ========================================================
         let destinationDisplay = `<strong>${pass.destination}${teacherText}</strong>`;
         let editNoteHTML = '';
         let fraudNoteHTML = '';
 
-        // If the pass was edited, cross out the old one
         if (pass.originalDestination && pass.originalDestination !== pass.destination) {
             destinationDisplay = `<del style="color: #999;">${pass.originalDestination}</del> <strong style="color: #2e7d32;">${pass.destination}</strong>`;
         }
         
-        // Show who edited it
         if (pass.editedBy) {
             editNoteHTML = `<div style="font-size: 0.8rem; color: #e65100; font-style: italic; margin-top: 4px;">✏️ Edited by ${pass.editedBy}</div>`;
         }
 
-        // Show Fraudulent Flag Warning
         if (pass.status === 'fraudulent_review' || pass.fraudExplanation) {
             fraudNoteHTML = `<div style="background: #ffebee; border: 1px solid #ffcdd2; color: #c62828; padding: 6px; border-radius: 4px; font-size: 0.85rem; margin-top: 8px;">
                                 <strong>🚩 Fraudulent Flag:</strong> ${pass.fraudExplanation || "Sent to Admin for review."}

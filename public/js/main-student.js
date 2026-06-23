@@ -259,9 +259,19 @@ async function initStudentApp(user, role) {
             renderStudentActiveScreen(currentPass);
             
             // Start the massive timer
-            const startTime = currentPass.createdAt ? currentPass.createdAt.toDate() : new Date();
+            // 🟢 CHANGED: Prioritize acceptedAt (Teacher Approval Time) over createdAt (Request Time)
+            let startTime = new Date();
+            if (currentPass.acceptedAt) {
+                startTime = currentPass.acceptedAt.toDate();
+            } else if (currentPass.createdAt) {
+                startTime = currentPass.createdAt.toDate();
+            }
+
             activeTimerInterval = setInterval(() => {
                 elapsedSeconds = Math.floor((new Date() - startTime) / 1000);
+                // Prevent negative numbers just in case of slight clock sync delays
+                if (elapsedSeconds < 0) elapsedSeconds = 0; 
+
                 const mins = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
                 const secs = String(elapsedSeconds % 60).padStart(2, '0');
                 

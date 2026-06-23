@@ -738,14 +738,19 @@ export async function renderStudentYellowWarningScreen(pass) {
         mainContainer.style.backgroundColor = ""; // Clear existing
         mainContainer.innerHTML = `
             <div class="kiosk-card panel" style="text-align: center; border: 4px solid #fbc02d; background: #fffde7; padding: 40px; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                
+                <p style="color: #856404; font-size: 1.4rem; font-weight: 500; margin-bottom: 20px; text-transform: uppercase;">
+                    Teacher Authorization Required<br>
+                    <span style="font-size: 1.1rem; opacity: 0.8; text-transform: none;">please hand your iPad to your teacher</span>
+                </p>
+                
                 <h1 style="color: #f57f17; font-size: 3rem; margin-bottom: 10px;">⚠️ Request Flagged</h1>
                 <h2 style="color: #f9a825; font-size: 1.8rem; margin-bottom: 20px;">${pass.warningReason || "High pass volume detected."}</h2>
-                <p style="font-size: 1.5rem; color: #333; margin-top: 20px; max-width: 80%;">
-                    Your teacher has been notified and is reviewing your pass history. Please wait for approval.
-                </p>
-                <button id="btn-cancel-restricted" data-id="${pass.id}" style="margin-top: 40px; font-size: 1.5rem; padding: 20px 40px; background-color: #c62828; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    ❌ Cancel Request
-                </button>
+                
+                <div style="display: flex; gap: 15px; justify-content: center; width: 100%; max-width: 500px; margin-top: 20px;">
+                    <button id="btn-teacher-approve" data-id="${pass.id}" class="primary-btn" style="flex: 1; font-size: 1.4rem; padding: 12px;">✅ Approve</button>
+                    <button id="btn-teacher-reject" data-id="${pass.id}" class="danger-btn" style="flex: 1; font-size: 1.4rem; padding: 12px;">❌ Reject</button>
+                </div>
             </div>
         `;
     }

@@ -400,7 +400,7 @@ export async function createNewPass(passData) {
                     const minutesSinceLastPass = (Date.now() - lastTimeMillis) / (1000 * 60);
                     if (minutesSinceLastPass < cooldownMinutes) {
                         isYellowWarning = true;
-                        warningReason = `Cooldown violation. Last pass was ${Math.round(minutesSinceLastPass)} minutes ago.`;
+                        warningReason = `Last pass was ${Math.round(minutesSinceLastPass)} minutes ago.`;
                     }
                 }
             }
@@ -478,9 +478,10 @@ export function listenToStudentPass(studentId, callback) {
         snapshot.forEach((doc) => {
             const pass = { id: doc.id, ...doc.data() };
             
-            // Keep active passes on screen
+            // 🟢 ADDED "active_bypassed" so flagged passes stay on the student screen when approved!
             if (
                 pass.status === "active" || 
+                pass.status === "active_bypassed" || 
                 pass.status === "pending" || 
                 pass.status === "pending_student" || 
                 pass.status === "pending_restricted" ||
