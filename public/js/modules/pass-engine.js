@@ -235,18 +235,39 @@ export async function createNewPass(passData) {
         "Elementary Office/Other": "Outside", "Nurse": "Outside", "Library": "Outside"
     };
 
-    // Forgiving lookup: Strips out "Room ", spaces, and cases so "301", "room 301", and "Room 301" all match instantly.
+    // Forgiving lookup: Checks exact matches first, then uses Smart Keyword & Number Routing!
     function resolveCorridor(roomName) {
         if (!roomName) return "Unknown";
         
-        const searchStr = String(roomName).toLowerCase().replace(/^(room|rm)\s*/i, "").trim();
+        const rawStr = String(roomName).toLowerCase().trim();
+        const searchStr = rawStr.replace(/^(room|rm)\s*/i, "").trim();
 
+        // 1. Check exact dictionary match first
         for (const [key, value] of Object.entries(roomToCorridor)) {
             const cleanKey = key.toLowerCase().replace(/^(room|rm)\s*/i, "").trim();
             if (cleanKey === searchStr) {
                 return value;
             }
         }
+
+        // 2. SMART KEYWORD ROUTING (Overrides numbers if they exist, like "138 Band")
+        if (rawStr.includes("band") || rawStr.includes("vocal") || rawStr.includes("choir")) {
+            return "Fine Arts Corridor";
+        }
+        if (rawStr.includes("gym")) {
+            return "Cross Corridor Block";
+        }
+
+        // 3. SMART NUMBER ROUTING (Extracts the first number it finds, e.g. "138" -> 100 Hallway)
+        const match = searchStr.match(/\d+/);
+        if (match) {
+            const roomNum = parseInt(match[0], 10);
+            if (roomNum >= 100 && roomNum < 200) return "100 Hallway";
+            if (roomNum >= 200 && roomNum < 300) return "Main Vertical Hall";
+            if (roomNum >= 300 && roomNum < 400) return "300 Hallway";
+            if (roomNum >= 400 && roomNum < 500) return "Fine Arts Corridor";
+        }
+
         return "Unknown";
     }
 
