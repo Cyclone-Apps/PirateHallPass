@@ -228,9 +228,14 @@ export function renderPassList(passes, containerId, countId) {
                 </div>
                 ${waitlistBadgeHTML}
                 ${restrictionBannerHTML}
+                
+                <div style="color: #555; font-size: 0.95rem; margin-bottom: 2px;">
+                    🛫 Origin: <strong>${pass.origin || "Unknown Room"}</strong>
+                </div>
                 <div style="color: #555; font-size: 0.95rem; margin-bottom: 5px;">
                     📍 Destination: ${destinationDisplay}
                 </div>
+                
                 ${editNoteHTML}
                 ${fraudNoteHTML}
                 ${pass.senderName ? `<div style="color: #888; font-size: 0.85rem; font-style: italic; margin-top: 4px;">Initiated by: ${pass.senderName}</div>` : ''}

@@ -185,13 +185,21 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
     }
 
     // Direct extraction of processed data provided by the active time interval loop
-    const currentPeriod = timeMetrics?.currentPeriod || null;
-    const nextPeriod = timeMetrics?.nextPeriod || null;
+    let currentPeriod = timeMetrics?.currentPeriod || null;
+    let nextPeriod = timeMetrics?.nextPeriod || null;
     const sched = profile.schedule;
+
+    // 🟢 ALWAYS SHOW NEXT CLASS (Unless it's 9th period)
+    if (currentPeriod && !isNaN(parseInt(currentPeriod))) {
+        const pNum = parseInt(currentPeriod);
+        if (pNum < 9) {
+            nextPeriod = String(pNum + 1);
+        }
+    }
 
     // 🚨 NEW: GLOBALLY TRACK STUDENT LOCATION FOR PASS CREATION
     // If they are in a passing period, we assume the pass belongs to their NEXT class.
-    const activeP = "1" || nextPeriod; 
+    const activeP = currentPeriod || nextPeriod; 
     
     if (activeP && sched[activeP]) {
         window.currentRoom = sched[activeP].room || "Unknown";
