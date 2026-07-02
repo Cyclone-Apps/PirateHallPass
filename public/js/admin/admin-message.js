@@ -43,6 +43,8 @@ export function openMessageModal() {
                 </select>
 
                 <div id="msg-grades-container" style="display: none; margin-top: 10px; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px;">
+                    <label style="margin-right: 15px;"><input type="checkbox" value="7"> 7th Grade</label>
+                    <label style="margin-right: 15px;"><input type="checkbox" value="8"> 8th Grade</label>
                     <label style="margin-right: 15px;"><input type="checkbox" value="9"> 9th Grade</label>
                     <label style="margin-right: 15px;"><input type="checkbox" value="10"> 10th Grade</label>
                     <label style="margin-right: 15px;"><input type="checkbox" value="11"> 11th Grade</label>
@@ -104,6 +106,7 @@ export function openMessageModal() {
         // 🚀 NEW: Store all emails globally so the Send button can use them
         window.allTeacherEmails = []; 
         window.allStudentEmails = [];
+        window.allStudentsData = [];
 
         const populateDatalist = async () => {
             const studentDatalist = document.getElementById("students-datalist");
@@ -134,7 +137,16 @@ export function openMessageModal() {
                 
                 studentSnap.forEach(doc => {
                     const data = doc.data();
-                    if (data.email) window.allStudentEmails.push(data.email); // 👈 Save to array
+                    if (data.email) {
+                        window.allStudentEmails.push(data.email); 
+                        
+                        // 🚀 NEW: Save both email and grade so we can filter by checkboxes later!
+                        window.allStudentsData.push({
+                            email: data.email,
+                            grade: String(data.grade || "") // Force to string to safely match the checkbox value
+                        });
+                    }
+                    
                     if (studentDatalist) {
                         studentDatalist.innerHTML += `<option value="${data.email}">${data.displayName || data.name || data.email}</option>`;
                     }
@@ -254,10 +266,22 @@ async function handleSendMessage() {
     } else if (audienceType === 'teachers') {
         targetData = window.allTeacherEmails || [];
     } else if (audienceType === 'grades') {
+        // 🚀 NEW: Find which boxes are checked
         const checkboxes = document.querySelectorAll('#msg-grades-container input[type="checkbox"]:checked');
-        checkboxes.forEach(cb => targetData.push(cb.value));
-        if (targetData.length === 0) {
+        const selectedGrades = Array.from(checkboxes).map(cb => cb.value); // e.g., ["7", "8"]
+        
+        if (selectedGrades.length === 0) {
             alert("Please select at least one grade.");
+            return;
+        }
+
+        // 🚀 NEW: Filter the global student list to only grab emails of students in those grades
+        targetData = window.allStudentsData
+            .filter(student => selectedGrades.includes(student.grade))
+            .map(student => student.email);
+
+        if (targetData.length === 0) {
+            alert("No students found in the selected grades. Double check the database records.");
             return;
         }
     } else if (audienceType === 'specific-students') {
@@ -272,6 +296,12 @@ async function handleSendMessage() {
             alert("Please select at least one teacher.");
             return;
         }
+        // Grab the link if they typed one
+    const linkInput = document.getElementById("msg-link");
+    const linkValue = linkInput && linkInput.value.trim() !== "" ? linkInput.value.trim() : null;
+
+    // 🛑 CRITICAL FIX: We must force 'grades' to be 'specific' so the student listener picks up the array of emails
+    const finalAudience = (audienceType === 'specific-students' || audienceType === 'specific-teachers' || audienceType === 'grades') ? 'specific' : audienceType;
     }
 
     // Grab the link if they typed one
@@ -323,13 +353,15 @@ export function initAdminAnnouncementManager() {
             const data = docSnap.data();
             const docId = docSnap.id;
             
+            // 🚀 FIXED: Calculate unread emails for ANY message that has a targets list!
             let unreadEmails = [];
-            if (data.audience === "specific" && data.targets) {
+            if (data.targets && Array.isArray(data.targets)) {
                 const readList = data.readBy || [];
                 unreadEmails = data.targets.filter(email => !readList.includes(email));
             }
 
-            const unreadCount = data.audience === "everyone" ? "Unknown" : unreadEmails.length;
+            // 🚀 FIXED: Use the actual count now that 'everyone' and 'teachers' have target lists
+            const unreadCount = unreadEmails.length;
             const unreadListId = `unread-list-${docId}`;
 
             // Build the card UI
@@ -357,12 +389,11 @@ export function initAdminAnnouncementManager() {
 
             container.appendChild(card);
 
-            // 1. Delete Button Logic (Now scoped to the 'card' instead of the whole document)
+            // 1. Delete Button Logic
             const deleteBtn = card.querySelector(`#btn-delete-${docId}`);
             if (deleteBtn) {
                 deleteBtn.addEventListener("click", async () => {
                     if (confirm("Are you sure? This will instantly remove it from all screens and the database.")) {
-                        // Dynamically importing doc and deleteDoc just in case they aren't globally available here
                         const firestore = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
                         await firestore.deleteDoc(firestore.doc(db, "announcements", docId));
                     }
