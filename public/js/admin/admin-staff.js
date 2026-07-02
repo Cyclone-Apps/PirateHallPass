@@ -3,6 +3,7 @@
 import { db } from "../firebase-config.js";
 import { collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { schoolMapSVG } from "../map.js"; // 🟢 NEW: Import map to extract all rooms!
+import { initMessageCenter } from './admin-message.js';
 
 // ==========================================
 // 🧠 STATE MANAGEMENT
@@ -491,10 +492,13 @@ async function processTeacherCSVImport() {
                 });
             }
 
-            // 🟢 NEW: Preserve existing locked rooms during import securely!
+            // 🟢 NEW: Preserve existing locked rooms & skip check-ins during import securely!
             const snap = await getDoc(doc(db, "settings", "master_schedule"));
             const existingLocked = snap.exists() ? (snap.data().lockedRooms || {}) : {};
+            const existingSkipCheckIn = snap.exists() ? (snap.data().skipCheckInRooms || {}) : {}; // 🌟 NEW
+            
             cleanSchedule.lockedRooms = existingLocked;
+            cleanSchedule.skipCheckInRooms = existingSkipCheckIn; // 🌟 NEW
 
             await setDoc(doc(db, "settings", "master_schedule"), cleanSchedule);
             statusText.style.color = "green";
@@ -514,8 +518,9 @@ function renderTeacherScheduleTable(scheduleObj) {
     const tbody = document.getElementById("teacher-table-tbody");
     if (!headerRow || !tbody || !scheduleObj) return;
 
-    // 🟢 1. Extract locked rooms
+    // 🟢 1. Extract locked rooms and skip check-ins
     const lockedRooms = scheduleObj.lockedRooms || {};
+    const skipCheckInRooms = scheduleObj.skipCheckInRooms || {}; // 🌟 NEW
 
     // 🟢 2. Build complete list of rooms from Map + Schedule
     const allRooms = new Set();
@@ -543,9 +548,13 @@ function renderTeacherScheduleTable(scheduleObj) {
     // 🟢 3. Prepare Live Staff List for Dropdowns
     const sortedStaff = [...window.activeStaffList].sort((a,b) => (a.displayName || "").localeCompare(b.displayName || ""));
 
-    // 🟢 4. Render Headers (With new 2-line column)
+    // 🟢 4. Render Headers (With new Check-In column)
     let headerHtml = `
         <th style="padding: 12px; border-bottom: 2px solid #dee2e6;">Room</th>
+        <th style="padding: 12px; border-bottom: 2px solid #dee2e6; width: 120px; text-align: center; line-height: 1.3;">
+            Skip Check-In ⏩<br>
+            <span style="font-size: 0.75rem; font-weight: normal; color: #666;">(For Restrooms)</span>
+        </th>
         <th style="padding: 12px; border-bottom: 2px solid #dee2e6; width: 220px; line-height: 1.3;">
             Lock Room to Staff 🔒<br>
             <span style="font-size: 0.75rem; font-weight: normal; color: #666;">(Overrides schedule)</span>
@@ -572,15 +581,23 @@ function renderTeacherScheduleTable(scheduleObj) {
             }
         });
         
-        // Failsafe: Keep teacher visible even if they were removed from the master staff list
+       // Failsafe: Keep teacher visible even if they were removed from the master staff list
         if (lockedTeacher && !foundInList) {
             selectHtml += `<option value="${lockedTeacher}" selected>${lockedTeacher} (Not in list)</option>`;
         }
         selectHtml += `</select>`;
 
+        // 🌟 NEW: Build the Skip Check-In Checkbox HTML right here
+        const isSkipped = skipCheckInRooms[room] ? "checked" : "";
+        let skipHtml = `<div style="text-align: center;"><input type="checkbox" class="toggle-skip-checkin" data-room="${room}" ${isSkipped} style="width: 20px; height: 20px; cursor: pointer;"></div>`;
+
+        // 🌟 NEW: Add the ${skipHtml} into a new <td> right below the room name!
         let rowHtml = `<tr>
             <td style="padding: 10px; font-weight: bold; border-bottom: 1px solid #eee; white-space: nowrap;">
                 ${room.toUpperCase()}
+            </td>
+            <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                ${skipHtml}
             </td>
             <td style="padding: 10px; border-bottom: 1px solid #eee;">
                 ${selectHtml}
@@ -647,6 +664,46 @@ function renderTeacherScheduleTable(scheduleObj) {
         });
     });
 
+    // ==========================================
+    // 🟢 ATTACH SKIP CHECK-IN LISTENERS
+    // ==========================================
+    tbody.querySelectorAll(".toggle-skip-checkin").forEach(box => {
+        box.addEventListener("change", async (e) => {
+            const room = e.target.getAttribute("data-room");
+            const isChecked = e.target.checked;
+
+            if (!window.currentLiveScheduleData.skipCheckInRooms) {
+                window.currentLiveScheduleData.skipCheckInRooms = {};
+            }
+
+            if (isChecked) {
+                window.currentLiveScheduleData.skipCheckInRooms[room] = true;
+            } else {
+                delete window.currentLiveScheduleData.skipCheckInRooms[room];
+            }
+
+            // Sync to live cache
+            if (!window.liveMasterSchedule) window.liveMasterSchedule = {};
+            window.liveMasterSchedule.skipCheckInRooms = window.currentLiveScheduleData.skipCheckInRooms;
+
+            // Visual flash of success
+            const td = e.target.closest("td");
+            const originalBg = td.style.background;
+            td.style.background = "#e8f5e9";
+            setTimeout(() => td.style.background = originalBg, 500);
+
+            try {
+                await setDoc(doc(db, "settings", "master_schedule"), {
+                    skipCheckInRooms: window.currentLiveScheduleData.skipCheckInRooms
+                }, { merge: true });
+            } catch (err) {
+                console.error("Failed to save skip toggle:", err);
+                alert("Failed to save. Check connection.");
+                e.target.checked = !isChecked; // revert visually
+            }
+        });
+    });
+
     // Reattach manual edit listeners for the rest of the schedule
     tbody.querySelectorAll(".editable-schedule-cell").forEach(cell => {
         cell.addEventListener("click", () => {
@@ -654,3 +711,30 @@ function renderTeacherScheduleTable(scheduleObj) {
         });
     });
 }
+
+// 🟢 Fetches ALL users (staff and students) for the Message Center dropdowns
+async function setupMessageCenterData() {
+    try {
+        const querySnapshot = await getDocs(collection(db, "users"));
+        let allUsers = [];
+        
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            allUsers.push({
+                id: doc.id,
+                // Fallbacks just in case a user is missing a displayName
+                name: data.displayName || data.studentName || "Unknown User", 
+                role: data.role || "student"
+            });
+        });
+
+        // Pass the full list to our imported script!
+        initMessageCenter(allUsers);
+        
+    } catch (error) {
+        console.error("Error loading users for Message Center:", error);
+    }
+}
+
+// Call it so it runs when the page loads!
+setupMessageCenterData();

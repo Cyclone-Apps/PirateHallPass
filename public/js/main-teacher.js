@@ -5,6 +5,8 @@ import { renderHeader, renderPassList, setupStudentAutocomplete } from "./module
 import { listenToPendingPasses, listenToActivePasses, listenToScheduledPasses, updatePassStatus, createNewPass, cancelScheduledPass, fetchAllStudents, listenToPassHistory, editPassHistory, flagPassFraudulent } from "./modules/pass-engine.js";
 import { listenToEmergencyState } from "./modules/admin-engine.js";
 import { MapController } from "./modules/map-engine.js";
+import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { db } from "./firebase-config.js";
 
 window.cancelPass = cancelScheduledPass;
 
@@ -56,6 +58,71 @@ initAuthListener("teacher", async (user, role) => {
     } catch (err) {
         console.error("Failed to setup proxy autocomplete:", err);
     }
+
+    // 📢 NEW: ANNOUNCEMENTS LISTENER
+    const qAnnouncements = query(collection(db, "announcements"), where("active", "==", true));
+    
+    onSnapshot(qAnnouncements, (snapshot) => {
+        let validMessages = [];
+        const userEmail = window.currentUser?.email;
+        
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const docId = docSnap.id;
+            
+            // 🛑 NEW: Check if this specific user has already cleared it
+            if (data.readBy && data.readBy.includes(userEmail)) {
+                return; // Skip drawing this message!
+            }
+            
+            // Check if this user is supposed to see it
+            let isTarget = false;
+            if (data.audience === 'everyone' || data.audience === 'teachers') { 
+                isTarget = true;
+            } else if (data.audience === 'specific' && userEmail && (data.targets.includes(userEmail) || data.targets.includes(window.currentUser.uid))) {
+                isTarget = true; 
+            }
+            
+            if (isTarget) {
+                // 🎨 NEW: Red, bold text, optional link, and the Clear button
+                let msgHtml = `<strong style="color: #c62828; font-weight: 900;">Admin: ${data.message}</strong>`;
+                
+                if (data.link) {
+                    msgHtml += ` <a href="${data.link}" target="_blank" style="text-decoration: none; margin-left: 5px;" title="Open Link">🔗</a>`;
+                }
+                
+                msgHtml += ` <button onclick="window.dismissAnnouncement('${docId}')" style="margin-left: 10px; padding: 2px 6px; font-size: 0.8rem; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: white;">Clear</button>`;
+                
+                validMessages.push(msgHtml);
+            }
+        });
+        
+        if (validMessages.length > 0) {
+            window.currentAdminAnnouncementText = validMessages.join('<br><hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;"><br>');
+        } else {
+            window.currentAdminAnnouncementText = "";
+        }
+        
+        const announcementContainer = document.getElementById("admin-messages-container"); 
+        if (announcementContainer) {
+            announcementContainer.innerHTML = window.currentAdminAnnouncementText 
+                ? `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>`
+                : `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
+        }
+    });
+
+    // 🧹 NEW: Global function so the inline button can trigger the database update
+    window.dismissAnnouncement = async (docId) => {
+        if (!window.currentUser?.email) return;
+        try {
+            const { doc, updateDoc, arrayUnion } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+            await updateDoc(doc(db, "announcements", docId), {
+                readBy: arrayUnion(window.currentUser.email)
+            });
+        } catch (error) {
+            console.error("Error dismissing message:", error);
+        }
+    };
 
     // Hook up real-time Firestore listeners to UI components
     listenToPendingPasses((passes) => {
@@ -454,19 +521,28 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
         if (currentStatus === "pending_restricted" && action === "active") {
             const proceed = confirm("⚠️ ADMIN WARNING: You are about to override a restricted pass. Admin will be notified and may inquire why. Do you wish to proceed?");
             if (!proceed) return; 
-            action = "active_bypassed"; // Reroute status!
-            
-            // 🚨 Record who is bypassing this restriction
-            extraData.bypassedBy = window.currentUser?.displayName || "Teacher";
+            action = "active_bypassed"; 
+            extraData.bypassedBy = window.currentUser?.displayName || "Staff";
         }
         
-        // 🌟 2. THE RETURN INTERCEPT
+        // 🌟 2. CHECK-IN TIMELINE INTERCEPTS
+        if (action === "arrived") {
+            action = currentStatus; // Stay active
+            extraData.arrivedAt = new Date(); // Timestamp Arrival
+        } else if (action === "departed") {
+            action = currentStatus; // Stay active
+            extraData.departedAt = new Date(); // Timestamp Departure
+        }
+        
+        // 🌟 3. THE RETURN INTERCEPT
         if (currentStatus === "active_bypassed" && action === "returned") {
-            action = "returned_bypassed"; // Reroute status!
+            action = "returned_bypassed"; 
         }
 
         // Pass extraData as the 3rd argument
-        updatePassStatus(passId, action, extraData);
+        if (typeof updatePassStatus === "function") {
+             updatePassStatus(passId, action, extraData);
+        }
     }
 }
 
@@ -538,8 +614,9 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
             type: passType,
             initiatedBy: "teacher_proxy",
             senderName: window.currentUser.displayName,
+            proxyBy: window.currentUser.displayName, // 🌟 NEW: Bulletproof teacher name
             isProxy: true,
-            createdAt: new Date().toISOString() // Great for the Tardy stopwatch feature!
+            createdAt: new Date().toISOString()
         };
 
         // Add specific data based on pass type
@@ -675,15 +752,22 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
                     mode: "proxy_pass",
                     periodOverride: selectedPeriod, // Send the time to the map!
                     onRoomSelect: (selection) => {
-                        const proxyInput = document.getElementById("proxy-destination-input") || 
-                                           document.getElementById("input-proxy-destination");
-                        if (proxyInput) {
-                            proxyInput.value = selection.room;
-                            // 🌟 NEW: Secretly save the teacher's name directly to the input field's dataset!
-                            proxyInput.dataset.teacher = selection.teacher || "Unknown";
-                        }
-                        mapModal.classList.add("hidden"); 
-                    }
+    const proxyInput = document.getElementById("proxy-destination-input") || 
+                       document.getElementById("input-proxy-destination");
+    if (proxyInput) {
+        console.log("=== 🗺️ MAP CLICK DETECTED ===");
+        console.log("Selected Room ID:", selection.room);
+        console.log("Selected Teacher from Map Data:", selection.teacher);
+
+        proxyInput.value = selection.room;
+        proxyInput.dataset.teacher = selection.teacher || "Unknown";
+        
+        console.log("Dispatched inputs. Checking if modal breaks here...");
+        proxyInput.dispatchEvent(new Event('input', { bubbles: true }));
+        proxyInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    mapModal.classList.add("hidden"); 
+}
                 });
             }
         }
@@ -714,6 +798,7 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
             type: type,
             initiatedBy: "teacher",
             senderName: window.currentUser.displayName,
+            proxyBy: window.currentUser.displayName, // 🌟 NEW: Bulletproof teacher name
             status: type === "tardy" ? "active" : "pending_student"
         };
 
@@ -754,6 +839,10 @@ document.addEventListener("click", async (e) => {
                     const destInput = document.getElementById("edit-history-destination");
                     if (destInput && data && data.room) {
                         destInput.value = data.room; // Pull the room string out of the object
+                        
+                        // 🔥 FIX: Dispatch events to wake up the UI listeners
+                        destInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        destInput.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                     mapModal.classList.add("hidden"); // Auto-close map after selection
                 }

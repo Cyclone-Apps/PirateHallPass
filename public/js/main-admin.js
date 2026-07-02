@@ -207,8 +207,10 @@ document.addEventListener("click", (e) => {
                     if (!currentRooms.includes(selection.room)) {
                         currentRooms.push(selection.room);
                         roomsInput.value = currentRooms.join(", ");
-                        // Dispatch an input event so admin-students.js registers the change
+                        
+                        // 🔥 FIX: Dispatch both events to guarantee the UI registers the change
                         roomsInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        roomsInput.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 }
                 mapModal.classList.add("hidden"); 

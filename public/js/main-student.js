@@ -23,7 +23,7 @@ import {
     getAdjustedNow 
 } from "./modules/time-engine.js";
 import { db } from "./firebase-config.js";
-import { doc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, onSnapshot, collection, query, where, updateDoc, arrayUnion, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 let activeTimerInterval = null; 
 let elapsedSeconds = 0; 
@@ -120,6 +120,73 @@ async function initStudentApp(user, role) {
     } else {
         activeSchedulePeriods = todayScheduleInfo.periods;
     }
+
+    // ==========================================================
+    // 📢 ANNOUNCEMENTS / MESSAGE CENTER LISTENER
+    // ==========================================================
+    const qAnnouncements = query(collection(db, "announcements"), where("active", "==", true));
+    
+    onSnapshot(qAnnouncements, (snapshot) => {
+        let validMessages = [];
+        const userEmail = window.currentUser?.email;
+        
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const docId = docSnap.id;
+            
+            // 🛑 NEW: Check if this specific user has already cleared it
+            if (data.readBy && data.readBy.includes(userEmail)) {
+                return; // Skip drawing this message!
+            }
+            
+            // Check if this user is supposed to see it
+            let isTarget = false;
+            if (data.audience === 'everyone' || data.audience === 'students') { // Use 'teachers' for the teacher file
+                isTarget = true;
+            } else if (data.audience === 'specific' && userEmail && (data.targets.includes(userEmail) || data.targets.includes(window.currentUser.uid))) {
+                isTarget = true; 
+            }
+            
+            if (isTarget) {
+                // 🎨 NEW: Red, bold text, optional link, and the Clear button
+                let msgHtml = `<strong style="color: #c62828; font-weight: 900;">Admin: ${data.message}</strong>`;
+                
+                if (data.link) {
+                    msgHtml += ` <a href="${data.link}" target="_blank" style="text-decoration: none; margin-left: 5px;" title="Open Link">🔗</a>`;
+                }
+                
+                msgHtml += ` <button onclick="window.dismissAnnouncement('${docId}')" style="margin-left: 10px; padding: 2px 6px; font-size: 0.8rem; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: white;">Clear</button>`;
+                
+                validMessages.push(msgHtml);
+            }
+        });
+        
+        if (validMessages.length > 0) {
+            window.currentAdminAnnouncementText = validMessages.join('<br><hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;"><br>');
+        } else {
+            window.currentAdminAnnouncementText = "";
+        }
+        
+        const announcementContainer = document.getElementById("admin-messages-container"); 
+        if (announcementContainer) {
+            announcementContainer.innerHTML = window.currentAdminAnnouncementText 
+                ? `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>`
+                : `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
+        }
+    });
+
+    // 🧹 NEW: Global function so the inline button can trigger the database update
+    window.dismissAnnouncement = async (docId) => {
+        if (!window.currentUser?.email) return;
+        try {
+            const { doc, updateDoc, arrayUnion } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+            await updateDoc(doc(db, "announcements", docId), {
+                readBy: arrayUnion(window.currentUser.email)
+            });
+        } catch (error) {
+            console.error("Error dismissing message:", error);
+        }
+    };
 
    // 🚨 STUDENT EMERGENCY ENGINE 🚨
     onSnapshot(doc(db, "settings", "emergencyState"), (docSnap) => {
@@ -259,10 +326,12 @@ async function initStudentApp(user, role) {
             renderStudentActiveScreen(currentPass);
             
             // Start the massive timer
-            // 🟢 CHANGED: Prioritize acceptedAt (Teacher Approval Time) over createdAt (Request Time)
+            // 🌟 NEW: Calculate time based on current phase
             let startTime = new Date();
-            if (currentPass.acceptedAt) {
-                startTime = currentPass.acceptedAt.toDate();
+            if (currentPass.departedAt) {
+                startTime = currentPass.departedAt.toDate(); // Phase 3 (Returning) Timer
+            } else if (currentPass.acceptedAt) {
+                startTime = currentPass.acceptedAt.toDate(); // Phase 1 (Transit) Timer
             } else if (currentPass.createdAt) {
                 startTime = currentPass.createdAt.toDate();
             }
@@ -350,6 +419,13 @@ window.showTeacherNamesOnMap = function() {
         }
 
         if (rawName) {
+            // 🌟 TRIGGER THE BUILT-IN BYPASS: Save it to the exact DOM element your popup bypass is looking for!
+            const destInput = document.getElementById("proxy-destination-input") || 
+                              document.getElementById("input-proxy-destination") ||
+                              document.getElementById("input-destination");
+            if (destInput) destInput.dataset.teacher = rawName;
+
+            // FORMAT NAME: Strip first name
             let cleanName = rawName.trim();
             if (cleanName.includes(",")) {
                 cleanName = cleanName.split(",")[0].trim();
@@ -478,6 +554,9 @@ document.addEventListener("click", async (e) => {
         }
 
         if (rawName) {
+            // 🌟 ULTIMATE FIX: Attach the database name straight to the room shape they clicked!
+            mapNode.dataset.officialTeacher = rawName;
+
             // FORMAT NAME: Strip first name
             let cleanName = rawName.trim();
             if (cleanName.includes(",")) {
@@ -551,46 +630,190 @@ document.addEventListener("click", async (e) => {
         }
     }
 
+    // =======================================================
+    // 🏢 PHASE 1 -> 2: Teacher Check-In (Arrival)
+    // =======================================================
+    const checkInBtn = e.target.closest("#btn-teacher-checkin");
+    if (checkInBtn) {
+        const passId = checkInBtn.getAttribute("data-id");
+        if (!passId) return;
+
+        try {
+            // Prevent double clicks
+            checkInBtn.disabled = true;
+            checkInBtn.innerText = "⏳ Checking in...";
+
+            const passRef = doc(db, "passes", passId);
+            await updateDoc(passRef, {
+                arrivedAt: serverTimestamp()
+            });
+            // The onSnapshot listener will automatically detect this change and re-render the screen!
+        } catch (error) {
+            console.error("Error checking in:", error);
+            alert("Failed to check in. Please try again.");
+            checkInBtn.disabled = false;
+            checkInBtn.innerText = "🏢 Check In Student (Dest. Teacher)";
+        }
+    }
+
+    // =======================================================
+    // 🚶 PHASE 2 -> 3: Teacher Depart (Return to Origin)
+    // =======================================================
+    const departBtn = e.target.closest("#btn-teacher-depart");
+    if (departBtn) {
+        const passId = departBtn.getAttribute("data-id");
+        if (!passId) return;
+
+        try {
+            // Prevent double clicks
+            departBtn.disabled = true;
+            departBtn.innerText = "⏳ Updating...";
+
+            const passRef = doc(db, "passes", passId);
+            await updateDoc(passRef, {
+                departedAt: serverTimestamp()
+            });
+            // The onSnapshot listener will catch this and flip to Phase 3
+        } catch (error) {
+            console.error("Error departing:", error);
+            alert("Failed to update departure. Please try again.");
+            departBtn.disabled = false;
+            departBtn.innerText = "🚶 Depart Student (Return to Origin)";
+        }
+    }
+
     // ==========================================
     // --- 1. STUDENT CONFIRMS MAP DESTINATION ---
     // ==========================================
     if (e.target.id === "btn-confirm-destination") {
-        const dest = window.selectedDestination;
-        if (!dest) return;
-        
-        e.target.innerText = "⏳ Requesting...";
-        e.target.disabled = true;
+        const dest = window.selectedDestination; // 🟢 FIXED: Added window.
+        if (!dest) return; // 🟢 FIXED: Safety check to prevent the null error
 
-        const isProxyActive = typeof isProxy !== "undefined" ? isProxy : false;
-        const proxyTeacherName = typeof proxyTeacher !== "undefined" ? proxyTeacher : "";
+        const passType = window.currentUser?.role === "teacher" || window.currentUser?.role === "admin" ? "proxy" : "standard";
+
+        // 1. Check if the room is a "No Check-in" room (Restroom, Fountain, etc.)
+        const matchKey = dest.toLowerCase().replace(/^room\s+/i, '').trim();
+        const sched = window.liveMasterSchedule || window.currentLiveScheduleData || {};
+        const isNoCheckIn = sched.noCheckInRooms && sched.noCheckInRooms[matchKey];
+
+        // 2. See if there is already a teacher natively mapped to this room right now
+        let targetTeacher = "Unknown";
         
-        let studentName = "Student";
-        if (window.currentUser && window.currentUser.displayName) {
-            studentName = window.currentUser.displayName;
+        // 🌟 ULTIMATE FIX: Look at the highlighted room on the map and grab the attached name!
+        const selectedMapNode = document.querySelector(".map-node.selected");
+        if (selectedMapNode && selectedMapNode.dataset.officialTeacher) {
+            targetTeacher = selectedMapNode.dataset.officialTeacher;
+            console.log("Successfully grabbed teacher directly from the map node:", targetTeacher);
         }
-        
-        const finalDisplayName = studentName;
-        const safeStudentId = window.currentStudentProfile?.id || window.currentUser?.id || window.currentUser?.uid || "unknown";
 
-        // 🌟 FIXED: Full payload context attached for Area Lockdown tracking!
+        // 3. THE POPUP: If no teacher is found and it requires one!
+        if (targetTeacher === "Unknown" && !isNoCheckIn) {
+            // ... (the rest of your popup code stays exactly the same)
+            
+            // Build the staff dropdown
+            let staffOptions = `<option value="No Receiving Teacher" style="font-weight: bold; color: #d32f2f;">-- No Receiving Teacher --</option>`;
+            if (window.activeStaffList) {
+                window.activeStaffList.forEach(staff => {
+                    staffOptions += `<option value="${staff.displayName}">${staff.displayName}</option>`;
+                });
+            }
+
+            // 🔥 THE BYPASS: Did the map already tell us who the teacher is?
+            const destInput = document.getElementById("proxy-destination-input") || 
+                              document.getElementById("input-proxy-destination") ||
+                              document.getElementById("input-destination"); // Catch both proxy and student flows
+            
+            let preSelectedTeacher = destInput ? destInput.dataset.teacher : null;
+
+            // If the map found a specific teacher (and it's not "Unknown"), skip the popup entirely!
+            if (preSelectedTeacher && preSelectedTeacher !== "Unknown" && preSelectedTeacher.trim() !== "") {
+                console.log("Skipping popup! Map already provided teacher:", preSelectedTeacher);
+                
+                // If it's a proxy pass, we might just need to set the value. 
+                // If it's the final step, call the finalization function.
+                if (typeof finalizePassCreation === "function") {
+                    await finalizePassCreation(dest, preSelectedTeacher, passType);
+                    return; // Stop running this function, do NOT create the popup overlay!
+                }
+            }
+
+            // Create Popup Overlay
+            const overlay = document.createElement("div");
+            overlay.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; justify-content: center; align-items: center;";
+            
+            overlay.innerHTML = `
+                <div style="background: white; padding: 30px; border-radius: 12px; max-width: 400px; width: 90%; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+                    <h2 style="margin-top: 0; color: #1565c0;">Who are you seeing?</h2>
+                    <p style="color: #555; margin-bottom: 20px;">Please select the staff member you are visiting in <strong>${dest}</strong>.</p>
+                    
+                    <select id="popup-staff-select" style="width: 100%; padding: 12px; font-size: 1.1rem; border: 2px solid #ccc; border-radius: 8px; margin-bottom: 20px;">
+                        ${staffOptions}
+                    </select>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button id="popup-btn-cancel" style="flex: 1; padding: 12px; font-size: 1.1rem; background: #eee; border: none; border-radius: 8px; cursor: pointer; color: #333; font-weight: bold;">Cancel</button>
+                        <button id="popup-btn-confirm" style="flex: 1; padding: 12px; font-size: 1.1rem; background: #2e7d32; border: none; border-radius: 8px; cursor: pointer; color: white; font-weight: bold;">Continue</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            // Handle Popup Cancel
+            document.getElementById("popup-btn-cancel").addEventListener("click", () => {
+                document.body.removeChild(overlay);
+                document.getElementById("btn-confirm-destination").innerText = "Confirm Destination";
+                document.getElementById("btn-confirm-destination").disabled = false;
+            });
+
+            // Handle Popup Confirm
+            document.getElementById("popup-btn-confirm").addEventListener("click", async () => {
+                targetTeacher = document.getElementById("popup-staff-select").value;
+                document.body.removeChild(overlay);
+                await finalizePassCreation(dest, targetTeacher, passType);
+            });
+
+            return; // Stop here and wait for the popup
+        } 
+        
+        // If it's a restroom or already had a teacher, proceed normally!
+        if (isNoCheckIn) targetTeacher = "No Receiving Teacher";
+        await finalizePassCreation(dest, targetTeacher, passType);
+    }
+
+    // Helper function to actually build the payload and send it to Firebase
+    async function finalizePassCreation(dest, targetTeacher, passType) {
+        document.getElementById("btn-confirm-destination").innerText = "Creating...";
+        document.getElementById("btn-confirm-destination").disabled = true;
+
+        const isProxyActive = passType === "proxy";
+        const proxyTeacherName = isProxyActive ? (window.currentUser?.displayName || "Teacher") : "";
+        
+        // 🌟 FIXED: Prioritize the Student Profile data, fallback to currentUser
+        const safeStudentId = window.currentStudentProfile?.id || window.currentUser?.uid || "unknown";
+        const studentName = window.currentStudentProfile?.displayName || window.currentUser?.displayName || "Student";
+        const studentEmail = window.currentStudentProfile?.email || window.currentUser?.email || "unknown@student.com";
+
         const passData = {
             studentId: safeStudentId, 
-            studentDisplayName: finalDisplayName,
+            studentName: studentName,
+            studentDisplayName: studentName,
+            studentEmail: studentEmail,
+            
             destination: dest,
-            targetTeacher: window.selectedDestinationTeacher || "Unknown", 
+            targetTeacher: targetTeacher, 
             
             // Time Engine tracking values
             origin: window.currentRoom || "Unknown",
             originTeacher: window.currentOriginTeacher || "Unknown", 
             period: window.currentPeriod || "Unknown", 
             
-            type: "standard",
+            type: passType,
             initiatedBy: isProxyActive ? "teacher_proxy" : "student",
             senderName: isProxyActive ? proxyTeacherName : studentName, 
             
             // Dual Corridor Lockdown checks
-            destCorridor: getCorridorForRoom(dest),
-            originCorridor: getCorridorForRoom(window.currentRoom || "Unknown"),
+            destCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(dest) : "Unknown",
+            originCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(window.currentRoom || "Unknown") : "Unknown",
             
             // Default Statuses
             status: "pending", 
@@ -600,21 +823,17 @@ document.addEventListener("click", async (e) => {
             waitlistPosition: 0,
             recentTravels: []
         };
-        
-        const success = await createNewPass(passData);
-        
-        if (success) {
-            const mapModalElement = document.getElementById("map-modal");
-            if (mapModalElement) mapModalElement.classList.add("hidden");
-            document.querySelectorAll(".map-node").forEach(node => node.classList.remove("selected"));
-            const labelElement = document.getElementById("selected-room-label");
-            if (labelElement) labelElement.innerText = "Select a room on the map";
-            window.selectedDestination = null;
-            window.selectedDestinationTeacher = null;
+
+        const result = await createNewPass(passData);
+
+        if (result.success) {
+            document.getElementById("map-modal").classList.add("hidden");
+            document.getElementById("map-modal-container").innerHTML = '';
+        } else {
+            alert("Failed to create pass. Please try again.");
+            document.getElementById("btn-confirm-destination").innerText = "Confirm Destination";
+            document.getElementById("btn-confirm-destination").disabled = false;
         }
-        
-        e.target.innerText = "Confirm Destination";
-        e.target.disabled = false;
     }
 
     // ==========================================

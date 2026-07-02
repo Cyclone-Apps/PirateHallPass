@@ -26,7 +26,8 @@ export const schoolMapSVG = `
     <g class="map-node" data-id="Room 100B" data-corridor="100 Hallway"><rect class="zone-box" x="720" y="0" width="48" height="100" rx="4"/><text class="lbl-room" x="744" y="55" text-anchor="middle">100B</text></g>
     <g class="map-node" data-id="Room 100" data-corridor="100 Hallway"><rect class="zone-box" x="768" y="0" width="120" height="100" rx="4"/><text class="lbl-room" x="828" y="55" text-anchor="middle">100</text></g>
 
-    <g class="map-node" data-id="HS Office" data-corridor="100 Hallway"><rect class="zone-box" x="888" y="0" width="150" height="50" rx="4"/><text class="lbl-room" x="963" y="30" text-anchor="middle">HS Office</text></g>
+    <g class="map-node" data-id="HS Office" data-corridor="100 Hallway"><rect class="zone-box" x="888" y="0" width="150" height="50" rx="4"/><text class="lbl-room" x="1030" y="30" text-anchor="end">HS Office</text></g>
+
     <g class="map-node" data-id="Main Entrance" data-corridor="100 Hallway"><path class="zone-box" d="M 888,50 L 1038,50 L 1038,150 L 938,150 L 938,100 L 888,100 Z" /><text class="lbl-room" x="975" y="85" text-anchor="middle">Entrance</text></g>
 
     <g class="map-node" data-id="Room 107" data-corridor="100 Hallway"><rect class="zone-box" x="120" y="150" width="130" height="100" rx="4"/><text class="lbl-room" x="185" y="205" text-anchor="middle">107</text></g>
@@ -48,10 +49,13 @@ export const schoolMapSVG = `
     <g class="map-node" data-id="Room 202" data-corridor="Main Vertical Hall"><rect class="zone-box" x="768" y="350" width="120" height="100" rx="4"/><text class="lbl-room" x="828" y="405" text-anchor="middle">202</text></g>
     <g class="map-node" data-id="Mechanical 2" data-corridor="Main Vertical Hall"><rect class="zone-box" x="768" y="450" width="120" height="100" rx="4"/><text class="lbl-room" x="828" y="505" text-anchor="middle">Mech</text></g>
 
-    <g class="map-node" data-id="District Office" data-corridor="Main Vertical Hall"><rect class="zone-box" x="938" y="150" width="120" height="150" rx="4"/><text class="lbl-room" x="998" y="230" text-anchor="middle">Dist. Off.</text></g>
+    <g class="map-node" data-id="District Office" data-corridor="Main Vertical Hall"><rect class="zone-box" x="938" y="150" width="120" height="150" rx="4"/><text class="lbl-room" x="998" y="210" text-anchor="middle">Dist. Off.</text></g>
+
     <g class="map-node" data-id="Room 201A" data-corridor="Main Vertical Hall"><rect class="zone-box" x="938" y="300" width="120" height="50" rx="4"/><text class="lbl-room" x="998" y="330" text-anchor="middle">201A</text></g>
     <g class="map-node" data-id="Room 201" data-corridor="Main Vertical Hall"><rect class="zone-box" x="938" y="350" width="120" height="100" rx="4"/><text class="lbl-room" x="998" y="405" text-anchor="middle">201</text></g>
-    <g class="map-node" data-id="Restroom 200s" data-corridor="Main Vertical Hall"><rect class="zone-box" x="938" y="450" width="120" height="100" rx="4"/><text class="lbl-room" x="998" y="505" text-anchor="middle">RR</text></g>
+    
+    <g class="map-node" data-id="Boys Restroom 200s" data-corridor="Main Vertical Hall"><rect class="zone-box" x="938" y="450" width="60" height="100" rx="4"/><text class="lbl-room" x="968" y="505" text-anchor="middle">B-RR</text></g>
+    <g class="map-node" data-id="Girls Restroom 200s" data-corridor="Main Vertical Hall"><rect class="zone-box" x="998" y="450" width="60" height="100" rx="4"/><text class="lbl-room" x="1028" y="505" text-anchor="middle">G-RR</text></g>
     
     <g class="map-node" data-id="Cross Corridor Block"><rect class="corridor-box" x="888" y="550" width="340" height="30" rx="4"/></g>
 
@@ -77,7 +81,9 @@ export const schoolMapSVG = `
     <g class="map-node" data-id="Room 300B" data-corridor="300 Hallway"><rect class="zone-box" x="775" y="550" width="64" height="100" rx="4"/><text class="lbl-room" x="807" y="605" text-anchor="middle">300B</text></g>
     <g class="map-node" data-id="Room 300A" data-corridor="300 Hallway"><rect class="zone-box" x="839" y="550" width="49" height="100" rx="4"/><text class="lbl-room" x="863.5" y="605" text-anchor="middle">300A</text></g>
 
-    <g class="map-node" data-id="Restroom 300s" data-corridor="300 Hallway"><rect class="zone-box" x="100" y="650" width="60" height="150" rx="4"/><text class="lbl-room" x="130" y="730" text-anchor="middle">RR</text></g>
+    <g class="map-node" data-id="Girls Restroom 300s" data-corridor="300 Hallway"><rect class="zone-box" x="100" y="650" width="60" height="75" rx="4"/><text class="lbl-room" x="130" y="695" text-anchor="middle">G-RR</text></g>
+    <g class="map-node" data-id="Boys Restroom 300s" data-corridor="300 Hallway"><rect class="zone-box" x="100" y="725" width="60" height="75" rx="4"/><text class="lbl-room" x="130" y="770" text-anchor="middle">B-RR</text></g>
+    
     <g class="map-node" data-id="Exit Hall 300s"><rect class="corridor-box" x="160" y="650" width="25" height="150" rx="2"/></g>
     <g class="map-node" data-id="Mechanical 3" data-corridor="300 Hallway"><rect class="zone-box" x="185" y="700" width="65" height="100" rx="4"/><text class="lbl-room" x="217.5" y="755" text-anchor="middle">Mech</text></g>
     
@@ -105,17 +111,31 @@ export const schoolMapSVG = `
     
     <g class="map-node" data-id="Auditorium" data-corridor="Fine Arts Corridor"><rect class="zone-box" x="1228" y="840" width="180" height="260" rx="4"/><text class="lbl-large" x="1318" y="980" text-anchor="middle">AUDITORIUM</text></g>
     <g class="map-node" data-id="Auditorium Lobby" data-corridor="Fine Arts Corridor"><rect class="zone-box" x="1408" y="840" width="90" height="195" rx="4"/><text class="lbl-room" x="1453" y="937.5" text-anchor="middle">Aud Lobby</text></g>
-    <g class="map-node" data-id="Auditorium RR" data-corridor="Fine Arts Corridor"><rect class="zone-box" x="1408" y="1035" width="90" height="65" rx="4"/><text class="lbl-room" x="1453" y="1067.5" text-anchor="middle">Aud RR</text></g>
+    
+    <g class="map-node" data-id="Girls Aud RR" data-corridor="Fine Arts Corridor"><rect class="zone-box" x="1408" y="1035" width="90" height="32.5" rx="4"/><text class="lbl-room" x="1453" y="1056" text-anchor="middle">G-RR</text></g>
+    <g class="map-node" data-id="Boys Aud RR" data-corridor="Fine Arts Corridor"><rect class="zone-box" x="1408" y="1067.5" width="90" height="32.5" rx="4"/><text class="lbl-room" x="1453" y="1089" text-anchor="middle">B-RR</text></g>
 
-    <g class="map-node" data-id="312/RR Fountain" data-corridor="Exit Hall 300s"><rect class="zone-box" x="157.5" y="735" width="30" height="30" rx="15"/><text class="lbl-room" x="172.5" y="756" font-size="18" text-anchor="middle">🚰</text></g>
-    <g class="map-node" data-id="108 Fountain" data-corridor="100 Hallway"><rect class="zone-box" x="315" y="110" width="30" height="30" rx="15"/><text class="lbl-room" x="330" y="131" font-size="18" text-anchor="middle">🚰</text></g>
-    <g class="map-node" data-id="HS Office Fountain" data-corridor="Main Vertical Hall"><rect class="zone-box" x="898" y="210" width="30" height="30" rx="15"/><text class="lbl-room" x="913" y="231" font-size="18" text-anchor="middle">🚰</text></g>
-    <g class="map-node" data-id="Guidance Drinking Fountain" data-corridor="Main Vertical Hall"><rect class="zone-box" x="898" y="585" width="30" height="30" rx="15"/><text class="lbl-room" x="913" y="606" font-size="18" text-anchor="middle">🚰</text></g>
-    <g class="map-node" data-id="Band Room Fountain" data-corridor="Gym Vertical Hall"><rect class="zone-box" x="1188" y="735" width="30" height="30" rx="15"/><text class="lbl-room" x="1203" y="756" font-size="18" text-anchor="middle">🚰</text></g>
-    <g class="map-node" data-id="Gym Lobby Fountain" data-corridor="Gym Lobby"><rect class="zone-box" x="1063" y="455" width="30" height="30" rx="15"/><text class="lbl-room" x="1078" y="476" font-size="18" text-anchor="middle">🚰</text></g>
-    <g class="map-node" data-id="Auditorium Lobby Fountain" data-corridor="Auditorium Lobby"><rect class="zone-box" x="1438" y="845" width="30" height="30" rx="15"/><text class="lbl-room" x="1453" y="866" font-size="18" text-anchor="middle">🚰</text></g>
-    <g class="map-node" data-id="Office Vending" data-corridor="Main Entrance"><rect class="zone-box" x="1003" y="115" width="30" height="30" rx="15"/><text class="lbl-room" x="1018" y="136" font-size="18" text-anchor="middle">🥤</text></g>
-    <g class="map-node" data-id="Gym Lobby Vending" data-corridor="Gym Lobby"><rect class="zone-box" x="1063" y="515" width="30" height="30" rx="15"/><text class="lbl-room" x="1078" y="536" font-size="18" text-anchor="middle">🥤</text></g>
+    <g class="map-node" data-id="312/RR Fountain" data-corridor="Exit Hall 300s"><rect class="zone-box" x="147.5" y="725" width="50" height="50" rx="25"/><text class="lbl-room" x="172.5" y="750" style="font-size: 42px;" text-anchor="middle" dominant-baseline="central">🚰</text></g>
+    <g class="map-node" data-id="108 Fountain" data-corridor="100 Hallway"><rect class="zone-box" x="305" y="100" width="50" height="50" rx="25"/><text class="lbl-room" x="330" y="125" style="font-size: 42px;" text-anchor="middle" dominant-baseline="central">🚰</text></g>
+    <g class="map-node" data-id="HS Office Fountain" data-corridor="Main Vertical Hall"><rect class="zone-box" x="888" y="200" width="50" height="50" rx="25"/><text class="lbl-room" x="913" y="225" style="font-size: 42px;" text-anchor="middle" dominant-baseline="central">🚰</text></g>
+    <g class="map-node" data-id="Guidance Drinking Fountain" data-corridor="Main Vertical Hall"><rect class="zone-box" x="888" y="575" width="50" height="50" rx="25"/><text class="lbl-room" x="913" y="600" style="font-size: 42px;" text-anchor="middle" dominant-baseline="central">🚰</text></g>
+    <g class="map-node" data-id="Band Room Fountain" data-corridor="Gym Vertical Hall"><rect class="zone-box" x="1178" y="725" width="50" height="50" rx="25"/><text class="lbl-room" x="1203" y="750" style="font-size: 42px;" text-anchor="middle" dominant-baseline="central">🚰</text></g>
+    <g class="map-node" data-id="Gym Lobby Fountain" data-corridor="Gym Lobby"><rect class="zone-box" x="1053" y="445" width="50" height="50" rx="25"/><text class="lbl-room" x="1078" y="470" style="font-size: 42px;" text-anchor="middle" dominant-baseline="central">🚰</text></g>
+    <g class="map-node" data-id="Auditorium Lobby Fountain" data-corridor="Auditorium Lobby"><rect class="zone-box" x="1428" y="835" width="50" height="50" rx="25"/><text class="lbl-room" x="1453" y="860" style="font-size: 42px;" text-anchor="middle" dominant-baseline="central">🚰</text></g>
+    <g class="map-node" data-id="Office Vending" data-corridor="Main Entrance"><rect class="zone-box" x="993" y="105" width="50" height="50" rx="25"/><text class="lbl-room" x="1018" y="130" style="font-size: 42px;" text-anchor="middle" dominant-baseline="central">🥤</text></g>
+    <g class="map-node" data-id="Gym Lobby Vending" data-corridor="Gym Lobby"><rect class="zone-box" x="1053" y="505" width="50" height="50" rx="25"/><text class="lbl-room" x="1078" y="530" style="font-size: 42px;" text-anchor="middle" dominant-baseline="central">🥤</text></g>
+
+    <g class="map-node" data-id="principal" data-corridor="100 Hallway">
+        <rect class="zone-box" x="893" y="0" width="50" height="50" rx="25" style="cursor: pointer;" />
+        <text class="lbl-icon" x="918" y="25" style="font-size: 42px; pointer-events: none;" text-anchor="middle" dominant-baseline="central">👔</text>
+        <text class="lbl-room" x="918" y="65" text-anchor="middle" style="pointer-events: none;"></text>
+    </g>
+
+    <g class="map-node" data-id="superintendent" data-corridor="Main Vertical Hall">
+        <rect class="zone-box" x="1000" y="240" width="50" height="50" rx="25" style="cursor: pointer;" />
+        <text class="lbl-icon" x="1025" y="265" style="font-size: 42px; pointer-events: none;" text-anchor="middle" dominant-baseline="central">👑</text>
+        <text class="lbl-room" x="1025" y="305" text-anchor="middle" style="pointer-events: none;"></text>
+    </g>
 
     <g class="map-zoom-glass" transform="translate(380, 336)" style="cursor: pointer;">
         <rect width="128" height="128" rx="64" fill="white" stroke="var(--pirate-red)" stroke-width="4" />
@@ -126,17 +146,14 @@ export const schoolMapSVG = `
 `;
 
 // --- 🌐 GLOBAL INTERACTIVE MAP INTERACTION ENGINE ---
-// Listens dynamically across the entire app whenever the interactive map is rendered
 document.addEventListener("click", (e) => {
-    // Find the closest map node element inside our SVG
     const mapNode = e.target.closest(".map-node");
     if (!mapNode) return;
 
-    // Extract the exact room or zone unique identifier
     const targetDestination = mapNode.getAttribute("data-id");
     if (!targetDestination) return;
 
-    // Filter out core architectural walkways from assignment arrays
+    // Ignore clicks on structural hallway elements
     if (
         targetDestination.includes("Hallway") || 
         targetDestination.includes("Hall") || 
@@ -148,37 +165,44 @@ document.addEventListener("click", (e) => {
 
     let targetUpdated = false;
 
-    // 1. Identify if the Proxy Search Modal is active and update it
+    // 1. Handle Proxy Search Modal Input
     const proxyInput = document.getElementById("proxy-destination-input");
     const proxyModal = document.getElementById("modal-proxy-search");
     if (proxyInput && proxyModal && !proxyModal.classList.contains("hidden")) {
         proxyInput.value = targetDestination;
+        
+        // Dispatch events so the application registers the programmatic change
+        proxyInput.dispatchEvent(new Event('input', { bubbles: true }));
+        proxyInput.dispatchEvent(new Event('change', { bubbles: true }));
         targetUpdated = true;
     }
 
-    // 2. Identify if the Standard Pass Creation Modal is active and update it
+    // 2. Handle Standard Destination Input
     const standardInput = document.getElementById("input-destination");
     const standardModal = document.getElementById("new-pass-modal");
     if (!targetUpdated && standardInput && standardModal && !standardModal.classList.contains("hidden")) {
         standardInput.value = targetDestination;
+        
+        // Dispatch events so the application registers the programmatic change
+        standardInput.dispatchEvent(new Event('input', { bubbles: true }));
+        standardInput.dispatchEvent(new Event('change', { bubbles: true }));
         targetUpdated = true;
     }
 
-    // 3. Optional User Interface Enhancement: Close popout/fullscreen map if active
+    // 3. UI Cleanup & Selection Highlighting
     if (targetUpdated) {
         const mapPopoutModal = document.getElementById("map-popout-modal");
         if (mapPopoutModal && !mapPopoutModal.classList.contains("hidden")) {
             mapPopoutModal.classList.add("hidden");
         }
         
-        // Apply visual toggle tracking across current render cycle
         document.querySelectorAll("#interactive-school-map .zone-box").forEach(box => {
             box.style.stroke = "";
             box.style.strokeWidth = "";
         });
         const activeBox = mapNode.querySelector(".zone-box");
         if (activeBox) {
-            activeBox.style.stroke = "#2e7d32"; // Success Green outline tracking selector
+            activeBox.style.stroke = "#2e7d32"; 
             activeBox.style.strokeWidth = "3px";
         }
     }

@@ -41,9 +41,10 @@ export function renderHeader(user, role) {
         adminToolbar.style.flexDirection = "row"; // 🟢 Resets it from column to horizontal
         adminToolbar.style.gap = "10px";
 
-        adminToolbar.innerHTML = `
+       adminToolbar.innerHTML = `
             <button id="btn-emergency" class="admin-dashboard-btn btn-critical">🚨 Emergency Controls</button>
             <button id="btn-location-limits" class="admin-dashboard-btn btn-critical">🚦 Restriction Settings</button>
+            <button id="btn-send-message" class="admin-dashboard-btn btn-critical">✉️ Send Message</button>
             
             <button id="btn-open-send-pass" class="admin-dashboard-btn btn-primary">🎫 Send Student a Pass</button>
             <button id="btn-open-proxy-setup" class="admin-dashboard-btn btn-primary">💻 Open Pass As Student</button>
@@ -63,10 +64,8 @@ export function renderHeader(user, role) {
     if (teacherToolbar) {
         teacherToolbar.className = "teacher-toolbar";
         teacherToolbar.innerHTML = `
-            <button id="btn-create-pass" class="toolbar-btn" style="background-color: var(--pirate-red); color: white; border: none;">🎟️ Quick Outbound Pass</button>
             <button id="btn-open-send-pass" class="toolbar-btn" style="background-color: #2e7d32; color: white; border: none;">🎫 Send Student a Pass</button>
             <button id="btn-open-proxy-setup" class="toolbar-btn" style="background-color: #8e24aa; color: white; border: none;">💻 Open Pass As Student</button>
-            <button id="btn-emergency" class="danger-btn toolbar-btn" style="border: none;">🚨 Emergency</button>
         `;
     }
 } 
@@ -92,7 +91,20 @@ export function renderPassList(passes, containerId, countId) {
     container.innerHTML = passes.map(pass => {
         let actionButtons = '';
         
-        // 🟢 ADDED 'pending_warning' to show Approve/Reject buttons!
+        // Helper to format Firebase timestamps
+        const formatTime = (ts) => ts ? new Date(ts.toDate()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
+        
+        // Calculate the 4 Timestamps
+        const tLeft = formatTime(pass.acceptedAt);
+        const tArrived = formatTime(pass.arrivedAt);
+        const tDeparted = formatTime(pass.departedAt);
+        const tReturned = formatTime(pass.returnedAt);
+
+        // Determine if this room operates like a Restroom (No check-in required)
+        // 🌟 NEW: Respect the database bypass flag!
+        const requiresCheckIn = pass.requiresCheckIn !== false && pass.targetTeacher && pass.targetTeacher !== "No Receiving Teacher" && pass.targetTeacher !== "Unknown";
+        
+        // 🟢 BUTTON RENDERER
         if (['pending', 'pending_student', 'pending_restricted', 'pending_warning', 'waitlist'].includes(pass.status)) {
             
             let approveBtnText = "Approve";
@@ -103,21 +115,44 @@ export function renderPassList(passes, containerId, countId) {
                 approveBtnBg = "#f57c00";
             } else if (pass.status === 'pending_warning') {
                 approveBtnText = "⚠️ Approve Warning";
-                approveBtnBg = "#fbc02d"; // Yellow/Orange
+                approveBtnBg = "#fbc02d";
             }
 
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button class="card-btn" data-id="${pass.id}" data-action="active" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: ${approveBtnBg}; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">${approveBtnText}</button>
+                    <button class="card-btn" data-id="${pass.id}" data-action="active" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: ${approveBtnBg}; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; flex: 1;">${approveBtnText}</button>
                     <button class="card-btn" data-id="${pass.id}" data-action="rejected" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #c62828; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Reject</button>
                 </div>
             `;
         } else if (pass.status === 'active' || pass.status === 'active_bypassed') {
-            actionButtons = `
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #0277bd; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">End Pass (Return)</button>
-                </div>
-            `;
+            if (requiresCheckIn) {
+                if (!pass.arrivedAt) {
+                    actionButtons = `
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button class="card-btn" data-id="${pass.id}" data-action="arrived" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #0288d1; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; flex: 1;">📍 Arrived at Dest</button>
+                        </div>
+                    `;
+                } else if (!pass.departedAt) {
+                    actionButtons = `
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button class="card-btn" data-id="${pass.id}" data-action="departed" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #f57c00; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; flex: 1;">🚶 Departed Dest</button>
+                        </div>
+                    `;
+                } else {
+                    actionButtons = `
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #2e7d32; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✅ Student Returned Home</button>
+                        </div>
+                    `;
+                }
+            } else {
+                // Treats it like a restroom/fountain (No destination check-in needed)
+                actionButtons = `
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #2e7d32; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✅ Student Returned</button>
+                    </div>
+                `;
+            }
         } else if (pass.status === 'returned_bypassed') {
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
@@ -132,59 +167,47 @@ export function renderPassList(passes, containerId, countId) {
             `;
         }
         
-        const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown") ? ` (${pass.targetTeacher})` : "";
+        const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown" && pass.targetTeacher !== "No Receiving Teacher") ? ` (${pass.targetTeacher})` : "";
             
-        // ========================================================
-        // 🟢 NEW: DYNAMIC CARD BACKGROUND COLORS (Smarter Bypasses)
-        // ========================================================
+        // DYNAMIC CARD BACKGROUND COLORS
         const isBypassedStatus = ['active_bypassed', 'returned_bypassed'].includes(pass.status);
-        
-        // If it's bypassed AND has a warningReason, it's a Yellow Warning. Otherwise, it's a Red Restriction.
         const isWarning = pass.status === 'pending_warning' || (isBypassedStatus && pass.warningReason);
         const isRestricted = pass.status === 'pending_restricted' || (isBypassedStatus && !pass.warningReason);
-        
         const isNormalActiveOrPending = ['pending', 'pending_student', 'waitlist', 'active'].includes(pass.status);
 
         let cardBgColor = '#ffffff'; 
         let cardBorderColor = '#eaedf2'; 
 
         if (isRestricted) {
-            cardBgColor = '#ffebee'; // Light Red
+            cardBgColor = '#ffebee'; 
             cardBorderColor = '#ef5350';
         } else if (isWarning) {
-            cardBgColor = '#fffde7'; // Light Yellow
+            cardBgColor = '#fffde7'; 
             cardBorderColor = '#fbc02d';
         } else if (isNormalActiveOrPending) {
-            cardBgColor = '#e8f5e9'; // Light Green
+            cardBgColor = '#e8f5e9'; 
             cardBorderColor = '#81c784';
         }
         
-        // LEFT BORDER PHASE COLORING
         let leftBorderColor = '#0277bd'; 
         if (pass.status.includes('pending') || pass.status === 'waitlist') leftBorderColor = '#ff9800'; 
         if (pass.status.includes('active')) leftBorderColor = '#4caf50'; 
         if (pass.status.includes('returned') || pass.status === 'archived' || pass.status === 'fraudulent_review') leftBorderColor = '#757575'; 
         if (pass.status === 'fraudulent_review') leftBorderColor = '#c62828'; 
         
-        // WAITLIST BADGE
         const waitlistBadgeHTML = pass.status === 'waitlist' 
             ? `<div style="margin-bottom: 8px;"><span style="background-color: #f57c00; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">⏳ Waitlisted (#${pass.queuePosition})</span></div>` 
             : '';
 
-        // RESTRICTION / WARNING BANNER 
         let restrictionBannerHTML = '';
         if (isRestricted) {
             const overrideText = pass.status === 'pending_restricted' 
                 ? "<em>Overriding notifies admin.</em>" 
                 : `<strong style='color: #c62828;'>⚠️ Restriction was bypassed by ${pass.bypassedBy || "Admin"}</strong>`;
 
-            let restrictionReason = "";
-            if (pass.restrictionType === "area_lockdown") {
-                 restrictionReason = `Area Locked: <strong>${pass.lockedAreaName}</strong> is currently restricted.`;
-            } else {
-                 restrictionReason = `<strong style="font-size: 0.9rem;">🚨 RESTRICTED PEER CONFLICT WITH ${pass.restrictedPeerName || pass.restrictedPeer || "RESTRICTED PEER"}</strong><br>
-                                      <span style="font-size: 0.8rem; color: #444;"><strong>Conflict:</strong> Student ID ${pass.restrictedPeer || "Admin Restriction"}</span>`;
-            }
+            let restrictionReason = pass.restrictionType === "area_lockdown" 
+                ? `Area Locked: <strong>${pass.lockedAreaName}</strong> is currently restricted.`
+                : `<strong style="font-size: 0.9rem;">🚨 RESTRICTED PEER CONFLICT WITH ${pass.restrictedPeerName || pass.restrictedPeer || "RESTRICTED PEER"}</strong><br><span style="font-size: 0.8rem; color: #444;"><strong>Conflict:</strong> Student ID ${pass.restrictedPeer || "Admin Restriction"}</span>`;
 
             restrictionBannerHTML = `
                 <div style="background: #ffcdd2; border-left: 5px solid #b71c1c; padding: 8px; margin-bottom: 8px; border-radius: 4px; font-size: 0.85rem;">
@@ -193,11 +216,23 @@ export function renderPassList(passes, containerId, countId) {
                 </div>
             `;
         } else if (isWarning) {
-            // 🟢 NEW: Handles Yellow banner for both Pending AND Active passes!
             const bypassNote = isBypassedStatus ? `<br><span style="font-size: 0.8rem; color: #444;"><em>Approved by teacher</em></span>` : "";
             restrictionBannerHTML = `
                 <div style="background: #fff3cd; border-left: 5px solid #fbc02d; padding: 8px; margin-bottom: 8px; border-radius: 4px; font-size: 0.85rem;">
                     <span style="color: #856404; font-weight: 500;">⚠️ <strong>Flagged:</strong> ${pass.warningReason || "High pass volume detected."}</span>${bypassNote}
+                </div>
+            `;
+        }
+
+        // 🟢 NEW: 4-Step Timeline Tracker
+        let timelineHTML = '';
+        if (pass.status !== 'waitlist' && pass.status !== 'pending' && pass.status !== 'pending_student' && pass.status !== 'pending_restricted' && pass.status !== 'pending_warning') {
+            timelineHTML = `
+                <div style="font-size: 0.8rem; color: #666; margin-top: 8px; background: rgba(255,255,255,0.6); padding: 6px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);">
+                    <div style="display: flex; justify-content: space-between;"><span>🛫 Left Origin:</span> <strong>${tLeft}</strong></div>
+                    ${requiresCheckIn ? `<div style="display: flex; justify-content: space-between;"><span>📍 Arrived Dest:</span> <strong>${tArrived}</strong></div>` : ''}
+                    ${requiresCheckIn ? `<div style="display: flex; justify-content: space-between;"><span>🚶 Left Dest:</span> <strong>${tDeparted}</strong></div>` : ''}
+                    <div style="display: flex; justify-content: space-between;"><span>🏠 Returned:</span> <strong>${tReturned}</strong></div>
                 </div>
             `;
         }
@@ -210,9 +245,7 @@ export function renderPassList(passes, containerId, countId) {
             destinationDisplay = `<del style="color: #999;">${pass.originalDestination}</del> <strong style="color: #2e7d32;">${pass.destination}</strong>`;
         }
         
-        if (pass.editedBy) {
-            editNoteHTML = `<div style="font-size: 0.8rem; color: #e65100; font-style: italic; margin-top: 4px;">✏️ Edited by ${pass.editedBy}</div>`;
-        }
+        if (pass.editedBy) editNoteHTML = `<div style="font-size: 0.8rem; color: #e65100; font-style: italic; margin-top: 4px;">✏️ Edited by ${pass.editedBy}</div>`;
 
         if (pass.status === 'fraudulent_review' || pass.fraudExplanation) {
             fraudNoteHTML = `<div style="background: #ffebee; border: 1px solid #ffcdd2; color: #c62828; padding: 6px; border-radius: 4px; font-size: 0.85rem; margin-top: 8px;">
@@ -228,14 +261,13 @@ export function renderPassList(passes, containerId, countId) {
                 </div>
                 ${waitlistBadgeHTML}
                 ${restrictionBannerHTML}
-                
                 <div style="color: #555; font-size: 0.95rem; margin-bottom: 2px;">
                     🛫 Origin: <strong>${pass.origin || "Unknown Room"}</strong>
                 </div>
                 <div style="color: #555; font-size: 0.95rem; margin-bottom: 5px;">
                     📍 Destination: ${destinationDisplay}
                 </div>
-                
+                ${timelineHTML}
                 ${editNoteHTML}
                 ${fraudNoteHTML}
                 ${pass.senderName ? `<div style="color: #888; font-size: 0.85rem; font-style: italic; margin-top: 4px;">Initiated by: ${pass.senderName}</div>` : ''}

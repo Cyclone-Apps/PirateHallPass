@@ -204,6 +204,38 @@ export async function processRoomRelease(roomId) {
  */
 export async function createNewPass(passData) {
 
+    // =========================================================
+    // 🌟 NEW: SKIP CHECK-IN FLAG ASSIGNMENT
+    // =========================================================
+    try {
+        // Default all passes to require a check-in
+        passData.requiresCheckIn = true; 
+        
+        let skipList = {};
+        
+        // Try to pull from a live cache first to save database reads, 
+        // otherwise fetch the master schedule directly.
+        if (window.liveMasterSchedule && window.liveMasterSchedule.skipCheckInRooms) {
+            skipList = window.liveMasterSchedule.skipCheckInRooms;
+        } else {
+            const scheduleSnap = await getDoc(doc(db, "settings", "master_schedule"));
+            if (scheduleSnap.exists()) {
+                skipList = scheduleSnap.data().skipCheckInRooms || {};
+            }
+        }
+
+        // Check for exact match first, then fallback to lowercase just in case
+        const exactMatch = passData.destination;
+        const lowerMatch = (passData.destination || "").toLowerCase().trim();
+
+        if (skipList[exactMatch] || skipList[lowerMatch]) {
+            passData.requiresCheckIn = false;
+        }
+    } catch (err) {
+        console.error("Error evaluating skipCheckIn status:", err);
+        // Failsafe: if something breaks, it defaults to true (normal behavior)
+    }
+
     // 📍 1. Define your Hallway Routing Dictionary 
     const hallwayRoutes = {
         "Outside": ["Main Entrance", "Auditorium Lobby"], 

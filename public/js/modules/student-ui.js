@@ -357,6 +357,7 @@ export function renderStudentWaitingScreen(pass, statusData) {
             
             <p style="color: ${textColor}; font-size: 1.8rem; margin-bottom: 15px;">
                 Requests to go to <strong>${pass.destination}</strong>
+                ${pass.targetTeacher && pass.targetTeacher !== "Unknown" ? `<br><span style="font-size: 1.4rem;">(${pass.targetTeacher})</span>` : ""}
             </p>
 
             ${teacherNoteHtml}
@@ -376,21 +377,80 @@ export function renderStudentActiveScreen(pass) {
 
     container.style.backgroundColor = ""; 
 
+    // Determine the current phase of the pass
+    const hasArrived = !!pass.arrivedAt;
+    const hasDeparted = !!pass.departedAt;
+    
+    // 🌟 NEW: Check our database flag
+    const skipCheckIn = pass.requiresCheckIn === false; 
+
+    let titleHTML = "";
+    let timerHTML = "";
+    let instructionHTML = "";
+    let buttonHTML = "";
+
+    // 🌟 NEW: Bypass logic takes priority!
+    if (skipCheckIn) {
+        titleHTML = `<h2 style="color: #e65100; margin-top: 0; font-size: 2rem;">ACTIVE PASS</h2>`;
+        timerHTML = `<div id="student-timer-display" class="huge-timer" style="color: #333;">00:00</div>`;
+        instructionHTML = `<p style="color: #666; margin-top: 10px; font-weight: bold;">Return to your origin classroom when finished.</p>`;
+        buttonHTML = `
+            <button id="btn-teacher-return" data-id="${pass.id}" class="toolbar-btn primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem; background-color: #d32f2f; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                🛑 End Pass (Student Returned)
+            </button>
+        `;
+    } 
+    // 🚶 PHASE 3: Transit to Origin
+    else if (hasDeparted) {
+        titleHTML = `<h2 style="color: #e65100; margin-top: 0; font-size: 2rem;">RETURNING TO CLASS</h2>`;
+        timerHTML = `<div id="student-timer-display" class="huge-timer" style="color: #333;">00:00</div>`;
+        instructionHTML = `<p style="color: #666; margin-top: 10px; font-weight: bold;">Proceed directly back to your origin classroom.</p>`;
+        buttonHTML = `
+            <button id="btn-teacher-return" data-id="${pass.id}" class="toolbar-btn primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem; background-color: #d32f2f; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                🛑 End Pass (Student Returned)
+            </button>
+        `;
+    } 
+    // 🏢 PHASE 2: At Destination (Timer hidden/paused)
+    else if (hasArrived) {
+        const arrivalTime = pass.arrivedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        titleHTML = `<h2 style="color: #1976d2; margin-top: 0; font-size: 2rem;">AT DESTINATION</h2>`;
+        timerHTML = `
+            <div style="font-size: 2.2rem; font-weight: bold; color: #1976d2; margin: 20px 0;">Checked In</div>
+            <div style="font-size: 1.2rem; color: #555; margin-bottom: 10px;">Arrival: ${arrivalTime}</div>
+        `;
+        instructionHTML = `<p style="color: #666; margin-top: 10px; font-weight: bold;">Destination Teacher: Click below when student leaves.</p>`;
+        buttonHTML = `
+            <button id="btn-teacher-depart" data-id="${pass.id}" class="toolbar-btn primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem; background-color: #f57c00; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                🚶 Depart Student (Return to Origin)
+            </button>
+        `;
+    } 
+    // 🛫 PHASE 1: Transit to Destination
+    else {
+        titleHTML = `<h2 style="color: #e65100; margin-top: 0; font-size: 2rem;">ACTIVE PASS</h2>`;
+        timerHTML = `<div id="student-timer-display" class="huge-timer" style="color: #333;">00:00</div>`;
+        instructionHTML = `<p style="color: #666; margin-top: 10px; font-weight: bold;">Proceed directly to your destination.</p>`;
+        buttonHTML = `
+            <button id="btn-teacher-checkin" data-id="${pass.id}" class="toolbar-btn primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem; background-color: #1976d2; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                🏢 Check In Student (Dest. Teacher)
+            </button>
+        `;
+    }
+
     container.innerHTML = `
         <div class="active-pass-container">
-            <h2 style="color: #e65100; margin-top: 0; font-size: 2rem;">ACTIVE PASS</h2>
+            ${titleHTML}
             <p style="font-size: 1.2rem; color: #333; margin-bottom: 5px;">
                 Destination: <strong>${pass.destination}</strong>
             </p>
             
-            <div id="student-timer-display" class="huge-timer" style="color: #333;">00:00</div>
+            ${timerHTML}
             
-            <p style="color: #666; margin-top: 10px; font-weight: bold;">Proceed directly to your destination.</p>
+            ${instructionHTML}
             <div style="margin-top: 30px; border-top: 2px solid #ffe0b2; padding-top: 25px;">
                 <h4 style="margin-top: 0; margin-bottom: 15px; color: #e65100;">Teacher Use Only</h4>
-                <button id="btn-teacher-return" data-id="${pass.id}" class="toolbar-btn primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem;">
-                    🛑 End Pass (Student Returned)
-                </button>
+                ${buttonHTML}
             </div>
         </div>
     `;

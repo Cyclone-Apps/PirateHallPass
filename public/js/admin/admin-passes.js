@@ -162,6 +162,7 @@ async function submitProxyPass(e) {
         type: passType,
         initiatedBy: "admin_proxy",
         senderName: window.currentUser?.displayName || "Admin",
+        proxyBy: window.currentUser?.displayName || "Admin", // 🌟 NEW: Bulletproof Admin name
         isProxy: true,
         createdAt: new Date().toISOString()
     };
@@ -228,19 +229,23 @@ function openProxyMapPopout(e) {
     }
 
     new MapController({
-        containerId: "full-map-container",
-        mode: "proxy_pass",
-        periodOverride: selectedPeriod,
-        onRoomSelect: (selection) => {
-            const proxyInput = document.getElementById("proxy-destination-input") || 
-                               document.getElementById("input-proxy-destination");
-            if (proxyInput) {
-                proxyInput.value = selection.room;
-                proxyInput.dataset.teacher = selection.teacher || "Unknown";
-            }
-            mapModal.classList.add("hidden"); 
+    containerId: "full-map-container",
+    mode: "proxy_pass",
+    periodOverride: selectedPeriod,
+    onRoomSelect: (selection) => {
+        const proxyInput = document.getElementById("proxy-destination-input") || 
+                           document.getElementById("input-proxy-destination");
+        if (proxyInput) {
+            proxyInput.value = selection.room;
+            proxyInput.dataset.teacher = selection.teacher || "Unknown";
+            
+            // 🔥 THE FIX: Force the app to recognize the programmatic change
+            proxyInput.dispatchEvent(new Event('input', { bubbles: true }));
+            proxyInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
-    });
+        mapModal.classList.add("hidden"); 
+    }
+});
 }
 
 // ==========================================

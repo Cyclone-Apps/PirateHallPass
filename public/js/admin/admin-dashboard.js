@@ -85,7 +85,9 @@ export function initDashboardManagement() {
         // 1. Open Modal
         if (e.target.id === "btn-open-admin-history") {
             // Set BOTH dates to Today
-            const todayStr = new Date().toISOString().split('T')[0];
+            const now = new Date();
+            const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+            
             document.getElementById("filter-history-start-date").value = todayStr;
             document.getElementById("filter-history-end-date").value = todayStr;
             
@@ -249,7 +251,7 @@ export function initDashboardManagement() {
         renderAdminHistoryPasses(filtered, "admin-history-list");
     }
 
-    // 🟢 Renders the Custom Admin History Cards (Including Edits & Fraud Flags)
+    // 🟢 Renders the Custom Admin History Cards (Including Edits, Fraud Flags, & Check-Ins)
     function renderAdminHistoryPasses(passes, containerId) {
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -266,37 +268,38 @@ export function initDashboardManagement() {
             const origStartObj = pass.originalAcceptedAt?.toDate?.();
             const origEndObj = pass.originalReturnedAt?.toDate?.();
             
-            const formatTime = (dateObj) => dateObj ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Unknown";
+            const arrivedObj = pass.arrivedAt?.toDate?.();
+            const departedObj = pass.departedAt?.toDate?.();
+            
+            // 🌟 Updated to return --:-- if missing
+            const formatTime = (dateObj) => dateObj ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "--:--";
             
             const startTimeStr = formatTime(startObj);
             const endTimeStr = formatTime(endObj);
+            const arrivedTimeStr = formatTime(arrivedObj);
+            const departedTimeStr = formatTime(departedObj);
 
-            let durationStr = "";
-            if (startObj && endObj) {
-                const diffMins = Math.round((endObj - startObj) / 60000);
-                durationStr = `(${diffMins}m)`;
-            }
-
-            // Strikethrough Logic
+            // Strikethrough Logic for Destination
             let destinationDisplay = `<strong>${pass.destination}</strong>`;
-            let editNoteHTML = '';
-            let fraudNoteHTML = '';
-            let leftBorderColor = '#607d8b'; // Default gray/blue
-
             if (pass.originalDestination && pass.originalDestination !== pass.destination) {
                 destinationDisplay = `<del style="color: #d32f2f;">${pass.originalDestination}</del> <strong style="color: #d32f2f; margin-left: 5px;">${pass.destination}</strong>`;
             }
             
-            let startTimeDisplay = startTimeStr;
+            // Strikethrough Logic for Times
+            let startTimeDisplay = `<strong>${startTimeStr}</strong>`;
             if (origStartObj) {
-                startTimeDisplay = `<del style="color: #d32f2f;">${formatTime(origStartObj)}</del> <span style="color: #d32f2f;">${startTimeStr}</span>`;
+                startTimeDisplay = `<del style="color: #d32f2f;">${formatTime(origStartObj)}</del> <strong style="color: #d32f2f; margin-left: 5px;">${startTimeStr}</strong>`;
             }
             
-            let endTimeDisplay = endTimeStr;
+            let endTimeDisplay = `<strong>${endTimeStr}</strong>`;
             if (origEndObj) {
-                endTimeDisplay = `<del style="color: #d32f2f;">${formatTime(origEndObj)}</del> <span style="color: #d32f2f;">${endTimeStr}</span>`;
+                endTimeDisplay = `<del style="color: #d32f2f;">${formatTime(origEndObj)}</del> <strong style="color: #d32f2f; margin-left: 5px;">${endTimeStr}</strong>`;
             }
             
+            let leftBorderColor = '#607d8b'; // Default gray/blue
+            let fraudNoteHTML = '';
+            let editNoteHTML = '';
+
             if (pass.editedBy) {
                 editNoteHTML = `<div style="font-size: 0.8rem; color: #e65100; font-style: italic; margin-top: 4px; margin-bottom: 8px;">✏️ Edited by ${pass.editedBy}</div>`;
             }
@@ -310,21 +313,50 @@ export function initDashboardManagement() {
                 `;
             }
 
+            // Who initiated the pass?
+            let initiatorName = pass.proxyBy || pass.senderName || pass.studentDisplayName || "Unknown";
+
             const card = document.createElement("div");
-            card.style.cssText = `background: white; border: 1px solid #eaedf2; border-left: 5px solid ${leftBorderColor}; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`;
+            card.style.cssText = `background: white; border: 1px solid #eaedf2; border-left: 5px solid ${leftBorderColor}; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 10px;`;
             
             card.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 5px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 12px;">
                     <span style="font-size: 1.1rem; color: #1a1a1a;">🧑‍🎓 ${pass.studentDisplayName || pass.studentName || "Unknown"}</span>
                     <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee; padding: 2px 6px; border-radius: 4px;">${pass.type || "Pass"}</span>
                 </div>
+                
                 ${fraudNoteHTML}
-                <div style="color: #555; font-size: 0.95rem; margin-bottom: 4px;">
-                    📍 To: ${destinationDisplay}
+                
+                <div style="color: #444; font-size: 0.95rem; margin-bottom: 6px; display: flex; align-items: center;">
+                    <span style="margin-right: 8px;">🛫</span> <span>Origin: <strong>${pass.origin || "Unknown"}</strong></span>
                 </div>
+                <div style="color: #444; font-size: 0.95rem; margin-bottom: 12px; display: flex; align-items: center;">
+                    <span style="margin-right: 8px;">📍</span> <span>Destination: ${destinationDisplay}</span>
+                </div>
+                
                 ${editNoteHTML}
-                <div style="background: #f8f9fa; border: 1px solid #e0e0e0; padding: 6px 10px; border-radius: 4px; display: inline-block; font-size: 0.85rem; color: #333; margin-top: 5px;">
-                    ⏱️ <strong>${startTimeDisplay} - ${endTimeDisplay}</strong> <span style="color: #d32f2f; font-weight: bold; margin-left: 5px;">${durationStr}</span>
+                
+                <div style="background: #ffffff; border: 1px solid #e0e0e0; padding: 10px 12px; border-radius: 6px; font-size: 0.9rem; color: #555;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span><span style="margin-right: 6px;">🛫</span> Left Origin:</span>
+                        ${startTimeDisplay}
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span><span style="margin-right: 6px;">📍</span> Arrived Dest:</span>
+                        <strong>${arrivedTimeStr}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span><span style="margin-right: 6px;">🚶</span> Left Dest:</span>
+                        <strong>${departedTimeStr}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span><span style="margin-right: 6px;">🏠</span> Returned:</span>
+                        ${endTimeDisplay}
+                    </div>
+                </div>
+                
+                <div style="margin-top: 12px; font-size: 0.85rem; color: #888; font-style: italic;">
+                    Initiated by: ${initiatorName}
                 </div>
             `;
             container.appendChild(card);
@@ -352,7 +384,16 @@ document.addEventListener("click", async (e) => {
             extraData.bypassedBy = window.currentUser?.displayName || "Admin";
         }
 
-        // 🌟 2. RETURN INTERCEPT
+        // 🌟 2. CHECK-IN TIMELINE INTERCEPTS
+        if (newStatus === "arrived") {
+            newStatus = currentStatus; // Stay active
+            extraData.arrivedAt = new Date(); // Timestamp Arrival
+        } else if (newStatus === "departed") {
+            newStatus = currentStatus; // Stay active
+            extraData.departedAt = new Date(); // Timestamp Departure
+        }
+
+        // 🌟 3. RETURN INTERCEPT
         if (currentStatus === "active_bypassed" && newStatus === "returned") {
             newStatus = "returned_bypassed";
         }
