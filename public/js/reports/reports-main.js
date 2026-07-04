@@ -1,6 +1,7 @@
 import { loadSingleStudentReport } from "./r-single.js";
 import { loadCompareReport } from "./r-compare.js";
-import { loadTimeframeReport } from "./r-timeframe.js"; // <-- NEW IMPORT
+import { loadTimeframeReport } from "./r-timeframe.js";
+import { loadIntersectionsReport } from "./r-intersections.js";
 
 document.addEventListener("DOMContentLoaded", () => {
     // 1. Grab all the navigation buttons
@@ -39,10 +40,10 @@ document.addEventListener("DOMContentLoaded", () => {
         loadTimeframeReport(settingsContainer, reportContainer);
     });
 
-    // 6. Placeholder for Hall Intersections
+    // 6. Wire up Hall Intersections (UPDATED)
     btnHallIntersections.addEventListener("click", () => {
         prepareContainers();
-        settingsContainer.innerHTML = "<h2>Hall Intersections Settings (Coming Soon)</h2>";
+        loadIntersectionsReport(settingsContainer, reportContainer); // <-- REPLACE THE PLACEHOLDER WITH THIS
     });
 
     // Optional: Auto-load the first tab on page load
