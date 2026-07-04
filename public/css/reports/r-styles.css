@@ -1,0 +1,495 @@
+:root {
+  --pirate-red: #ef1a14;
+  --pirate-silver: #ced0d0;
+  --text-dark: #1a1a1a;
+  --text-light: #ffffff;
+  --bg-color: #f4f6f9;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background-color: var(--pirate-red);
+  color: var(--text-dark);
+  margin: 0 auto;
+  padding: 20px;
+  max-width: 1000px;
+}
+
+h1 {
+  color: var(--text-light);
+  margin-bottom: 20px;
+}
+
+h2 {
+  margin-top: 0;
+  border-bottom: 2px solid var(--text-dark);
+  padding-bottom: 5px;
+  margin-bottom: 20px;
+}
+
+/* --- Container Shared Styles --- */
+.container {
+  border-radius: 8px;
+  padding: 25px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+}
+
+.silver-bg {
+  background-color: var(--pirate-silver);
+}
+
+.white-bg {
+  background-color: var(--text-light);
+  min-height: 250px;
+}
+
+/* Utility to hide containers when not in use */
+.hidden {
+  display: none !important;
+}
+
+/* --- Button & Navigation Styles --- */
+#navContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  opacity: 0.85;
+  transform: translateY(-2px);
+}
+
+.btn-dark {
+  background-color: var(--text-dark);
+  color: var(--text-light);
+}
+
+/* --- Settings Container Split Layout --- */
+.settings-layout {
+  display: flex;
+  gap: 30px;
+}
+
+.settings-left {
+  flex: 1; 
+  padding-right: 30px;
+  border-right: 2px solid var(--text-dark); 
+}
+
+.settings-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  min-width: 220px;
+}
+
+/* Inline Search Group */
+.search-group {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.search-group label {
+  font-weight: bold;
+  white-space: nowrap; 
+}
+
+/* --- Searchable Dropdown Popup Styles --- */
+.searchable-dropdown {
+  position: relative;
+  flex: 1; 
+}
+
+.searchable-input {
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--text-dark);
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.dropdown-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--text-light);
+  border: 1px solid var(--pirate-silver);
+  border-radius: 0 0 6px 6px;
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 1000;
+  display: none; 
+  box-shadow: 0 6px 12px rgba(0,0,0,0.15); 
+}
+
+.dropdown-item {
+  padding: 12px 15px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.dropdown-item:hover {
+  background-color: #f0f0f0;
+}
+
+.dropdown-name {
+  font-weight: bold;
+  color: var(--text-dark);
+}
+
+.dropdown-email {
+  color: #666;
+  font-size: 0.9em;
+  margin-left: 6px;
+}
+
+/* --- Report Table Styles --- */
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+  background-color: var(--text-light);
+}
+
+.report-table th, 
+.report-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid var(--pirate-silver);
+}
+
+.report-table th {
+  background-color: var(--bg-color);
+  font-weight: bold;
+  color: var(--text-dark);
+  border-bottom: 2px solid var(--text-dark);
+}
+
+.report-table tr:hover {
+  background-color: #f9f9f9;
+}
+
+/* --- Date Filters --- */
+.date-group {
+  display: flex;
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.date-input-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.date-input-wrapper label {
+  font-size: 0.85em;
+  color: var(--text-dark);
+  margin-bottom: 4px;
+}
+
+.date-input-wrapper input {
+  padding: 8px;
+  border: 1px solid var(--text-dark);
+  border-radius: 4px;
+}
+
+/* --- Status Filter Dropdown --- */
+.filter-wrapper {
+  position: relative;
+  display: inline-block;
+  margin-left: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.filter-icon {
+  font-size: 1.1em;
+  opacity: 0.7;
+}
+.filter-icon:hover {
+  opacity: 1;
+}
+
+.status-dropdown {
+  position: absolute;
+  top: 120%;
+  right: 0;
+  background: var(--text-light);
+  border: 1px solid var(--pirate-silver);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  border-radius: 6px;
+  padding: 12px;
+  z-index: 1000;
+  min-width: 160px;
+  display: none; 
+  font-weight: normal; 
+  color: var(--text-dark);
+}
+
+/* Toggled via JS */
+.status-dropdown.show {
+  display: block;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 0.95em;
+  text-transform: capitalize;
+}
+
+.clear-btn {
+  background: none;
+  border: none;
+  color: var(--pirate-red);
+  cursor: pointer;
+  font-size: 0.9em;
+  padding: 0;
+  margin-top: 8px;
+  text-decoration: underline;
+  font-weight: bold;
+}
+
+/* --- Multi-Select Tags --- */
+.selected-tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    min-height: 32px; /* Keeps layout from jumping if empty */
+}
+
+.student-tag {
+    background-color: #2b78e4; /* Matches your mockup */
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 0.9em;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.student-tag .tag-remove {
+    color: #ffcccc;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 1.1em;
+    line-height: 1;
+}
+
+.student-tag .tag-remove:hover {
+    color: #ffffff;
+}
+
+/* Gray out input when max students reached */
+.searchable-input:disabled {
+    background-color: #e9ecef;
+    cursor: not-allowed;
+}
+
+/* --- Compare Students Timeline --- */
+.compare-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 20px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid var(--pirate-silver);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+}
+
+.timeline-day-group {
+    margin-bottom: 30px;
+}
+
+.timeline-date-header {
+    background: var(--text-dark);
+    color: var(--text-light);
+    padding: 8px 12px;
+    font-weight: bold;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+.timeline-event-row {
+    display: flex;
+    align-items: stretch;
+    margin-bottom: 4px;
+    background: #ffffff;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.timeline-time-col {
+    width: 160px;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-right: 1px solid #eee;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    font-size: 0.85em;
+    flex-shrink: 0;
+}
+
+.timeline-time-col strong {
+    color: var(--text-dark);
+}
+
+.timeline-tracks-col {
+    display: flex;
+    flex-grow: 1;
+}
+
+.student-track {
+    flex: 1;
+    border-right: 1px solid #f0f0f0;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+}
+
+.student-track:last-child {
+    border-right: none;
+}
+
+.track-block {
+    width: 100%;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.8em;
+    font-weight: bold;
+    text-shadow: 0px 1px 2px rgba(0,0,0,0.3);
+}
+
+.no-pass-block {
+    width: 100%;
+    background: transparent;
+}
+
+/* --- Print Styles --- */
+@media print {
+    /* Hide the settings panel and navigation when printing */
+    .settings-layout, 
+    .admin-nav {
+        display: none !important;
+    }
+    
+    /* Force browsers to print our timeline track background colors */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Ensure the report container takes up the full page */
+    #reportOutputContainer {
+        width: 100%;
+        margin: 0;
+        padding: 0;
+    }
+}
+
+/* --- Compare Students - Vertical Overlap Layout (Updated) --- */
+.timeline-cluster {
+    margin: 20px 0 40px 0;
+    padding-top: 10px;
+    display: flex;
+    justify-content: center; /* Centers the whole block of columns */
+}
+
+.cluster-time-axis {
+    position: relative;
+    display: flex;
+    background: #fdfdfd;
+    border-radius: 6px;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.02);
+}
+
+.student-col {
+    width: 50px; /* Lock to exactly 20px */
+    flex: none;  /* Prevent stretching */
+    position: relative;
+    /* Removed the right border so they touch */
+}
+
+.overlap-block {
+    position: absolute;
+    width: 50px; /* Match column width */
+    left: 0;
+    border-radius: 4px;
+    box-shadow: 1px 1px 3px rgba(0,0,0,0.4);
+    opacity: 0.95;
+    z-index: 5;
+    transition: transform 0.1s, filter 0.1s;
+    cursor: pointer; /* Show it's clickable */
+}
+
+.overlap-block:hover {
+    filter: brightness(1.2);
+    z-index: 10;
+}
+
+/* Modal for clicking a pass */
+.pass-detail-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    z-index: 1000;
+    min-width: 300px;
+}
+
+.modal-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+}

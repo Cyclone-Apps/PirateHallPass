@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Reports</title>
+  <link rel="stylesheet" href="css/reports/r-styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+  <h1>Admin Reports</h1>
+
+  <div id="navContainer" class="container silver-bg">
+    <button class="btn btn-dark" id="btnSingleStudent">Single Student</button>
+    <button class="btn btn-dark" id="btnCompareStudents">Compare Students</button>
+    <button class="btn btn-dark" id="btnTimeframeList">Timeframe List</button>
+    <button class="btn btn-dark" id="btnHallIntersections">Hall Intersections</button>
+  </div>
+
+  <div id="settingsContainer" class="container silver-bg hidden">
+    </div>
+
+  <div id="reportContainer" class="container white-bg hidden">
+    </div>
+
+  <script type="module" src="js/reports/reports-main.js"></script>
+</body>
+</html>
