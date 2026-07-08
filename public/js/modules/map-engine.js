@@ -217,33 +217,26 @@ export class MapController {
             }
         }
 
-        // If no teacher is found, stop here.
+        // If no teacher is found in the schedule, stop here.
         if (!rawName) return null;
 
         // ==========================================
-        // 🟢 FORMAT NAME: Remove first name automatically
+        // 🟢 NEW: PRECISE ALIAS & MAP NAME LOOKUP
         // ==========================================
-        let cleanName = rawName.trim();
-
-        // Check if name is formatted as "Last, First"
-        if (cleanName.includes(",")) {
-            cleanName = cleanName.split(",")[0].trim();
-            return cleanName;
-        }
-
-        const parts = cleanName.split(/\s+/);
-        if (parts.length === 1) return cleanName; // Already just one word
-
-        const titles = ["mr.", "mrs.", "ms.", "miss", "dr.", "coach"];
-        const firstWord = parts[0].toLowerCase();
         
-        if (titles.includes(firstWord)) {
-            // It has a title! Return "Title LastName" (e.g., "Ms. Britt")
-            return parts[0] + " " + parts[parts.length - 1];
-        } else {
-            // No title! Return just the "LastName" (e.g., "Britt")
-            return parts[parts.length - 1];
+        // 1. Check if the activeStaffList is available globally
+        const staffList = window.activeStaffList || [];
+        
+        // 2. Find the user whose Schedule Link (Alias) matches the raw schedule name
+        const matchedStaff = staffList.find(staff => staff.scheduleAlias === rawName);
+
+        // 3. If we found a linked account AND they have a custom Map Name set, use it!
+        if (matchedStaff && matchedStaff.mapName && matchedStaff.mapName.trim() !== "") {
+            return matchedStaff.mapName.trim();
         }
+
+        // 4. Fallback: If no link is made or no map name is set yet, just return the raw schedule name
+        return rawName.trim();
     }
 
     showTeacherNames() {

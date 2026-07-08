@@ -381,8 +381,8 @@ export function renderStudentActiveScreen(pass) {
     const hasArrived = !!pass.arrivedAt;
     const hasDeparted = !!pass.departedAt;
     
-    // 🌟 NEW: Check our database flag
-    const skipCheckIn = pass.requiresCheckIn === false; 
+    // 🌟 NEW: Check our database flag OR if it is a Tardy pass
+    const skipCheckIn = pass.requiresCheckIn === false || pass.type === "tardy";
 
     let titleHTML = "";
     let timerHTML = "";
@@ -793,6 +793,78 @@ export function renderStudentBlindRestrictionScreen(pass) {
         </div>
     `;
 }
+
+/**
+ * Renders the Gray Scheduled/Future Pass Screen
+ */
+export function renderStudentScheduledScreen(pass) {
+    // 🚨 SANITY CHECK: If you don't see this in the console, your browser is running old code!
+    console.log("🍓🍓🍓 BERRY BLASTER! The Gray Screen function is running! 🍓🍓🍓");
+
+    const mainContainer = document.getElementById("kiosk-main-widget");
+    if (!mainContainer) return;
+
+    // 1. Format the Teacher Name 
+    let teacherName = pass.proxyTeacherName || pass.teacherName || "Teacher";
+
+    // 2. Format the Date
+    let dateStr = "an upcoming date";
+    if (pass.scheduledDate) {
+        const d = new Date(pass.scheduledDate + "T12:00:00");
+        if (!isNaN(d)) {
+            dateStr = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+        }
+    }
+
+    // 3. Format the Time
+    let timeStr = "when available";
+    if (pass.scheduledPeriod && pass.scheduledPeriod !== "None") {
+        timeStr = `${pass.scheduledPeriod} period`;
+    } else if (pass.scheduledTime) {
+        const [hourStr, minStr] = pass.scheduledTime.split(':');
+        if (hourStr && minStr) {
+            let h = parseInt(hourStr, 10);
+            const ampm = h >= 12 ? 'pm' : 'am';
+            h = h % 12 || 12;
+            timeStr = `${h}:${minStr} ${ampm}`;
+        }
+    }
+
+    // 4. Check if Required or Requested
+    const reqType = (pass.passType && pass.passType.toLowerCase() === 'required') ? 'required' : 'requested';
+    const displayType = reqType.charAt(0).toUpperCase() + reqType.slice(1);
+
+    // 5. Build the UI
+    mainContainer.style.backgroundColor = ""; 
+    mainContainer.innerHTML = `
+        <div class="kiosk-card panel" style="text-align: center; border: 4px solid #9e9e9e; background: #f5f5f5; padding: 40px; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+            
+            <p style="color: #616161; font-size: 1.4rem; font-weight: 500; margin-bottom: 20px; text-transform: uppercase;">
+                Scheduled Pass from ${teacherName}<br>
+                <span style="font-size: 1.1rem; opacity: 0.8; text-transform: none;">on ${dateStr} at ${timeStr}</span>
+            </p>
+            
+            <h1 style="color: #212121; font-size: 4rem; margin: 10px 0; line-height: 1;">
+                ${pass.studentDisplayName || "Student"}
+            </h1>
+            
+            <h2 style="color: #424242; font-size: 2.5rem; margin-bottom: 10px;">
+                Is <span style="color: var(--pirate-red, #d32f2f);">${reqType}</span> to go to <strong>${pass.destination}</strong>
+            </h2>
+            
+            ${pass.purpose ? `<h3 style="color: #757575; font-size: 1.5rem; margin-bottom: 20px; font-weight: normal; font-style: italic;">"${pass.purpose}"</h3>` : ''}
+            
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ccc; width: 80%;">
+                <span style="font-size: 1.1rem; color: #616161;">
+                    📢 Scheduled By: ${teacherName}
+                </span>
+            </div>
+        </div>
+    `;
+}
+
+// Ensure it's attached globally so main-student.js can always trigger it!
+window.renderStudentScheduledScreen = renderStudentScheduledScreen;
 
 /**
  * Renders the Yellow Frequent Flyer Warning Screen & Sidebar Log

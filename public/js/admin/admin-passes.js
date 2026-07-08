@@ -4,29 +4,19 @@
 import { fetchAllStudents, createNewPass } from "../modules/pass-engine.js";
 import { setupStudentAutocomplete } from "../modules/ui-widgets.js";
 import { MapController } from "../modules/map-engine.js";
+import { initSendPassFeature } from '../features/f-send-pass.js';
 
 // ==========================================
 // 🚀 INITIALIZATION & EVENT BINDING
 // ==========================================
 export async function initPassesManagement() {
+    
+    initSendPassFeature();
+
     // 1. Pre-load students for both Autocomplete contexts
     try {
         const studentList = await fetchAllStudents();
         
-        // Setup Send Pass Modal Autocomplete
-        const pushNameInput = document.getElementById("proxy-search-input");
-        const pushDropdown = document.getElementById("proxy-datalist");
-        const pushHiddenEmail = document.getElementById("proxy-email-input");
-        const pushSubmitBtn = document.getElementById("btn-submit-proxy-pass");
-
-        if (pushNameInput && pushDropdown) {
-            setupStudentAutocomplete(
-                pushNameInput, pushDropdown, studentList, 
-                () => { if (pushSubmitBtn) pushSubmitBtn.disabled = false; }, 
-                null, pushHiddenEmail
-            );
-        }
-
         // Setup Virtual Kiosk Autocomplete
         const kioskNameInput = document.getElementById("input-proxy-name");
         const kioskDropdown = document.getElementById("proxy-autocomplete-list");
@@ -40,17 +30,8 @@ export async function initPassesManagement() {
         console.error("Failed to setup proxy autocomplete:", err);
     }
 
-    // 2. Bind Dynamic UI Dropdown Listeners
-    document.getElementById("proxy-pass-type")?.addEventListener("change", handlePassTypeChange);
-    document.getElementById("proxy-when")?.addEventListener("change", handleWhenChange);
-
     // 3 & 4. EVENT DELEGATION for Dynamically Rendered Header Buttons
     document.addEventListener("click", (e) => {
-        
-        // Send Pass Button
-        if (e.target.closest("#btn-open-send-pass")) {
-            openSendPassModal();
-        }
 
         // Virtual Kiosk Setup Button
         if (e.target.closest("#btn-open-proxy-setup")) {
@@ -60,9 +41,6 @@ export async function initPassesManagement() {
 
     // These buttons are safe to keep as standard listeners because they live inside the Modals 
     // (which are hardcoded in the HTML, not dynamically rendered)
-    document.getElementById("close-proxy-search")?.addEventListener("click", () => document.getElementById("modal-proxy-search")?.classList.add("hidden"));
-    document.getElementById("btn-submit-proxy-pass")?.addEventListener("click", submitProxyPass);
-    document.getElementById("btn-proxy-open-map")?.addEventListener("click", openProxyMapPopout);
 
     document.getElementById("close-proxy-setup")?.addEventListener("click", () => document.getElementById("proxy-setup-modal")?.classList.add("hidden"));
     document.getElementById("btn-close-emulator")?.addEventListener("click", closeEmulator);
@@ -210,42 +188,6 @@ async function submitProxyPass(e) {
     
     e.target.innerText = passType === "tardy" ? "Send Tardy Pass Now" : "Send Pass";
     e.target.disabled = false;
-}
-
-function openProxyMapPopout(e) {
-    e.preventDefault(); 
-    const mapModal = document.getElementById("map-popout-modal");
-    if (!mapModal) return;
-    
-    mapModal.classList.remove("hidden");
-    mapModal.style.zIndex = "10000"; 
-    const modalTitle = mapModal.querySelector("h2");
-    if (modalTitle) modalTitle.innerText = "🗺️ Select Destination";
-    
-    let selectedPeriod = null;
-    const whenType = document.getElementById("proxy-when")?.value;
-    if (whenType === "class_period") {
-        selectedPeriod = document.getElementById("proxy-when-period")?.value;
-    }
-
-    new MapController({
-    containerId: "full-map-container",
-    mode: "proxy_pass",
-    periodOverride: selectedPeriod,
-    onRoomSelect: (selection) => {
-        const proxyInput = document.getElementById("proxy-destination-input") || 
-                           document.getElementById("input-proxy-destination");
-        if (proxyInput) {
-            proxyInput.value = selection.room;
-            proxyInput.dataset.teacher = selection.teacher || "Unknown";
-            
-            // 🔥 THE FIX: Force the app to recognize the programmatic change
-            proxyInput.dispatchEvent(new Event('input', { bubbles: true }));
-            proxyInput.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        mapModal.classList.add("hidden"); 
-    }
-});
 }
 
 // ==========================================

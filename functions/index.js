@@ -179,3 +179,131 @@ exports.waitlistTimeoutSweep = onSchedule({
         return null;
     }
 });
+
+// =======================================================
+// 🎓 CLEVER INTEGRATION
+// =======================================================
+const { onRequest } = require("firebase-functions/v2/https");
+
+exports.cleverCallback = onRequest(async (req, res) => {
+    try {
+        const code = req.query.code;
+        
+        if (!code) {
+            res.status(400).send("No authorization code provided by Clever.");
+            return;
+        }
+
+        const clientId = process.env.CLEVER_CLIENT_ID;
+        const clientSecret = process.env.CLEVER_CLIENT_SECRET;
+        const redirectUri = "https://us-central1-pirate-hall-pass.cloudfunctions.net/cleverCallback";
+        const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+        // 1. Trade the code for an Access Token
+        const tokenResponse = await axios.post('https://clever.com/oauth/tokens', {
+            code: code,
+            grant_type: 'authorization_code',
+            redirect_uri: redirectUri
+        }, {
+            headers: {
+                'Authorization': `Basic ${authHeader}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const accessToken = tokenResponse.data.access_token;
+
+        // 2. Ask Clever: "Who does this token belong to?"
+        const meResponse = await axios.get('https://api.clever.com/v3.0/me', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        const cleverId = meResponse.data.data.id;
+        const userType = meResponse.data.data.type; // student, teacher, etc.
+
+        // 3. Fetch their actual profile details (Name, Email, etc.)
+        const userResponse = await axios.get(`https://api.clever.com/v3.0/users/${cleverId}`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        
+        const userData = userResponse.data.data;
+        const firstName = userData.name.first;
+        const lastName = userData.name.last;
+        const email = (userData.email || "").toLowerCase().trim();
+
+        if (!email || email === "no email provided") {
+            res.status(400).send(`Authentication failed: Clever account for ${firstName} ${lastName} is missing an email address.`);
+            return;
+        }
+
+        // 4. Fetch and Parse their Sections (Schedule) 
+        let parsedSchedule = [];
+        let rawScheduleDebug = "";
+
+        try {
+            const sectionsResponse = await axios.get(`https://api.clever.com/v3.0/users/${cleverId}/sections`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            
+            const rawSections = sectionsResponse.data.data || [];
+            rawScheduleDebug = JSON.stringify(rawSections, null, 2);
+
+            // Clean up Clever data into a highly readable array for our app
+            parsedSchedule = rawSections.map(sec => ({
+                sectionId: sec.id || "",
+                className: sec.name || "Unknown Class",
+                period: sec.period || "N/A",
+                teacherId: sec.teacher || (sec.teachers && sec.teachers[0]) || "N/A"
+            }));
+
+        } catch (sectionError) {
+            console.error("Could not fetch sections for user:", sectionError.message);
+            rawScheduleDebug = `Failed to sync sections: ${sectionError.message}`;
+        }
+
+        // 5. 🔥 SAVE THE COMPERHENSIVE USER PROFILE TO FIRESTORE
+        const userRef = db.collection("users").doc(email);
+        
+        const userPayload = {
+            cleverId: cleverId,
+            email: email,
+            displayName: `${firstName} ${lastName}`,
+            role: (userType === "teacher" || userType === "staff") ? "teacher" : "student",
+            schedule: parsedSchedule, // Hand their fresh class schedule to the database!
+            lastLogin: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        // Maintain absolute backwards compatibility with existing UI hooks
+        if (userPayload.role === "student") {
+            userPayload.studentName = `${firstName} ${lastName}`;
+        }
+
+        // Write to Firestore with merge: true so we don't wipe out manual configurations or special overrides
+        await userRef.set(userPayload, { merge: true });
+        console.log(`Successfully synced and saved Clever profile for ${email}`);
+
+        // 6. Display confirmation back to the tester
+        res.send(`
+            <div style="font-family: sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <h1 style="color: #4CAF50; text-align: center;">✅ Clever Sync Successful!</h1>
+                <p style="text-align: center; color: #666;">Your identity and active schedule are now safely stored in Firestore.</p>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                
+                <h3>Database Document Linked: <span style="color: #007bff;">users/${email}</span></h3>
+                <p><strong>Name:</strong> ${firstName} ${lastName}</p>
+                <p><strong>Mapped Role:</strong> ${userPayload.role}</p>
+                <p><strong>Clever ID:</strong> ${cleverId}</p>
+
+                <h3>Structured Schedule Saved (${parsedSchedule.length} Classes Found)</h3>
+                <pre style="background: #eef1f6; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 12px; border-left: 4px solid #007bff;">${JSON.stringify(parsedSchedule, null, 2)}</pre>
+
+                <h3 style="color: #666; margin-top: 25px;">Raw Clever Response Payload</h3>
+                <pre style="background: #f4f4f4; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 11px; color: #555;">${rawScheduleDebug}</pre>
+            </div>
+        `);
+
+    } catch (error) {
+        console.error("Clever OAuth Error:", error.response ? error.response.data : error.message);
+        res.status(500).send("Failed to securely exchange token with Clever.");
+    }
+});

@@ -17,7 +17,12 @@ import { initStudentManagement } from "./admin/admin-students.js";
 import { initSettingsManagement } from "./admin/admin-settings.js";
 import { initPassesManagement } from "./admin/admin-passes.js";
 import { initDashboardManagement } from "./admin/admin-dashboard.js";
-import { initStaffManagement } from "./admin/admin-staff.js";
+import { initMessageCenter } from "./admin/admin-message.js";
+
+// 🟢 NEW: The Split Teacher Management Modules
+import { initStaffRoster } from "./features/f-staff-roster.js";
+import { initStaffSync } from "./features/f-staff-sync.js";
+import { initStaffSchedule } from "./features/f-staff-schedule.js";
 
 // ==========================================
 // 🚀 APP INITIALIZATION
@@ -43,7 +48,9 @@ initAuthListener("admin", async (user, role) => {
     initSettingsManagement();
     initPassesManagement();
     initDashboardManagement();
-    initStaffManagement();
+    initStaffRoster();
+    initStaffSync();
+    initStaffSchedule();
 });
 
 // ==========================================
@@ -315,3 +322,32 @@ document.addEventListener("click", (e) => {
     }
 
 });
+
+// ==========================================
+// 📨 MESSAGE CENTER SETUP
+// ==========================================
+// Fetches ALL users (staff and students) for the Message Center dropdowns
+async function setupMessageCenterData() {
+    try {
+        const querySnapshot = await getDocs(collection(db, "users"));
+        let allUsers = [];
+        
+        querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            allUsers.push({
+                id: docSnap.id,
+                name: data.displayName || data.studentName || "Unknown User", 
+                role: data.role || "student"
+            });
+        });
+
+        // Pass the full list to our imported script!
+        initMessageCenter(allUsers);
+        
+    } catch (error) {
+        console.error("Error loading users for Message Center:", error);
+    }
+}
+
+// Call it so it runs when the page loads!
+setupMessageCenterData();

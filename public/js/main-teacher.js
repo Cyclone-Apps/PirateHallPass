@@ -7,6 +7,7 @@ import { listenToEmergencyState } from "./modules/admin-engine.js";
 import { MapController } from "./modules/map-engine.js";
 import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "./firebase-config.js";
+import { initSendPassFeature } from './features/f-send-pass.js';
 
 window.cancelPass = cancelScheduledPass;
 
@@ -20,13 +21,16 @@ initAuthListener("teacher", async (user, role) => {
     // renderHeader handles rendering both the global top header and the role toolbar ribbon
     renderHeader(user, role);
 
+    // Initialize the newly self-contained Send Pass Feature
+    initSendPassFeature();
+
     // =======================================================
-    // PRE-LOAD STUDENTS FOR VIRTUAL KIOSK & SEND PASS MODAL
+    // PRE-LOAD STUDENTS FOR VIRTUAL KIOSK
     // =======================================================
     try {
         const studentList = await fetchAllStudents();
         
-        // 1. Setup Autocomplete for Virtual Kiosk (Existing)
+        // Setup Autocomplete for Virtual Kiosk (Existing)
         const nameInput = document.getElementById("input-proxy-name");
         const dropdown = document.getElementById("proxy-autocomplete-list");
         const emailDisplay = document.getElementById("display-proxy-email");
@@ -35,28 +39,8 @@ initAuthListener("teacher", async (user, role) => {
         if (nameInput && dropdown) {
             setupStudentAutocomplete(nameInput, dropdown, studentList, null, emailDisplay, emailHidden);
         }
-
-        // 🌟 2. NEW: Setup Autocomplete for the "Send a Pass" modal
-        const pushNameInput = document.getElementById("proxy-search-input");
-        const pushDropdown = document.getElementById("proxy-datalist");
-        const pushHiddenEmail = document.getElementById("proxy-email-input");
-        const pushSubmitBtn = document.getElementById("btn-submit-proxy-pass");
-
-        if (pushNameInput && pushDropdown) {
-            setupStudentAutocomplete(
-                pushNameInput, 
-                pushDropdown, 
-                studentList, 
-                // Callback function: Unlock the submit button when a student is selected!
-                (student) => { 
-                    if (pushSubmitBtn) pushSubmitBtn.disabled = false; 
-                }, 
-                null, 
-                pushHiddenEmail
-            );
-        }
     } catch (err) {
-        console.error("Failed to setup proxy autocomplete:", err);
+        console.error("Failed to setup virtual kiosk autocomplete:", err);
     }
 
     // 📢 NEW: ANNOUNCEMENTS LISTENER
@@ -559,116 +543,6 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
         if (modal) modal.classList.add("hidden");
     }
 
-    // --- 🎫 NEW: SEND STUDENT A PASS (PROXY) MODAL CONTROLS ---
-    const sendPassModal = document.getElementById("modal-proxy-search");
-
-    // 1. Open the Modal
-    if (e.target.id === "btn-open-send-pass") {
-        if (sendPassModal) {
-            sendPassModal.classList.remove("hidden");
-            
-            // Clear out all new inputs when opening
-            document.getElementById("proxy-search-input").value = "";
-            document.getElementById("proxy-email-input").value = "";
-            document.getElementById("proxy-pass-type").value = "request";
-            document.getElementById("proxy-purpose").value = "";
-            document.getElementById("proxy-destination-input").value = "";
-            document.getElementById("proxy-date").value = "";
-            document.getElementById("proxy-when").value = "available";
-            document.getElementById("proxy-when-time").value = "";
-            document.getElementById("proxy-when-period").value = "";
-            document.getElementById("proxy-duration").value = "5";
-            document.getElementById("btn-submit-proxy-pass").disabled = true;
-
-            // Trigger the UI change to reset hide/show elements
-            document.getElementById("proxy-pass-type").dispatchEvent(new Event('change', { bubbles: true }));
-            document.getElementById("proxy-when").dispatchEvent(new Event('change', { bubbles: true }));
-        }
-    }
-
-    // 2. Close the Modal
-    if (e.target.id === "close-proxy-search") {
-        if (sendPassModal) sendPassModal.classList.add("hidden");
-    }
-
-    // 3. Submit the Push Pass
-    if (e.target.id === "btn-submit-proxy-pass") {
-        const rawName = document.getElementById("proxy-search-input").value.trim();
-        const studentEmail = document.getElementById("proxy-email-input").value.trim();
-        const passType = document.getElementById("proxy-pass-type").value; // tardy, request, required
-
-        // 🌟 Apply Name Cleaner: Strip "(Created by...)" tags and fix double spaces
-        const studentName = rawName.replace(/\s*\(Created by.*?\)\s*/gi, "").replace(/\s+/g, ' ').trim();
-
-        if (!studentName || !studentEmail) {
-            return alert("Please select a student from the list.");
-        }
-
-        e.target.innerText = "⏳ Sending...";
-        e.target.disabled = true;
-
-        // Base data for all proxy passes
-        let passData = {
-            studentDisplayName: studentName,
-            studentEmail: studentEmail.toLowerCase(),
-            type: passType,
-            initiatedBy: "teacher_proxy",
-            senderName: window.currentUser.displayName,
-            proxyBy: window.currentUser.displayName, // 🌟 NEW: Bulletproof teacher name
-            isProxy: true,
-            createdAt: new Date().toISOString()
-        };
-
-        // Add specific data based on pass type
-        if (passType === "tardy") {
-            passData.status = "active"; // Force directly to student screen
-            passData.destination = "Current Class";
-        } else {
-            // It's a Request or Required pass
-            const purpose = document.getElementById("proxy-purpose").value.trim();
-            const destInput = document.getElementById("proxy-destination-input");
-            const destination = destInput ? destInput.value.trim() : "";
-            const date = document.getElementById("proxy-date").value;
-            const when = document.getElementById("proxy-when").value;
-            const duration = document.getElementById("proxy-duration").value;
-
-            if (!destination) {
-                e.target.innerText = "Send Pass";
-                e.target.disabled = false;
-                return alert("Please select a destination from the map.");
-            }
-
-            passData.status = "scheduled"; // Goes to Message Center
-            passData.purpose = purpose;
-            passData.destination = destination;
-            
-            // Grab the teacher name we saved earlier and put it in the payload!
-            passData.targetTeacher = destInput?.dataset?.teacher || "Unknown";
-
-            passData.scheduledDate = date;
-            passData.scheduledWhen = when;
-            passData.duration = duration;
-
-            if (when === "specific_time") passData.scheduledTime = document.getElementById("proxy-when-time").value;
-            if (when === "class_period") passData.scheduledPeriod = document.getElementById("proxy-when-period").value;
-        }
-
-        if (typeof createNewPass === "function") {
-            createNewPass(passData).then(success => {
-                if (success) {
-                    const sendPassModal = document.getElementById("modal-proxy-search");
-                    if (typeof sendPassModal !== "undefined" && sendPassModal) sendPassModal.classList.add("hidden");
-                    alert(`✅ Pass successfully sent to ${studentName}!`);
-                }
-                e.target.innerText = "Send Pass";
-                e.target.disabled = false;
-            });
-        } else {
-            console.error("createNewPass function is not available.");
-            e.target.disabled = false;
-        }
-    }
-
     // --- VIRTUAL KIOSK CONTROLS ---
     const proxySetupModal = document.getElementById("proxy-setup-modal");
     const proxyEmulatorModal = document.getElementById("proxy-emulator-modal");
@@ -706,70 +580,31 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
         
         if (iframe) iframe.src = proxyUrl;
         
-        const proxySetupModal = document.getElementById("proxy-setup-modal");
-        const proxyEmulatorModal = document.getElementById("proxy-emulator-modal");
-        
         if (proxySetupModal) proxySetupModal.classList.add("hidden");
         if (proxyEmulatorModal) proxyEmulatorModal.classList.remove("hidden");
     }
 
-    // Map Popout Modal (Handles both Admin Restrictions & Proxy Passes natively!)
-    if (e.target.id === "btn-open-map-popout" || e.target.id === "btn-proxy-open-map") {
+    // Map Popout Modal (Now only handles Admin Restrictions natively!)
+    if (e.target.id === "btn-open-map-popout") {
         e.preventDefault(); 
         const mapModal = document.getElementById("map-popout-modal");
-        const triggerId = e.target.id;
         
         if (mapModal) {
             mapModal.classList.remove("hidden");
             mapModal.style.zIndex = "10000"; 
             const modalTitle = mapModal.querySelector("h2");
 
-            if (triggerId === "btn-open-map-popout") {
-                // 🔴 ADMIN RESTRICTION MODE
-                if (modalTitle) modalTitle.innerText = "🗺️ Click Rooms to Restrict";
-                new MapController({
-                    containerId: "full-map-container",
-                    mode: "admin_restrict",
-                    selectedRooms: typeof selectedRooms !== "undefined" ? selectedRooms : [], 
-                    onRoomSelect: (updatedRoomsArray) => {
-                        if (typeof selectedRooms !== "undefined") selectedRooms = updatedRoomsArray; 
-                        if (typeof updateRoomDisplay === "function") updateRoomDisplay(); 
-                    }
-                });
-            } else if (triggerId === "btn-proxy-open-map") {
-                // 🟢 PROXY PASS MODE
-                if (modalTitle) modalTitle.innerText = "🗺️ Select Destination";
-                
-                // 🌟 NEW: Check what time the pass is scheduled for!
-                let selectedPeriod = null;
-                const whenType = document.getElementById("proxy-when")?.value;
-                if (whenType === "class_period") {
-                    selectedPeriod = document.getElementById("proxy-when-period")?.value;
+            // 🔴 ADMIN RESTRICTION MODE
+            if (modalTitle) modalTitle.innerText = "🗺️ Click Rooms to Restrict";
+            new MapController({
+                containerId: "full-map-container",
+                mode: "admin_restrict",
+                selectedRooms: typeof selectedRooms !== "undefined" ? selectedRooms : [], 
+                onRoomSelect: (updatedRoomsArray) => {
+                    if (typeof selectedRooms !== "undefined") selectedRooms = updatedRoomsArray; 
+                    if (typeof updateRoomDisplay === "function") updateRoomDisplay(); 
                 }
-
-                new MapController({
-                    containerId: "full-map-container",
-                    mode: "proxy_pass",
-                    periodOverride: selectedPeriod, // Send the time to the map!
-                    onRoomSelect: (selection) => {
-    const proxyInput = document.getElementById("proxy-destination-input") || 
-                       document.getElementById("input-proxy-destination");
-    if (proxyInput) {
-        console.log("=== 🗺️ MAP CLICK DETECTED ===");
-        console.log("Selected Room ID:", selection.room);
-        console.log("Selected Teacher from Map Data:", selection.teacher);
-
-        proxyInput.value = selection.room;
-        proxyInput.dataset.teacher = selection.teacher || "Unknown";
-        
-        console.log("Dispatched inputs. Checking if modal breaks here...");
-        proxyInput.dispatchEvent(new Event('input', { bubbles: true }));
-        proxyInput.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    mapModal.classList.add("hidden"); 
-}
-                });
-            }
+            });
         }
     }
 

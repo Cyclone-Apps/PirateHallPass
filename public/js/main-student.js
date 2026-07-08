@@ -24,6 +24,9 @@ import {
 } from "./modules/time-engine.js";
 import { db } from "./firebase-config.js";
 import { doc, onSnapshot, collection, query, where, updateDoc, arrayUnion, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import './features/f-scheduled-pass-engine.js';
+
+window.db = db;
 
 let activeTimerInterval = null; 
 let elapsedSeconds = 0; 
@@ -121,6 +124,38 @@ async function initStudentApp(user, role) {
         activeSchedulePeriods = todayScheduleInfo.periods;
     }
 
+    
+    // 🚀 UNIFIED RENDERER
+    window.renderMessageCenter = () => {
+        console.log("🎨 renderMessageCenter CALLED!");
+        const container = document.getElementById("admin-messages-container");
+        
+        if (!container) {
+            console.error("❌ renderMessageCenter ERROR: 'admin-messages-container' not found in DOM!");
+            return;
+        }
+
+        let finalHTML = "";
+
+        if (window.currentProxyPassesHTML) {
+            console.log("   ✅ Preparing Proxy Passes HTML...");
+            finalHTML += window.currentProxyPassesHTML;
+        }
+
+        if (window.currentAdminAnnouncementText) {
+            console.log("   ✅ Preparing Admin Announcements HTML...");
+            finalHTML += `<div style="padding: 5px; margin-top: 5px;">${window.currentAdminAnnouncementText}</div>`;
+        }
+
+        if (!window.currentProxyPassesHTML && !window.currentAdminAnnouncementText) {
+            console.log("   ⚠️ Both empty, using default text.");
+            finalHTML += `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
+        }
+
+        container.innerHTML = finalHTML;
+        console.log("🎨 renderMessageCenter FINISHED! Container updated.");
+    };
+    
     // ==========================================================
     // 📢 ANNOUNCEMENTS / MESSAGE CENTER LISTENER
     // ==========================================================
@@ -167,12 +202,8 @@ async function initStudentApp(user, role) {
             window.currentAdminAnnouncementText = "";
         }
         
-        const announcementContainer = document.getElementById("admin-messages-container"); 
-        if (announcementContainer) {
-            announcementContainer.innerHTML = window.currentAdminAnnouncementText 
-                ? `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>`
-                : `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
-        }
+        // 🚀 INSTEAD of injecting directly, call our new renderer!
+        if (typeof window.renderMessageCenter === "function") window.renderMessageCenter();
     });
 
     // 🧹 NEW: Global function so the inline button can trigger the database update
@@ -187,6 +218,127 @@ async function initStudentApp(user, role) {
             console.error("Error dismissing message:", error);
         }
     };
+
+   // ==========================================================
+    // 🎫 PROXY PASS INBOX LISTENER (Message Center)
+    // ==========================================================
+    
+    const targetStudentEmail = window.currentStudentProfile?.email || window.currentUser?.email;
+    console.log("🕵️ Inbox Listener is searching for passes for:", targetStudentEmail);
+
+    if (targetStudentEmail) {
+        const qProxyPasses = query(
+            collection(db, "passes"), 
+            where("studentEmail", "==", targetStudentEmail.toLowerCase())
+        );
+        
+        onSnapshot(qProxyPasses, (snapshot) => {
+            let passMessages = [];
+            
+            snapshot.forEach((docSnap) => {
+                const passData = docSnap.data();
+                const passId = docSnap.id;
+                
+                if (passData.uiLocation === "message_center") {
+                    // 1. Human-readable Date Formatting (e.g., "2026-07-15" ➡️ "Wed, Jul 15")
+                    let dateStr = "upcoming date";
+                    if (passData.scheduledDate) {
+                        const d = new Date(passData.scheduledDate + "T12:00:00");
+                        if (!isNaN(d)) {
+                            dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                        }
+                    }
+
+                    // 2. Human-readable Time/Period Formatting
+                    let timeStr = "";
+                    if (passData.scheduledPeriod && passData.scheduledPeriod !== "None") {
+                        timeStr = ` during ${passData.scheduledPeriod} period`;
+                    } else if (passData.scheduledTime) {
+                        const [hourStr, minStr] = passData.scheduledTime.split(':');
+                        if (hourStr && minStr) {
+                            let h = parseInt(hourStr, 10);
+                            const ampm = h >= 12 ? 'pm' : 'am';
+                            h = h % 12 || 12;
+                            timeStr = ` at ${h}:${minStr} ${ampm}`;
+                        }
+                    }
+
+                    // 3. Dynamic layout strings based on type
+                    const isTardy = passData.type === "tardy";
+                    const isRequired = passData.passType && passData.passType.toLowerCase() === "required";
+                    const teacherName = passData.senderName || passData.teacherName || "Teacher";
+                    
+                    let headerTitle = "";
+                    let middleText = "";
+                    let actionButtonsHtml = "";
+                    
+                    if (isTardy) {
+                        // Keep tardy passes looking the same just in case
+                        headerTitle = `⏳ Tardy Pass from ${teacherName}:`;
+                        middleText = `<span style="font-size: 0.95rem; color: #333; display: inline-block; margin-top: 4px;">You received a Tardy Pass to <strong>${passData.destination}</strong>.</span>`;
+                        
+                        // Tardy passes only get a view button
+                        actionButtonsHtml = `
+                            <button onclick="window.viewScheduledPass('${passId}')" style="background: #4593F1; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: opacity 0.2s;">
+                                👁️ View
+                            </button>
+                        `;
+                    } else {
+                        // 🌟 Your new streamlined layout for Scheduled/Required passes!
+                        const passLabel = isRequired ? "Required Pass" : "Scheduled Pass";
+                        headerTitle = `🎫 ${passLabel} from ${teacherName} on ${dateStr}.`;
+                        // middleText remains empty because you requested to remove the middle text!
+
+                        // 📅 Calculate today's local date string (YYYY-MM-DD)
+                        const today = new Date();
+                        const yyyy = today.getFullYear();
+                        const mm = String(today.getMonth() + 1).padStart(2, '0');
+                        const dd = String(today.getDate()).padStart(2, '0');
+                        const todayStr = `${yyyy}-${mm}-${dd}`;
+
+                        // Check if the scheduled pass is valid to use today
+                        const isToday = passData.scheduledDate === todayStr;
+
+                        if (isToday) {
+                            // If it's today, show both buttons side-by-side using Flexbox
+                            actionButtonsHtml = `
+                                <div style="display: flex; gap: 8px; width: 100%;">
+                                    <button onclick="window.viewScheduledPass('${passId}')" style="flex: 1; background: #4593F1; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: opacity 0.2s;">
+                                        👁️ View
+                                    </button>
+                                    <button onclick="window.useScheduledPass('${passId}')" style="flex: 1; background: #28a745; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: opacity 0.2s;">
+                                        🚀 Use
+                                    </button>
+                                </div>
+                            `;
+                        } else {
+                            // If it's a future date, only show the full-width View button
+                            actionButtonsHtml = `
+                                <button onclick="window.viewScheduledPass('${passId}')" style="background: #4593F1; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: opacity 0.2s;">
+                                    👁️ View
+                                </button>
+                            `;
+                        }
+                    }
+                    
+                    let msgHtml = `
+                        <div style="background: #ebf4ff; border: 1px solid #4593F1; padding: 12px; border-radius: 8px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                            <strong style="color: #0d47a1; font-weight: 800; font-size: 1rem; display: block; margin-bottom: ${middleText ? '4px' : '10px'};">${headerTitle}</strong>
+                            ${middleText}
+                            <div style="margin-top: 10px;">
+                                ${actionButtonsHtml}
+                            </div>
+                        </div>
+                    `;
+                    passMessages.push(msgHtml);
+                }
+            });
+
+            // 🚀 INSTEAD of injecting directly, save to memory and call our new renderer!
+            window.currentProxyPassesHTML = passMessages.join("");
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter();
+        });
+    }
 
    // 🚨 STUDENT EMERGENCY ENGINE 🚨
     onSnapshot(doc(db, "settings", "emergencyState"), (docSnap) => {
@@ -247,8 +399,6 @@ async function initStudentApp(user, role) {
         });
         
     }, 1000);
-    // ==========================================================
-
 
     // LISTEN TO THE DATABASE IN REAL-TIME
     // 🔒 CHANGED: Pass the actual studentId instead of their name
@@ -272,11 +422,31 @@ async function initStudentApp(user, role) {
             renderStudentIdleScreen();
             renderStudentSidebar(window.currentStudentProfile); 
             
-            const msgCenter = document.getElementById("message-center");
-            if (msgCenter) msgCenter.innerHTML = "";
-        } 
+            // 🚀 NEW: Re-inject our messages in case the sidebar redraw just erased them!
+            if (typeof window.renderMessageCenter === "function") {
+                console.log("🔄 Sidebar was redrawn! Forcing Message Center to render again...");
+                window.renderMessageCenter();
+            }
+        }
         else if (currentPass.status === "scheduled") {
-            // ... (keep your existing scheduled pass code here) ...
+            console.log("📅 Scheduled pass activated! Directing to left-side renderer...");
+            
+            // Look for the renderer locally or globally on the window object
+            const renderer = (typeof renderStudentScheduledScreen === "function") 
+                ? renderStudentScheduledScreen 
+                : window.renderStudentScheduledScreen;
+
+            if (typeof renderer === "function") {
+                renderer(currentPass);
+            } else {
+                console.warn("⚠️ renderStudentScheduledScreen was not found! Using fallback layout.");
+                if (typeof window.fallbackRenderScheduledScreen === "function") {
+                    window.fallbackRenderScheduledScreen(currentPass);
+                }
+            }
+            
+            // Ensure the message center updates alongside the new screen
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter();
         }
         else if (currentPass.status === "waitlist") {
             renderStudentWaitlistScreen(currentPass);
@@ -304,14 +474,15 @@ async function initStudentApp(user, role) {
         }
         else if (currentPass.status === "pending_student") {
             renderStudentAcceptScreen(currentPass);
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); // 👈 ADD THIS
         }
-        // 🚨 ADD THIS BLOCK TO INTERCEPT RESTRICTED PASSES
         else if (currentPass.status === "pending_restricted") {
             renderStudentBlindRestrictionScreen(currentPass);
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); // 👈 ADD THIS
         }
-        // ⚠️ ADD THIS NEW YELLOW BLOCK
         else if (currentPass.status === "pending_warning") {
             renderStudentYellowWarningScreen(currentPass);
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); // 👈 ADD THIS
         }
         else if (currentPass.status.startsWith("pending")) {
             const statusData = {
@@ -321,6 +492,7 @@ async function initStudentApp(user, role) {
                 waitlistPosition: currentPass.waitlistPosition || null
             };
             renderStudentWaitingScreen(currentPass, statusData);
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); // 👈 ADD THIS
         }
         else if (currentPass.status === "active" || currentPass.status === "active_bypassed") {
             renderStudentActiveScreen(currentPass);
@@ -815,8 +987,9 @@ document.addEventListener("click", async (e) => {
             destCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(dest) : "Unknown",
             originCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(window.currentRoom || "Unknown") : "Unknown",
             
-            // Default Statuses
-            status: "pending", 
+            // 🌟 FIXED: Tardy passes go straight to active and bypass the inbox!
+            status: passType === "tardy" ? "active" : "pending", 
+            uiLocation: passType === "tardy" ? "pass_section" : "message_center",
             restrictionLevel: "none",
             restrictionType: "",
             restrictionReason: "",
@@ -878,50 +1051,6 @@ document.addEventListener("click", async (e) => {
                 e.target.innerText = "🛑 End Pass (Student Returned)";
                 e.target.disabled = false;
             });
-        }
-    }
-
-    // ==========================================
-    // --- 4. STUDENT SCHEDULED PASS CONTROLS ---
-    // ==========================================
-    if (e.target.id === "btn-use-scheduled-pass") {
-        const passId = e.target.getAttribute("data-id");
-        if (!passId) return;
-        
-        e.target.innerText = "Requesting...";
-        e.target.disabled = true;
-        if (typeof updatePassStatus === "function") {
-            updatePassStatus(passId, "pending");
-        }
-    }
-
-    if (e.target.classList.contains("btn-view-scheduled-pass")) {
-        const teacher = e.target.getAttribute("data-teacher");
-        const purpose = e.target.getAttribute("data-purpose");
-        const dest = e.target.getAttribute("data-dest");
-        const time = e.target.getAttribute("data-time");
-        alert(`📨 SCHEDULED PASS DETAILS\n\nSent By: ${teacher}\nDestination: ${dest}\nTime: ${time}\nPurpose: ${purpose}`);
-    }
-
-    if (e.target.id === "btn-cancel-restricted") {
-        const passId = e.target.getAttribute("data-id");
-        if (!passId) return;
-        e.target.innerText = "Canceling...";
-        e.target.disabled = true;
-        if (typeof updatePassStatus === "function") {
-            updatePassStatus(passId, "cancelled");
-        }
-    }
-
-    if (e.target.id === "btn-delete-scheduled-pass") {
-        const passId = e.target.getAttribute("data-id");
-        if (!passId) return;
-        if (confirm("Are you sure you want to delete this scheduled pass?")) {
-            e.target.innerText = "Deleting...";
-            e.target.disabled = true;
-            if (typeof updatePassStatus === "function") {
-                updatePassStatus(passId, "cancelled");
-            }
         }
     }
 });

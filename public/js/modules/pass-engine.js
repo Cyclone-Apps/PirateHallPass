@@ -522,16 +522,26 @@ export async function createNewPass(passData) {
  * Listens for a specific student's active, pending, or restricted passes
  */
 export function listenToStudentPass(studentId, callback) {
-    // 🔒 CHANGED: Now strictly queries by studentId instead of studentDisplayName
+    console.log(`🎧 MAIN ENGINE: Listening for passes belonging to ID: ${studentId}`);
+    
+    // 🔒 Strictly queries by studentId
     const q = query(passesRef, where("studentId", "==", studentId));
     
     return onSnapshot(q, (snapshot) => {
+        console.log(`📦 MAIN ENGINE: Found ${snapshot.size} total passes for this ID in Firebase.`);
         let currentPass = null;
         
         snapshot.forEach((doc) => {
             const pass = { id: doc.id, ...doc.data() };
+            console.log(`   🔍 Checking Pass: ${pass.id} | Status: ${pass.status} | Location: ${pass.uiLocation}`);
             
-            // 🟢 ADDED "active_bypassed" so flagged passes stay on the student screen when approved!
+            // 🛑 Ignore passes that are currently sitting in the Message Center inbox!
+            if (pass.uiLocation === "message_center") {
+                console.log(`      🚫 Skipped: Pass is still in the inbox.`);
+                return; 
+            }
+            
+            // 🟢 Valid active/scheduled statuses
             if (
                 pass.status === "active" || 
                 pass.status === "active_bypassed" || 
@@ -542,10 +552,14 @@ export function listenToStudentPass(studentId, callback) {
                 pass.status === "scheduled" ||
                 pass.status === "waitlist" 
             ) {
+                console.log(`      ✅ MATCH! Loading this pass into the UI.`);
                 currentPass = pass; 
+            } else {
+                console.log(`      ❌ Skipped: Pass has an invalid or expired status.`);
             }
         });
         
+        if (!currentPass) console.log("   ⚠️ RESULT: No valid active passes found. Loading Idle Screen.");
         callback(currentPass); 
     }, (error) => {
         console.error("Error listening to student pass:", error);
