@@ -26,7 +26,7 @@ function bindRosterEvents() {
             document.getElementById("add-teacher-modal")?.classList.add("hidden");
         }
 
-        // 2. Add New Teacher
+        // 2. Add New Teacher Manually
         if (e.target.id === "btn-save-new-teacher") {
             const name = document.getElementById("new-teacher-name").value.trim();
             const email = document.getElementById("new-teacher-email").value.trim().toLowerCase();
@@ -47,52 +47,21 @@ function bindRosterEvents() {
         if (e.target.classList.contains("lunch-option")) {
             const pill = e.target.closest(".teacher-lunch-pill");
             const teacherId = pill.dataset.id;
-            let selectedLunch = e.target.dataset.value; // "A" or "B"
+            let selectedLunch = e.target.dataset.value; 
             
-            // If they click the already active option, turn it off (set to 'none')
             if (pill.dataset.lunch === selectedLunch) selectedLunch = "none";
-            
-            // Save to Firebase (The real-time listener will instantly update the UI!)
             setDoc(doc(db, "users", teacherId), { lunch: selectedLunch }, { merge: true });
         }        
     });
 
-    // 4. CSV Import (Roster)
-    const btnTriggerTeacherImport = document.getElementById("btn-trigger-teacher-import");
-    const fileInputTeachers = document.getElementById("file-import-teachers");
-    
-    if (btnTriggerTeacherImport && fileInputTeachers) {
-        btnTriggerTeacherImport.addEventListener("click", () => {
-            const file = fileInputTeachers.files[0];
-            if (!file) return alert("Please select a CSV file first.");
-
-            btnTriggerTeacherImport.innerText = "⏳ Importing...";
-            btnTriggerTeacherImport.disabled = true;
-
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                // Calls the function that actually parses and saves the CSV data
-                await processTeacherCSV(event.target.result);
-                
-                // UI Reset
-                btnTriggerTeacherImport.innerText = "✅ Import Complete!";
-                setTimeout(() => {
-                    btnTriggerTeacherImport.innerText = "📥 Import";
-                    btnTriggerTeacherImport.disabled = false;
-                    fileInputTeachers.value = ""; 
-                }, 3000);
-            };
-            reader.readAsText(file);
-        });
-    }
-
-    // 5. Live Search & Admin Toggle
+    // 4. Live Search & Inputs
     const searchInput = document.getElementById("input-search-teachers");
     if (searchInput) {
         searchInput.addEventListener("input", (e) => {
             const term = e.target.value.toLowerCase();
             document.querySelectorAll(".staff-roster-row").forEach(row => {
-                row.style.display = row.innerText.toLowerCase().includes(term) ? "" : "none";
+                const rowText = Array.from(row.querySelectorAll("input, select, td")).map(el => el.value || el.innerText).join(" ").toLowerCase();
+                row.style.display = rowText.includes(term) ? "" : "none";
             });
         });
     }
@@ -101,71 +70,107 @@ function bindRosterEvents() {
     if (tbodyElement) {
         tbodyElement.addEventListener("change", async (e) => {
             
-            // --- Existing Admin Toggle Logic ---
+            // --- Admin Toggle Logic ---
             if (e.target.classList.contains("teacher-admin-toggle")) {
-                // Fetch the actual Document ID from the closest row
                 const docId = e.target.closest("tr").dataset.uid; 
                 const grantAdmin = e.target.checked;
                 
                 if (!docId) {
                     alert("Error: Cannot update role. Document ID missing.");
-                    e.target.checked = !grantAdmin; // Revert visually
+                    e.target.checked = !grantAdmin; 
                     return;
                 }
 
                 try {
-                    // Update using the UID instead of the email
                     await setDoc(doc(db, "users", docId), { role: grantAdmin ? "admin" : "teacher" }, { merge: true });
                 } catch (err) {
-                    console.error("Failed to update user privileges:", err);
-                    alert("Critical Error: Database authorization update failed.");
                     e.target.checked = !grantAdmin; 
                 }
             }
 
-            // --- 🌟 NEW: Save Map Name Logic ---
+            // --- Title Edit Logic ---
+            if (e.target.classList.contains("teacher-title-select")) {
+                const uid = e.target.getAttribute("data-uid");
+                const newTitle = e.target.value;
+                
+                e.target.style.borderColor = "#0277bd";
+                try {
+                    await setDoc(doc(db, "users", uid), { title: newTitle }, { merge: true });
+                    e.target.style.borderColor = "green";
+                } catch (err) { e.target.style.borderColor = "red"; }
+            }
+
+            // --- First Name Edit Logic ---
+            if (e.target.classList.contains("teacher-fname-input")) {
+                const uid = e.target.getAttribute("data-uid");
+                const newFName = e.target.value.trim();
+                const row = e.target.closest("tr");
+                const currentLName = row.querySelector(".teacher-lname-input").value.trim();
+                
+                e.target.style.borderColor = "#0277bd";
+                try {
+                    await setDoc(doc(db, "users", uid), { 
+                        firstName: newFName,
+                        displayName: `${newFName} ${currentLName}`.trim(),
+                        manualNameOverride: true
+                    }, { merge: true });
+                    e.target.style.borderColor = "green";
+                } catch (err) { e.target.style.borderColor = "red"; }
+            }
+
+            // --- Last Name Edit Logic ---
+            if (e.target.classList.contains("teacher-lname-input")) {
+                const uid = e.target.getAttribute("data-uid");
+                const newLName = e.target.value.trim();
+                const row = e.target.closest("tr");
+                const currentFName = row.querySelector(".teacher-fname-input").value.trim();
+                
+                e.target.style.borderColor = "#0277bd";
+                try {
+                    await setDoc(doc(db, "users", uid), { 
+                        lastName: newLName,
+                        displayName: `${currentFName} ${newLName}`.trim(),
+                        manualNameOverride: true
+                    }, { merge: true });
+                    e.target.style.borderColor = "green";
+                } catch (err) { e.target.style.borderColor = "red"; }
+            }
+
+            // --- Map Name Edit Logic ---
             if (e.target.classList.contains("teacher-map-name-input")) {
                 const uid = e.target.getAttribute("data-uid");
                 const newMapName = e.target.value.trim();
                 
-                e.target.style.borderColor = "#0277bd"; // visual feedback (blue)
+                e.target.style.borderColor = "#0277bd";
                 try {
                     await setDoc(doc(db, "users", uid), { mapName: newMapName }, { merge: true });
-                    e.target.style.borderColor = "green"; // success
-                } catch (err) {
-                    console.error("Failed to save Map Name", err);
-                    e.target.style.borderColor = "red"; // error
-                }
+                    e.target.style.borderColor = "green"; 
+                } catch (err) { e.target.style.borderColor = "red"; }
             }
 
-            // --- 🌟 NEW: Save Schedule Alias Logic ---
+            // --- Schedule Alias Logic ---
             if (e.target.classList.contains("teacher-alias-select")) {
                 const uid = e.target.getAttribute("data-uid");
-                const newAlias = e.target.value; // Will be "" if "-- No Link --" is selected
+                const newAlias = e.target.value; 
                 
-                e.target.style.borderColor = "#0277bd"; // visual feedback (blue)
+                e.target.style.borderColor = "#0277bd";
                 try {
                     await setDoc(doc(db, "users", uid), { 
                         scheduleAlias: newAlias === "" ? null : newAlias 
                     }, { merge: true });
-                    // No need to turn green, the table will instantly reload with the new data!
-                } catch (err) {
-                    console.error("Failed to save Schedule Alias", err);
-                    e.target.style.borderColor = "red"; // error
-                }
+                } catch (err) { e.target.style.borderColor = "red"; }
             }
         });
     }
 }
 
 // ==========================================
-// 📋 1. LIVE TEACHER ROSTER & IMPORT
+// 📋 1. LIVE TEACHER ROSTER UI
 // ==========================================
 function listenToTeacherRoster() {
     const tbody = document.getElementById("teacher-roster-table-body");
     if (!tbody) return;
 
-    // Inject 'Add Teacher' button above table if it doesn't exist
     const tableElement = tbody.closest("table");
     if (tableElement && !document.getElementById("btn-open-add-teacher")) {
         tableElement.insertAdjacentHTML('beforebegin', `
@@ -181,11 +186,10 @@ function listenToTeacherRoster() {
     
     onSnapshot(q, async (snapshot) => {
         if (snapshot.empty) {
-            tbody.innerHTML = '<tr><td colspan="6" style="padding: 20px; text-align: center; color: #888;">No staff records found. Import a CSV to begin.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="padding: 20px; text-align: center; color: #888;">No staff records found.</td></tr>';
             return;
         }
 
-        // 🌟 NEW: Extract all unique names from the Master Schedule
         let allScheduleNames = new Set();
         try {
             const schedSnap = await getDoc(doc(db, "settings", "master_schedule"));
@@ -199,11 +203,8 @@ function listenToTeacherRoster() {
                     }
                 });
             }
-        } catch (err) {
-            console.error("Failed to load schedule names for dropdowns:", err);
-        }
+        } catch (err) {}
 
-        // 🌟 NEW: Find which names are already claimed by staff members
         activeStaffList = [];
         snapshot.forEach(docSnap => {
             const data = docSnap.data();
@@ -218,34 +219,48 @@ function listenToTeacherRoster() {
         let datalistHTML = ""; 
 
         activeStaffList.forEach(data => {
-            const name = data.displayName || "Unknown";
+            const firstName = data.firstName || "";
+            const lastName = data.lastName || "";
             const email = data.email || data.id;
             const isAdmin = data.role === "admin";
             const lunchShift = data.lunch || "none";
             const isA = lunchShift === "A";
             const isB = lunchShift === "B";
             
-            // 🌟 NEW: Get Map Name and Current Alias
-            const mapName = data.mapName || "";
+            const mapName = data.mapName || lastName || "";
             const currentAlias = data.scheduleAlias || "";
 
-            datalistHTML += `<option value="${name}">`;
+            // 🧠 Title Auto-Guesser Logic
+            let currentTitle = data.title || "";
+            if (!currentTitle && currentAlias) {
+                const aliasLower = currentAlias.toLowerCase();
+                if (aliasLower.startsWith("mr.")) currentTitle = "Mr.";
+                else if (aliasLower.startsWith("mrs.")) currentTitle = "Mrs.";
+                else if (aliasLower.startsWith("ms.")) currentTitle = "Ms.";
+                else if (aliasLower.startsWith("miss")) currentTitle = "Miss.";
+                else if (aliasLower.startsWith("dr.")) currentTitle = "Dr.";
+                else if (aliasLower.startsWith("coach")) currentTitle = "Coach";
+            }
 
-            // 🌟 NEW: Build the Map Name Input
-            const mapNameInput = `
-                <input type="text" class="teacher-map-name-input" data-uid="${data.id}" value="${mapName}" placeholder="e.g. Smith" 
-                style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; width: 100%; max-width: 120px; text-align: center; outline: none;" />
-            `;
+            datalistHTML += `<option value="${data.displayName || firstName}">`;
 
-            // 🌟 NEW: Build the Alias Dropdown
+            const fnameInput = `<input type="text" class="teacher-fname-input" data-uid="${data.id}" value="${firstName}" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; width: 100%; max-width: 120px; outline: none;" />`;
+            const lnameInput = `<input type="text" class="teacher-lname-input" data-uid="${data.id}" value="${lastName}" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; width: 100%; max-width: 120px; outline: none;" />`;
+
+            // Title Dropdown
+            const titleOptions = ["", "Mr.", "Mrs.", "Ms.", "Miss.", "Dr.", "Coach"];
+            let titleDropdown = `<select class="teacher-title-select" data-uid="${data.id}" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; width: 100%; max-width: 80px; outline: none; text-align: center;">`;
+            titleOptions.forEach(opt => {
+                titleDropdown += `<option value="${opt}" ${currentTitle === opt ? "selected" : ""}>${opt === "" ? "--" : opt}</option>`;
+            });
+            titleDropdown += `</select>`;
+
+            const mapNameInput = `<input type="text" class="teacher-map-name-input" data-uid="${data.id}" value="${mapName}" placeholder="e.g. Smith" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; width: 100%; max-width: 100px; text-align: center; outline: none;" />`;
+
             let aliasDropdown = `<select class="teacher-alias-select" data-uid="${data.id}" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; width: 100%; max-width: 180px; outline: none;">`;
             aliasDropdown += `<option value="">-- No Link --</option>`;
-            if (currentAlias) {
-                aliasDropdown += `<option value="${currentAlias}" selected>${currentAlias}</option>`;
-            }
-            availableNames.forEach(avail => {
-                aliasDropdown += `<option value="${avail}">${avail}</option>`;
-            });
+            if (currentAlias) aliasDropdown += `<option value="${currentAlias}" selected>${currentAlias}</option>`;
+            availableNames.forEach(avail => { aliasDropdown += `<option value="${avail}">${avail}</option>`; });
             aliasDropdown += `</select>`;
 
             const checkboxHTML = `<div style="text-align: center;"><input type="checkbox" class="teacher-admin-toggle" data-email="${email}" ${isAdmin ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer;" /></div>`;
@@ -261,8 +276,10 @@ function listenToTeacherRoster() {
 
            html += `
                 <tr class="staff-roster-row" data-uid="${data.id}" style="border-bottom: 1px solid #eee; transition: background 0.2s;" onmouseover="this.style.background='#f9f9f9'" onmouseout="this.style.background='white'">
-                    <td style="padding: 12px; color: #333; font-weight: 500;">${name}</td>
-                    <td style="padding: 12px; color: #666;">${email}</td>
+                    <td style="padding: 12px;">${fnameInput}</td>
+                    <td style="padding: 12px;">${lnameInput}</td>
+                    <td style="padding: 12px; color: #666; font-size: 0.9rem;">${email}</td>
+                    <td style="padding: 12px; text-align: center;">${titleDropdown}</td>
                     <td style="padding: 12px; text-align: center;">${mapNameInput}</td>
                     <td style="padding: 12px; text-align: center;">${aliasDropdown}</td>
                     <td style="padding: 12px;">${checkboxHTML}</td>
@@ -275,34 +292,4 @@ function listenToTeacherRoster() {
         const datalist = document.getElementById("staff-list-options");
         if (datalist) datalist.innerHTML = datalistHTML;
     });
-}
-
-async function processTeacherCSV(csvText) {
-    const rows = csvText.split(/\r?\n/).filter(row => row.trim() !== "");
-    const headers = rows[0].split(",").map(h => h.trim());
-    const nameIdx = headers.indexOf("Member Name");
-    const emailIdx = headers.indexOf("Member Email");
-
-    if (nameIdx === -1 || emailIdx === -1) return alert("Error: CSV must contain 'Member Name' and 'Member Email' columns.");
-
-    let successCount = 0;
-    for (let i = 1; i < rows.length; i++) {
-        const cols = rows[i].split(",");
-        if (cols.length < 2) continue;
-
-        const name = cols[nameIdx].trim();
-        const email = cols[emailIdx].trim().toLowerCase();
-
-        if (email && name) {
-            try {
-                const userRef = doc(db, "users", email);
-                const docSnap = await getDoc(userRef);
-                let finalizedRole = (docSnap.exists() && docSnap.data().role === "admin") ? "admin" : "teacher";
-
-                await setDoc(userRef, { displayName: name, email: email, role: finalizedRole }, { merge: true });
-                successCount++;
-            } catch (err) { console.error(`Failed to import ${email}:`, err); }
-        }
-    }
-    alert(`Successfully imported/updated ${successCount} teachers!`);
 }

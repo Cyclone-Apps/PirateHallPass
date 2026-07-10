@@ -2,35 +2,48 @@
 import { db } from "../firebase-config.js";
 import { doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { schoolMapSVG } from "../map.js"; 
-import { activeStaffList } from "./f-staff-roster.js"; // Needs the staff list for dropdowns!
+import { activeStaffList } from "./f-staff-roster.js"; 
 
-let currentLiveScheduleData = null; // Replaces window.currentLiveScheduleData
+export let currentLiveScheduleData = null; 
 
 export function initStaffSchedule() {
+    loadExistingSchedule();
     bindScheduleEvents();
 }
 
-function bindScheduleEvents() {
-    // 1. CSV Import (Master Schedule)
-    const importScheduleBtn = document.getElementById("btn-import-teacher-schedule");
-    if (importScheduleBtn) {
-        importScheduleBtn.addEventListener("click", processTeacherCSVImport);
+// ==========================================
+// 🚀 INITIALIZATION & EVENTS
+// ==========================================
+async function loadExistingSchedule() {
+    const snap = await getDoc(doc(db, "settings", "master_schedule"));
+    if (snap.exists()) {
+        currentLiveScheduleData = snap.data();
     }
+}
 
-    // 2. Global Click Delegation for Schedule Actions
+function bindScheduleEvents() {
+    // CSV Import Button
+    document.getElementById("btn-import-teacher-schedule")?.addEventListener("click", processTeacherCSVImport);
+
+    // Global Modals & Cell Clicks
     document.addEventListener("click", async (e) => {
-        
-        // --- MODAL TOGGLES ---
+        // Open Modal
         if (e.target.closest("#btn-open-teacher-schedule")) {
             document.getElementById("teacher-schedule-modal")?.classList.remove("hidden");
-            const snap = await getDoc(doc(db, "settings", "master_schedule"));
-            if (snap.exists()) renderTeacherScheduleTable(snap.data());
+            if (currentLiveScheduleData) {
+                renderTeacherScheduleTable(currentLiveScheduleData);
+            } else {
+                await loadExistingSchedule();
+                if (currentLiveScheduleData) renderTeacherScheduleTable(currentLiveScheduleData);
+            }
         }
+        
+        // Close Modal
         if (e.target.id === "close-teacher-schedule-modal") {
             document.getElementById("teacher-schedule-modal")?.classList.add("hidden");
         }
 
-        // --- EDIT SCHEDULE CELL CONTROLS ---
+        // Edit Cell
         const cell = e.target.closest(".editable-schedule-cell");
         if (cell) {
             const room = cell.getAttribute("data-room");
@@ -44,6 +57,7 @@ function bindScheduleEvents() {
             document.getElementById("edit-schedule-cell-modal")?.classList.remove("hidden");
         }
 
+        // Save Cell Edit
         if (e.target.id === "btn-save-cell") {
             const room = document.getElementById("edit-cell-room").value;
             const period = document.getElementById("edit-cell-period").value;
@@ -66,6 +80,7 @@ function bindScheduleEvents() {
             e.target.innerText = "Save";
         }
 
+        // Clear Cell Edit
         if (e.target.id === "btn-clear-cell") {
             const room = document.getElementById("edit-cell-room").value;
             const period = document.getElementById("edit-cell-period").value;
@@ -77,23 +92,21 @@ function bindScheduleEvents() {
             document.getElementById("edit-schedule-cell-modal")?.classList.add("hidden");
         }
 
+        // Cancel Cell Edit
         if (e.target.id === "btn-cancel-cell") {
             document.getElementById("edit-schedule-cell-modal")?.classList.add("hidden");
         }
     });
 
-    // 3. Sub-listener for rotation dropdown showing custom days input
-    const rotDropdown = document.getElementById("edit-cell-rotation");
-    if (rotDropdown) {
-        rotDropdown.addEventListener("change", (ev) => {
-            const container = document.getElementById("edit-cell-custom-days-container");
-            if (container) ev.target.value === "custom" ? container.classList.remove("hidden") : container.classList.add("hidden");
-        });
-    }
+    // Custom Rotation Days Input Toggle
+    document.getElementById("edit-cell-rotation")?.addEventListener("change", (ev) => {
+        const container = document.getElementById("edit-cell-custom-days-container");
+        if (container) ev.target.value === "custom" ? container.classList.remove("hidden") : container.classList.add("hidden");
+    });
 }
 
 // ==========================================
-// 📅 3. MASTER SCHEDULE GRID & IMPORT
+// 📥 MASTER SCHEDULE CSV PARSER
 // ==========================================
 async function processTeacherCSVImport() {
     const fileInput = document.getElementById("file-teacher-schedule");
@@ -157,7 +170,7 @@ async function processTeacherCSVImport() {
                 });
             }
 
-            // 🟢 NEW: Preserve existing locked rooms & skip check-ins during import securely!
+            // Preserve existing locked rooms & skip check-ins
             const snap = await getDoc(doc(db, "settings", "master_schedule"));
             const existingLocked = snap.exists() ? (snap.data().lockedRooms || {}) : {};
             const existingSkipCheckIn = snap.exists() ? (snap.data().skipCheckInRooms || {}) : {};
@@ -166,6 +179,7 @@ async function processTeacherCSVImport() {
             cleanSchedule.skipCheckInRooms = existingSkipCheckIn;
 
             await setDoc(doc(db, "settings", "master_schedule"), cleanSchedule);
+            currentLiveScheduleData = cleanSchedule; // Update live memory
             statusText.style.color = "green";
             statusText.innerText = `✅ Successfully mapped Teachers & Rotation Days!`;
             renderTeacherScheduleTable(cleanSchedule);
@@ -177,27 +191,24 @@ async function processTeacherCSVImport() {
     reader.readAsText(fileInput.files[0]);
 }
 
+// ==========================================
+// 🎨 RENDER SCHEDULE TABLE
+// ==========================================
 function renderTeacherScheduleTable(scheduleObj) {
-    currentLiveScheduleData = scheduleObj; 
     const headerRow = document.getElementById("teacher-table-header");
     const tbody = document.getElementById("teacher-table-tbody");
     if (!headerRow || !tbody || !scheduleObj) return;
 
-    // 🟢 1. Extract locked rooms and skip check-ins
     const lockedRooms = scheduleObj.lockedRooms || {};
     const skipCheckInRooms = scheduleObj.skipCheckInRooms || {};
-
-    // 🟢 2. Build complete list of rooms from Map + Schedule
     const allRooms = new Set();
     
-    // Grab rooms from the imported schedule
     Object.keys(scheduleObj).forEach(key => {
         if (key !== 'lockedRooms' && key !== 'skipCheckInRooms') {
             Object.keys(scheduleObj[key]).forEach(room => allRooms.add(room));
         }
     });
 
-    // Grab rooms from the Map SVG to ensure 100% coverage
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = schoolMapSVG;
     tempDiv.querySelectorAll(".map-node").forEach(node => {
@@ -209,31 +220,24 @@ function renderTeacherScheduleTable(scheduleObj) {
 
     const sortedRooms = Array.from(allRooms).sort();
     const periods = Object.keys(scheduleObj).filter(k => k !== 'lockedRooms' && k !== 'skipCheckInRooms').sort((a,b) => parseInt(a) - parseInt(b));
-
-    // 🟢 3. Prepare Live Staff List for Dropdowns (Using imported activeStaffList)
     const sortedStaff = [...activeStaffList].sort((a,b) => (a.displayName || "").localeCompare(b.displayName || ""));
 
-    // 🟢 4. Render Headers (With new Check-In column)
     let headerHtml = `
         <th style="padding: 12px; border-bottom: 2px solid #dee2e6;">Room</th>
         <th style="padding: 12px; border-bottom: 2px solid #dee2e6; width: 120px; text-align: center; line-height: 1.3;">
-            Skip Check-In ⏩<br>
-            <span style="font-size: 0.75rem; font-weight: normal; color: #666;">(For Restrooms)</span>
+            Skip Check-In ⏩
         </th>
         <th style="padding: 12px; border-bottom: 2px solid #dee2e6; width: 220px; line-height: 1.3;">
-            Lock Room to Staff 🔒<br>
-            <span style="font-size: 0.75rem; font-weight: normal; color: #666;">(Overrides schedule)</span>
+            Lock Room to Staff 🔒
         </th>
     `;
     periods.forEach(p => headerHtml += `<th style="padding: 12px; border-bottom: 2px solid #dee2e6;">Period ${p}</th>`);
     headerRow.innerHTML = headerHtml;
 
-    // 🟢 5. Render Rows & Dropdowns
     let rowsHtml = "";
     sortedRooms.forEach(room => {
         const lockedTeacher = lockedRooms[room] || "";
         
-        // Build the dropdown select HTML
         let selectHtml = `<select class="select-lock-staff" data-room="${room}" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.9rem; background: #fff;">`;
         selectHtml += `<option value="">-- No Lock --</option>`;
         
@@ -246,7 +250,6 @@ function renderTeacherScheduleTable(scheduleObj) {
             }
         });
         
-       // Failsafe: Keep teacher visible even if they were removed from the master staff list
         if (lockedTeacher && !foundInList) {
             selectHtml += `<option value="${lockedTeacher}" selected>${lockedTeacher} (Not in list)</option>`;
         }
@@ -282,88 +285,74 @@ function renderTeacherScheduleTable(scheduleObj) {
     });
     tbody.innerHTML = rowsHtml;
 
-    // ==========================================
-    // 🟢 ATTACH DROPDOWN LISTENERS (AUTO-SAVE!)
-    // ==========================================
+    // Attach Dropdown Auto-Save Listeners
     tbody.querySelectorAll(".select-lock-staff").forEach(sel => {
         sel.addEventListener("change", async (e) => {
             const room = e.target.getAttribute("data-room");
             const selectedTeacher = e.target.value;
             
-            if (!currentLiveScheduleData.lockedRooms) {
-                currentLiveScheduleData.lockedRooms = {};
-            }
+            if (!currentLiveScheduleData.lockedRooms) currentLiveScheduleData.lockedRooms = {};
+            if (selectedTeacher) currentLiveScheduleData.lockedRooms[room] = selectedTeacher;
+            else delete currentLiveScheduleData.lockedRooms[room];
 
-            if (selectedTeacher) {
-                currentLiveScheduleData.lockedRooms[room] = selectedTeacher;
-            } else {
-                delete currentLiveScheduleData.lockedRooms[room];
-            }
-
-            // Sync to the map's live cache
             if (!window.liveMasterSchedule) window.liveMasterSchedule = {};
             window.liveMasterSchedule.lockedRooms = currentLiveScheduleData.lockedRooms;
 
-            // Visual flash of success
-            const originalBg = e.target.style.background;
             e.target.style.background = "#e8f5e9"; 
-            setTimeout(() => e.target.style.background = originalBg, 500);
+            setTimeout(() => e.target.style.background = "", 500);
 
             try {
-                await setDoc(doc(db, "settings", "master_schedule"), {
-                    lockedRooms: currentLiveScheduleData.lockedRooms
-                }, { merge: true });
-            } catch (err) {
-                console.error("Failed to save lock:", err);
-                alert("Failed to save lock. Check connection.");
-            }
+                await setDoc(doc(db, "settings", "master_schedule"), { lockedRooms: currentLiveScheduleData.lockedRooms }, { merge: true });
+            } catch (err) { alert("Failed to save lock. Check connection."); }
         });
     });
 
-    // ==========================================
-    // 🟢 ATTACH SKIP CHECK-IN LISTENERS
-    // ==========================================
     tbody.querySelectorAll(".toggle-skip-checkin").forEach(box => {
         box.addEventListener("change", async (e) => {
             const room = e.target.getAttribute("data-room");
             const isChecked = e.target.checked;
 
-            if (!currentLiveScheduleData.skipCheckInRooms) {
-                currentLiveScheduleData.skipCheckInRooms = {};
-            }
+            if (!currentLiveScheduleData.skipCheckInRooms) currentLiveScheduleData.skipCheckInRooms = {};
+            if (isChecked) currentLiveScheduleData.skipCheckInRooms[room] = true;
+            else delete currentLiveScheduleData.skipCheckInRooms[room];
 
-            if (isChecked) {
-                currentLiveScheduleData.skipCheckInRooms[room] = true;
-            } else {
-                delete currentLiveScheduleData.skipCheckInRooms[room];
-            }
-
-            // Sync to live cache
             if (!window.liveMasterSchedule) window.liveMasterSchedule = {};
             window.liveMasterSchedule.skipCheckInRooms = currentLiveScheduleData.skipCheckInRooms;
 
-            // Visual flash of success
             const td = e.target.closest("td");
-            const originalBg = td.style.background;
             td.style.background = "#e8f5e9";
-            setTimeout(() => td.style.background = originalBg, 500);
+            setTimeout(() => td.style.background = "", 500);
 
             try {
-                await setDoc(doc(db, "settings", "master_schedule"), {
-                    skipCheckInRooms: currentLiveScheduleData.skipCheckInRooms
-                }, { merge: true });
-            } catch (err) {
-                console.error("Failed to save skip toggle:", err);
-                alert("Failed to save. Check connection.");
-                e.target.checked = !isChecked; // revert visually
-            }
+                await setDoc(doc(db, "settings", "master_schedule"), { skipCheckInRooms: currentLiveScheduleData.skipCheckInRooms }, { merge: true });
+            } catch (err) { e.target.checked = !isChecked; }
         });
     });
+}
 
-    // Reattach manual edit listeners for the rest of the schedule
-    tbody.querySelectorAll(".editable-schedule-cell").forEach(cell => {
-        cell.addEventListener("click", () => {
-            // Existing logic is handled by global click delegation!
-        });
-    });
+// ==========================================
+// 🔍 AUTOMATED ROOM FINDER ENGINE
+// ==========================================
+/**
+ * Looks up the physical room number for a specific teacher and period based on the Master Schedule CSV.
+ * @param {string} teacherAlias - The string selected in the "Schedule Link" dropdown (e.g., "Ms. Britt")
+ * @param {string} period - The class period (e.g., "3")
+ * @returns {string|null} - The room number (e.g., "104") or null if not found
+ */
+export function getRoomForTeacherAndPeriod(teacherAlias, period) {
+    if (!currentLiveScheduleData || !teacherAlias || !period) return null;
+    
+    const periodData = currentLiveScheduleData[period];
+    if (!periodData) return null;
+
+    // Search through every room in this period to see if the teacher is assigned there
+    for (const [roomNumber, teacherAssignments] of Object.entries(periodData)) {
+        // teacherAssignments is an array of objects like: [{ teacher: "Ms. Britt", days: [1,2,3,4,5,6] }]
+        const isHere = teacherAssignments.find(t => t.teacher === teacherAlias);
+        if (isHere) {
+            return roomNumber.toUpperCase(); // We found them!
+        }
+    }
+    
+    return null; // Not teaching during this period, or not on the CSV
 }

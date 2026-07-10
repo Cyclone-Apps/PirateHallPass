@@ -533,51 +533,6 @@ if (typeof fetchBellSchedules === "function") {
     fetchBellSchedules().then(scheds => window.globalBellSchedulesCache = scheds || {});
 }
 
-window.openSchedulePopup = function(student) {
-    const existingModal = document.getElementById("student-schedule-popup-modal");
-    if (existingModal) existingModal.remove();
-
-    const modal = document.createElement("div");
-    modal.id = "student-schedule-popup-modal";
-    modal.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999; font-family: sans-serif;";
-
-    const box = document.createElement("div");
-    box.style.cssText = "background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); max-height: 80vh; overflow-y: auto;";
-
-    let html = `<h3 style="margin-top: 0; color: var(--pirate-red); border-bottom: 2px solid #eee; padding-bottom: 10px;">📋 Full Schedule: ${student.fullName}</h3>`;
-    const sched = student.schedule || {};
-
-    // Safely sort periods numerically (1, 2, 3...)
-    const periods = Object.keys(sched).sort((a, b) => {
-        const numA = parseInt(a);
-        const numB = parseInt(b);
-        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-        return a.localeCompare(b);
-    });
-
-    if (periods.length === 0) {
-        html += `<div style="padding: 10px; color: #777;">No schedule data found for this student.</div>`;
-    } else {
-        periods.forEach(p => {
-            html += `
-            <div style="background: #f8f9fa; border-left: 4px solid var(--pirate-silver); padding: 10px; margin-bottom: 8px; border-radius: 4px;">
-                <strong style="color: #333;">Period ${p}:</strong> ${sched[p].courseName}<br>
-                <div style="font-size: 0.85rem; color: #555; margin-top: 2px;">Room: ${sched[p].room || "N/A"} | Teacher: ${sched[p].teacher || "N/A"}</div>
-            </div>`;
-        });
-    }
-
-    const closeBtn = document.createElement("button");
-    closeBtn.innerText = "Close";
-    closeBtn.style.cssText = "background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; float: right; margin-top: 10px; font-weight: bold;";
-    closeBtn.onclick = () => modal.remove();
-
-    box.innerHTML = html;
-    box.appendChild(closeBtn);
-    modal.appendChild(box);
-    document.body.appendChild(modal);
-}
-
 async function handleSaveTimeOffset() {
     const offsetInput = document.getElementById("input-time-offset")?.value;
     if (typeof saveTimeOffset === "function") {

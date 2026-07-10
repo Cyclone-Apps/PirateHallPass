@@ -110,103 +110,25 @@
         <div style="background: white; padding: 30px; border-radius: 8px; width: 95%; max-width: 1000px; height: 90vh; display: flex; flex-direction: column;">
             
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">
-                <h1 style="margin: 0; color: var(--pirate-red);">Student & System Management</h1>
+                <h1 style="margin: 0; color: var(--pirate-red, #c62828);">🎓 Student Management</h1>
                 <span id="close-management-modal" style="cursor: pointer; font-size: 2rem;">✖</span>
             </div>
             
             <div style="overflow-y: auto; padding-right: 10px; flex-grow: 1;">
                 
-                <div style="background: #f4f6f9; padding: 20px; border-radius: 8px; border: 1px solid #ced4da; margin-bottom: 20px;">
-                    <h3>Upload Student Data</h3>
-                    <p style="font-size: 0.9rem; color: #666;">Select a Schedule CSV, an Email CSV, or both. Missing data is ignored, and manual restrictions are preserved.</p>
-                    
-                    <div style="display: flex; gap: 20px; margin-top: 15px; flex-wrap: wrap;">
-                        <div style="flex: 1; min-width: 200px;">
-                            <label style="font-weight: bold; display: block; margin-bottom: 5px;">1. Schedule CSV (Optional)</label>
-                            <input type="file" id="file-schedule" accept=".csv" style="width: 100%;" />
-                        </div>
-                        <div style="flex: 1; min-width: 200px;">
-                            <label style="font-weight: bold; display: block; margin-bottom: 5px;">2. Email/List CSV (Optional)</label>
-                            <input type="file" id="file-email" accept=".csv" style="width: 100%;" />
-                        </div>
-                        <div style="align-self: flex-end;">
-                            <button id="btn-sync-students" class="primary-btn" style="padding: 10px 20px;">🔄 Sync to Database</button>
-                        </div>
+                <div style="background: #e3f2fd; padding: 20px; border-radius: 8px; border: 1px solid #bbdefb; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <h3 style="margin-top: 0; color: #0277bd;">✅ Clever Auto-Sync Active</h3>
+                        <p style="font-size: 0.9rem; color: #444; margin-bottom: 0;">Student profiles and class schedules are updated automatically every night at 2:30 AM via Clever. Use this panel to manage app-specific settings like hall pass restrictions.</p>
                     </div>
-                    <p id="sync-status" style="margin-top: 10px; font-weight: bold; color: var(--pirate-red);"></p>
                 </div>
 
                 <div style="margin-bottom: 20px;">
-                    <input type="text" id="search-student" placeholder="Search by name or ID..." style="width: 100%; padding: 10px; font-size: 1.1rem; border: 1px solid #ced4da; border-radius: 4px;">
+                    <input type="text" id="search-student" placeholder="🔍 Search students by name or email..." style="width: 100%; padding: 12px; font-size: 1.1rem; border: 1px solid #ced4da; border-radius: 4px; outline: none;">
                 </div>
                 
-                <div id="admin-student-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-bottom: 30px;">
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-    <div id="teacher-management-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-        <div style="background: white; padding: 30px; border-radius: 8px; width: 95%; max-width: 1000px; height: 90vh; display: flex; flex-direction: column;">
-            
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">
-                <h1 style="margin: 0; color: #f57c00;">👨‍🏫 Teacher Management</h1>
-                <span id="close-teacher-management-modal" style="cursor: pointer; font-size: 2rem;">✖</span>
-            </div>
-            
-            <div style="overflow-y: auto; padding-right: 10px; flex-grow: 1;">
-                
-                <div style="background: #f4f6f9; padding: 20px; border-radius: 8px; border: 1px solid #ced4da; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end;">
-                    <div style="flex: 1; padding-right: 20px;">
-                        <h3 style="margin-top: 0;">Upload Staff Roster</h3>
-                        <p style="font-size: 0.9rem; color: #666;">Select a CSV containing "Member Name" and "Member Email".</p>
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <input type="file" id="file-import-teachers" accept=".csv" style="padding: 5px; flex: 1;" />
-                            <button id="btn-trigger-teacher-import" class="primary-btn" style="padding: 10px 20px; background-color: #f57c00; border: none;">📥 Import</button>
-                        </div>
+                <div id="admin-student-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 15px; margin-bottom: 30px;">
                     </div>
-                    
-                    <div style="border-left: 2px solid #ddd; padding-left: 20px; text-align: center;">
-                        <h3 style="margin-top: 0; color: #0277bd;">Link Schedules</h3>
-                        <p style="font-size: 0.9rem; color: #666;">Match student schedules to teacher accounts.</p>
-                        <button id="btn-sync-schedules" class="primary-btn" style="padding: 10px 20px; background-color: #0277bd; border: none; margin-top: 10px;">
-                            🔄 Auto-Match Schedules
-                        </button>
-                    </div>
-                </div>
-
-                <div id="teacher-mapping-alert" class="hidden" style="background: #fff3cd; border: 2px solid #ffeeba; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                    <h3 style="color: #856404; margin-top: 0;">⚠️ <span id="unmapped-count-badge">0</span> Unmatched Schedule Names Detected</h3>
-                    <p style="color: #666; margin-bottom: 15px;">The following names were found in student schedules but could not be automatically matched to an account. Please link them manually.</p>
-                    <div id="unmapped-teachers-container" style="display: flex; flex-direction: column; gap: 10px;">
-                        </div>
-                </div>
-
-                <div style="background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); padding: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <div>
-                            <h3 style="margin: 0; color: #333;">Active Staff Roster</h3>
-                        </div>
-                        <input type="text" id="input-search-teachers" placeholder="🔍 Search staff..." style="padding: 8px 15px; border: 1px solid #ccc; border-radius: 20px; width: 250px; outline: none;">
-                    </div>
-                    
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="background: #f8f9fa; border-bottom: 2px solid #ddd; text-align: left;">
-                                <th style="padding: 12px; color: #444;">Name</th>
-                                <th style="padding: 12px; color: #444;">Email Address</th>
-                                <th style="padding: 12px; color: #444; text-align: center;">Map Name</th>
-                                <th style="padding: 12px; color: #444; text-align: center;">Schedule Link</th>
-                                <th style="padding: 12px; color: #444; text-align: center;">Admin</th>
-                                <th style="padding: 12px; color: #444; text-align: center;">Lunch</th> 
-                            </tr>
-                        </thead>
-                        <tbody id="teacher-roster-table-body">
-                            <tr><td colspan="4" style="padding: 20px; text-align: center; color: #888;">Loading teachers...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
 
             </div>
         </div>
@@ -216,7 +138,7 @@
         <div style="background: white; padding: 30px; border-radius: 8px; width: 95%; max-width: 600px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
             
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">
-                <h2 id="modal-student-name" style="margin: 0; color: var(--pirate-red);">Edit Restrictions</h2>
+                <h2 id="modal-student-name" style="margin: 0; color: var(--pirate-red, #c62828);">Edit Restrictions</h2>
                 <span id="close-restriction-modal" style="cursor: pointer; font-size: 1.5rem;">✖</span>
             </div>
             
@@ -263,6 +185,63 @@
             <button id="btn-save-restrictions" class="primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem; margin-top: 10px;">💾 Save All Restrictions</button>
         </div>
     </div>
+
+    <div id="teacher-management-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div style="background: white; padding: 30px; border-radius: 8px; width: 95%; max-width: 1000px; height: 90vh; display: flex; flex-direction: column;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">
+            <h1 style="margin: 0; color: #f57c00;">👨‍🏫 Teacher Management</h1>
+            <span id="close-teacher-management-modal" style="cursor: pointer; font-size: 2rem;">✖</span>
+        </div>
+        
+        <div style="overflow-y: auto; padding-right: 10px; flex-grow: 1;">
+            
+            <div style="background: #f4f6f9; padding: 20px; border-radius: 8px; border: 1px solid #ced4da; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <h3 style="margin-top: 0; color: #0277bd;">Link Student Schedules</h3>
+                    <p style="font-size: 0.9rem; color: #666; margin-bottom: 0;">Match teacher names found in student schedules to their official staff accounts.</p>
+                </div>
+                <button id="btn-sync-schedules" class="primary-btn" style="padding: 10px 20px; background-color: #0277bd; color: white; border-radius: 4px; font-weight: bold; cursor: pointer; border: none;">
+                    🔄 Auto-Match Schedules
+                </button>
+            </div>
+
+            <div id="teacher-mapping-alert" class="hidden" style="background: #fff3cd; border: 2px solid #ffeeba; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <h3 style="color: #856404; margin-top: 0;">⚠️ <span id="unmapped-count-badge">0</span> Unmatched Schedule Names Detected</h3>
+                <p style="color: #666; margin-bottom: 15px;">The following names were found in student schedules but could not be automatically matched to an account. Please link them manually.</p>
+                <div id="unmapped-teachers-container" style="display: flex; flex-direction: column; gap: 10px;">
+                    </div>
+            </div>
+
+            <div style="background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin: 0; color: #333;">Active Staff Roster</h3>
+                    </div>
+                    <input type="text" id="input-search-teachers" placeholder="🔍 Search staff..." style="padding: 8px 15px; border: 1px solid #ccc; border-radius: 20px; width: 250px; outline: none;">
+                </div>
+                
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #f8f9fa; border-bottom: 2px solid #ddd; text-align: left;">
+                            <th style="padding: 12px; color: #444;">First Name</th>
+                            <th style="padding: 12px; color: #444;">Last Name</th>
+                            <th style="padding: 12px; color: #444;">Email Address</th>
+                            <th style="padding: 12px; color: #444; text-align: center;">Title</th> <th style="padding: 12px; color: #444; text-align: center;">Map Name</th>
+                            <th style="padding: 12px; color: #444; text-align: center;">Schedule Link</th>
+                            <th style="padding: 12px; color: #444; text-align: center;">Admin</th>
+                            <th style="padding: 12px; color: #444; text-align: center;">Lunch</th> 
+                        </tr>
+                    </thead>
+                    <tbody id="teacher-roster-table-body">
+                        <tr><td colspan="7" style="padding: 20px; text-align: center; color: #888;">Loading teachers...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+    </div>
+</div>
 
     <div id="map-popout-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: white; display: flex; flex-direction: column; z-index: 1200; overflow: hidden;">
         
