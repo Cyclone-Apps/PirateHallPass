@@ -105,8 +105,9 @@ export async function fetchTodaysSchedule(schoolLevel = "HS") {
 
 /**
  * Evaluates the adjusted time against the active bell schedule layout.
+ * 🌟 UPGRADED: Now accepts an optional 'lunchTrack' ("A" or "B") to filter split blocks!
  */
-export function evaluateCurrentTime(scheduleData) {
+export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
     if (!scheduleData || Object.keys(scheduleData).length === 0) {
         return { currentPeriod: null, isPassing: false, nextPeriod: null, minutesLeft: 0 };
     }
@@ -119,7 +120,6 @@ export function evaluateCurrentTime(scheduleData) {
     let isPassing = false;
     let minsLeft = 0;
 
-    // 🌟 BULLETPROOF FIX: Check if the database gave us an Array or a Map
     let periods = [];
     
     if (Array.isArray(scheduleData)) {
@@ -142,9 +142,22 @@ export function evaluateCurrentTime(scheduleData) {
         }));
     }
 
+    // ==========================================================
+    // 🎯 NEW: A/B LUNCH TRACK FILTER
+    // ==========================================================
+    if (lunchTrack) {
+        periods = periods.filter(p => {
+            const pName = p.name.toUpperCase();
+            // If they are track A, completely hide 6B blocks
+            if (lunchTrack.toUpperCase() === "A" && pName.startsWith("6B")) return false;
+            // If they are track B, completely hide 6A blocks
+            if (lunchTrack.toUpperCase() === "B" && pName.startsWith("6A")) return false;
+            return true; 
+        });
+    }
+
     // Sort chronologically
     periods.sort((a, b) => a.startMins - b.startMins);
-
 
     for (let i = 0; i < periods.length; i++) {
         const p = periods[i];
@@ -171,10 +184,26 @@ export function evaluateCurrentTime(scheduleData) {
         }
     }
 
+    // 🌟 Helper to convert "6A Class" or "6B Lunch" safely back to "Period 6"
+    // This allows the UI to easily find the class in the student's database profile
+    const getBasePeriod = (pName) => {
+        if (!pName) return null;
+        if (pName.startsWith("6A") || pName.startsWith("6B")) return "Period 6";
+        // If the bell schedule says "7", convert it to "Period 7" to match the database
+        if (!pName.toLowerCase().includes("period") && !isNaN(pName.charAt(0))) {
+            return `Period ${pName}`;
+        }
+        return pName;
+    };
+
     return {
         currentPeriod: activePeriod,
         isPassing: isPassing,
         nextPeriod: nextPeriod,
-        minutesLeft: minsLeft
+        minutesLeft: minsLeft,
+        
+        // These new properties tell the UI exactly what to look for in the database!
+        activeBasePeriod: getBasePeriod(activePeriod), 
+        nextBasePeriod: getBasePeriod(nextPeriod)
     };
 }

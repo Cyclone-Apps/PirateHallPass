@@ -58,8 +58,10 @@ async function runAutoMatchSync(btnSync) {
     btnSync.disabled = true;
 
     try {
-        // Fetch all students to extract unique teacher names from their schedules
-        const snap = await getDocs(collection(db, "students"));
+        // 🎯 MIGRATION FIX: Fetch all students from the unified "users" collection
+        const q = query(collection(db, "users"), where("role", "==", "student"));
+        const snap = await getDocs(q);
+        
         const uniqueScheduleNames = new Set();
         
         snap.forEach(docSnap => {

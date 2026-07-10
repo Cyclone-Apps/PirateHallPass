@@ -101,7 +101,6 @@ export function renderPassList(passes, containerId, countId) {
         const tReturned = formatTime(pass.returnedAt);
 
         // Determine if this room operates like a Restroom (No check-in required)
-        // 🌟 NEW: Respect the database bypass flag!
         const requiresCheckIn = pass.requiresCheckIn !== false && pass.targetTeacher && pass.targetTeacher !== "No Receiving Teacher" && pass.targetTeacher !== "Unknown";
         
         // 🟢 BUTTON RENDERER
@@ -146,7 +145,6 @@ export function renderPassList(passes, containerId, countId) {
                     `;
                 }
             } else {
-                // Treats it like a restroom/fountain (No destination check-in needed)
                 actionButtons = `
                     <div style="display: flex; gap: 10px; margin-top: 10px;">
                         <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #2e7d32; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✅ Student Returned</button>
@@ -168,6 +166,11 @@ export function renderPassList(passes, containerId, countId) {
         }
         
         const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown" && pass.targetTeacher !== "No Receiving Teacher") ? ` (${pass.targetTeacher})` : "";
+        
+        // 🎯 NEW: Adds the origin teacher's last name specifically for the Teacher Dashboard Cards!
+        const originRoom = pass.originRoom || pass.origin || "Unknown Room";
+        const originTeacherText = (pass.originTeacherLastName && pass.originTeacherLastName !== "Unknown" && pass.originTeacherLastName !== "No Receiving Teacher") ? ` (${pass.originTeacherLastName})` : "";
+        const originDisplay = `${originRoom}${originTeacherText}`;
             
         // DYNAMIC CARD BACKGROUND COLORS
         const isBypassedStatus = ['active_bypassed', 'returned_bypassed'].includes(pass.status);
@@ -224,7 +227,6 @@ export function renderPassList(passes, containerId, countId) {
             `;
         }
 
-        // 🟢 NEW: 4-Step Timeline Tracker
         let timelineHTML = '';
         if (pass.status !== 'waitlist' && pass.status !== 'pending' && pass.status !== 'pending_student' && pass.status !== 'pending_restricted' && pass.status !== 'pending_warning') {
             timelineHTML = `
@@ -253,6 +255,7 @@ export function renderPassList(passes, containerId, countId) {
                              </div>`;
         }
 
+        // 🎯 INJECTS THE NEW originDisplay VARIABLE WE CREATED ABOVE!
         return `
             <div class="pass-card" style="background: ${cardBgColor}; border: 1px solid ${cardBorderColor}; border-left: 5px solid ${leftBorderColor}; padding: 15px; margin-bottom: 12px; border-radius: var(--radius, 8px); box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 5px;">
@@ -262,7 +265,7 @@ export function renderPassList(passes, containerId, countId) {
                 ${waitlistBadgeHTML}
                 ${restrictionBannerHTML}
                 <div style="color: #555; font-size: 0.95rem; margin-bottom: 2px;">
-                    🛫 Origin: <strong>${pass.origin || "Unknown Room"}</strong>
+                    🛫 Origin: <strong>${originDisplay}</strong>
                 </div>
                 <div style="color: #555; font-size: 0.95rem; margin-bottom: 5px;">
                     📍 Destination: ${destinationDisplay}

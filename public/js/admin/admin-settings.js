@@ -2,12 +2,12 @@
 
 import { 
     saveBellSchedule, fetchBellSchedules, 
-    setEmergencyState, listenToEmergencyState, 
     saveAcademicCalendar, fetchAcademicCalendar,
     fetchGCalConfig, saveGCalConfig,
     saveTimeOffset, listenToTimeOffset,
     setActiveDailySchedule, listenToDailyConfig
 } from "../modules/admin-engine.js";
+import { initLockdownListener, setEmergencyState } from "../features/f-lockdowns.js";
 
 // ==========================================
 // 🧠 STATE MANAGEMENT
@@ -44,14 +44,12 @@ function calculateCurrentAcademicYear() {
 // ==========================================
 export function initSettingsManagement() {
     
-    // 1. Data Subscriptions
-    listenToEmergencyState((isEmergency) => {
-        currentEmergencyState = isEmergency;
-        updateEmergencyUI(isEmergency);
+    // Listen for global lockdowns, keep admin UI in sync, and update state memory
+    initLockdownListener((state) => {
+        currentEmergencyState = state;
     });
 
     loadBellSchedules();
-
     // ==========================================
     // 🪟 GLOBAL EVENT DELEGATION
     // ==========================================
@@ -113,65 +111,6 @@ export function initSettingsManagement() {
     
     document.getElementById("btn-save-schedule")?.addEventListener("click", handleSaveBellSchedule);
     document.getElementById("schedule-type-select")?.addEventListener("change", (e) => renderScheduleEditor(e.target.value));
-}
-
-// ==========================================
-// 🚨 EMERGENCY CONTROLS
-// ==========================================
-function updateEmergencyUI(state) {
-    currentEmergencyState = state || { globalLockdown: false, quietLockdown: false, lockedAreas: [] };
-
-    const title = document.getElementById("emergency-status-title");
-    const msg = document.getElementById("emergency-status-msg");
-    const box = document.getElementById("emergency-status-box");
-    
-    const btnLoud = document.getElementById("btn-toggle-loud-lockdown");
-    const btnQuiet = document.getElementById("btn-toggle-quiet-lockdown");
-
-    if (!title || !msg || !box || !btnLoud || !btnQuiet) return;
-
-    if (state.globalLockdown) {
-        // LOUD LOCKDOWN ACTIVE
-        box.style.background = "#ffebee"; // Light Red
-        box.style.borderColor = "var(--pirate-red)";
-        title.style.color = "var(--pirate-red)";
-        title.innerText = "🚨 LOUD LOCK DOWN ACTIVE";
-        msg.innerText = "All rooms are in LOUD LOCK DOWN. Visible to both Students and Teachers.";
-        
-        btnLoud.innerText = "🔓 Remove Loud Lockdown";
-        btnLoud.style.backgroundColor = "#2e7d32"; 
-        btnQuiet.style.display = "none"; // Hide alternative choice when active
-    } 
-    else if (state.quietLockdown) {
-        // QUIET LOCKDOWN ACTIVE
-        box.style.background = "#fff3cd"; // Warning Orange/Yellow
-        box.style.borderColor = "#ffa000";
-        title.style.color = "#b78103";
-        title.innerText = "🤫 QUIET LOCK DOWN ACTIVE";
-        msg.innerText = "All rooms are in QUIET LOCK DOWN. Visible ONLY to Teachers.";
-        
-        btnQuiet.innerText = "🔓 Remove Quiet Lockdown";
-        btnQuiet.style.backgroundColor = "#2e7d32"; 
-        btnLoud.style.display = "none"; // Hide alternative choice when active
-    } 
-    else {
-        // STANDARD NORMAL OPERATION
-        box.style.background = "#e8f5e9"; // Light Green
-        box.style.borderColor = "#4caf50";
-        title.style.color = "#2e7d32";
-        title.innerText = "✅ System Operating Normally";
-        msg.innerText = "The building is operating normal.";
-        
-        // Reset Loud Button
-        btnLoud.style.display = "block";
-        btnLoud.innerText = "🚨 Loud Lock Down All Rooms";
-        btnLoud.style.backgroundColor = "var(--pirate-red)";
-        
-        // Reset Quiet Button
-        btnQuiet.style.display = "block";
-        btnQuiet.innerText = "🤫 Quiet Lock Down All Rooms";
-        btnQuiet.style.backgroundColor = "#616161"; // Dark Gray neutral
-    }
 }
 
 // Ensure these functions map perfectly to your database schema!
@@ -532,6 +471,9 @@ listenToDailyConfig((config) => window.activeDailyScheduleName = config?.activeS
 if (typeof fetchBellSchedules === "function") {
     fetchBellSchedules().then(scheds => window.globalBellSchedulesCache = scheds || {});
 }
+
+// Start the global lockdown engine (Automatically handles Admin UI alerts)
+initLockdownListener();
 
 async function handleSaveTimeOffset() {
     const offsetInput = document.getElementById("input-time-offset")?.value;

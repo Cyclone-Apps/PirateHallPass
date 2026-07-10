@@ -1,7 +1,8 @@
 // js/admin/admin-passes.js
 
 // 🌟 FIX: Combined the imports to ensure createNewPass is actively loaded
-import { fetchAllStudents, createNewPass } from "../modules/pass-engine.js";
+import { fetchAllStudents } from "../modules/pass-engine.js";
+import { createNewPass } from "../modules/create-pass.js";
 import { setupStudentAutocomplete } from "../modules/ui-widgets.js";
 import { MapController } from "../modules/map-engine.js";
 import { initSendPassFeature } from '../features/f-send-pass.js';

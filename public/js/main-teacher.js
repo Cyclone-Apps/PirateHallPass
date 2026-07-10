@@ -2,12 +2,14 @@
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { renderHeader, renderPassList, setupStudentAutocomplete } from "./modules/ui-widgets.js";
 // 🌟 FIX: Added listenToScheduledPasses to the import list
-import { listenToPendingPasses, listenToActivePasses, listenToScheduledPasses, updatePassStatus, createNewPass, cancelScheduledPass, fetchAllStudents, listenToPassHistory, editPassHistory, flagPassFraudulent } from "./modules/pass-engine.js";
-import { listenToEmergencyState } from "./modules/admin-engine.js";
+import { listenToPendingPasses, listenToActivePasses, listenToScheduledPasses, updatePassStatus, cancelScheduledPass, fetchAllStudents, listenToPassHistory, editPassHistory, flagPassFraudulent } from "./modules/pass-engine.js";
+import { createNewPass } from "./modules/create-pass.js";
 import { MapController } from "./modules/map-engine.js";
+import { initLockdownListener } from "./features/f-lockdowns.js";
 import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "./firebase-config.js";
 import { initSendPassFeature } from './features/f-send-pass.js';
+import { initTeacherHistoryControls, updateTeacherHistoryData } from "./features/f-teacher-history.js";
 
 window.cancelPass = cancelScheduledPass;
 
@@ -196,238 +198,25 @@ initAuthListener("teacher", async (user, role) => {
     }
     
 // =======================================================
-    // 🌟 NEW: HISTORY PASSES (4th Column)
+    // 🌟 HISTORY PASSES (4th Column - Decoupled)
     // =======================================================
-    let allHistoryPasses = []; 
-    let currentHistoryTab = 'today'; 
-
-    // 🟢 CUSTOM RENDERER FOR HISTORY PASSES (Shows Times, Edits & Fraud Flags)
-    function renderHistoryPasses(passes, containerId) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = "";
-
-        if (passes.length === 0) {
-            container.innerHTML = `<div style="padding: 15px; color: #777; text-align: center; border: 1px dashed #ccc; border-radius: 8px;">No history available.</div>`;
-            return;
-        }
-
-        passes.forEach(pass => {
-            // Extract and format times safely
-            const startObj = pass.acceptedAt?.toDate?.() || pass.createdAt?.toDate?.();
-            const endObj = pass.returnedAt?.toDate?.();
-            
-            // Extract ORIGINAL times if they were edited
-            const origStartObj = pass.originalAcceptedAt?.toDate?.();
-            const origEndObj = pass.originalReturnedAt?.toDate?.();
-            
-            const formatTime = (dateObj) => dateObj ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Unknown";
-            const inputFormat = (dateObj) => dateObj ? dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "";
-            
-            const startTimeStr = formatTime(startObj);
-            const endTimeStr = formatTime(endObj);
-
-            // Calculate duration in minutes
-            let durationStr = "";
-            if (startObj && endObj) {
-                const diffMins = Math.round((endObj - startObj) / 60000);
-                durationStr = `(${diffMins}m)`;
-            }
-
-            // ========================================================
-            // 🟢 STRIKETHROUGH EDITS & FRAUD FLAGS
-            // ========================================================
-            let destinationDisplay = `<strong>${pass.destination}</strong>`;
-            let editNoteHTML = '';
-            let fraudNoteHTML = '';
-            let leftBorderColor = '#607d8b'; // Default history gray/blue
-
-            // 1. Destination Strikethrough
-            if (pass.originalDestination && pass.originalDestination !== pass.destination) {
-                destinationDisplay = `<del style="color: #d32f2f;">${pass.originalDestination}</del> <strong style="color: #d32f2f; margin-left: 5px;">${pass.destination}</strong>`;
-            }
-            
-            // 2. Time Strikethroughs (NEW)
-            let startTimeDisplay = startTimeStr;
-            if (origStartObj) {
-                startTimeDisplay = `<del style="color: #d32f2f;">${formatTime(origStartObj)}</del> <span style="color: #d32f2f;">${startTimeStr}</span>`;
-            }
-            
-            let endTimeDisplay = endTimeStr;
-            if (origEndObj) {
-                endTimeDisplay = `<del style="color: #d32f2f;">${formatTime(origEndObj)}</del> <span style="color: #d32f2f;">${endTimeStr}</span>`;
-            }
-            
-            // 3. Show who edited it
-            if (pass.editedBy) {
-                editNoteHTML = `<div style="font-size: 0.8rem; color: #e65100; font-style: italic; margin-top: 4px; margin-bottom: 8px;">✏️ Edited by ${pass.editedBy}</div>`;
-            }
-
-            // 4. Show Fraudulent Flag Warning
-            if (pass.status === 'fraudulent_review' || pass.fraudExplanation) {
-                leftBorderColor = '#c62828'; // Turn border Stark Red
-                fraudNoteHTML = `
-                    <div style="background: #ffebee; border: 1px solid #ffcdd2; color: #c62828; padding: 6px; border-radius: 4px; font-size: 0.85rem; margin-bottom: 10px;">
-                        <strong>🚩 Fraudulent Flag:</strong> ${pass.fraudExplanation || "Sent to Admin for review."}
-                    </div>
-                `;
-            }
-
-            const card = document.createElement("div");
-            card.style.cssText = `background: white; border: 1px solid #eaedf2; border-left: 5px solid ${leftBorderColor}; padding: 15px; margin-bottom: 12px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`;
-            
-            card.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 5px;">
-                    <span style="font-size: 1.1rem; color: #1a1a1a;">🧑‍🎓 ${pass.studentDisplayName || pass.studentName || "Unknown"}</span>
-                    <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee; padding: 2px 6px; border-radius: 4px;">${pass.type || "Pass"}</span>
-                </div>
-                ${fraudNoteHTML}
-                <div style="color: #555; font-size: 0.95rem; margin-bottom: 4px;">
-                    📍 To: ${destinationDisplay}
-                </div>
-                ${editNoteHTML}
-                <div style="background: #f8f9fa; border: 1px solid #e0e0e0; padding: 6px 10px; border-radius: 4px; display: inline-block; font-size: 0.85rem; color: #333; margin-bottom: 10px;">
-                    ⏱️ <strong>${startTimeDisplay} - ${endTimeDisplay}</strong> <span style="color: #d32f2f; font-weight: bold; margin-left: 5px;">${durationStr}</span>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button class="btn-edit-history" 
-                        data-id="${pass.id}" 
-                        data-dest="${pass.destination}" 
-                        data-start-val="${inputFormat(startObj)}" 
-                        data-end-val="${inputFormat(endObj)}"
-                        data-start-ms="${startObj ? startObj.getTime() : ''}"
-                        data-end-ms="${endObj ? endObj.getTime() : ''}"
-                        data-orig-start-ms="${origStartObj ? origStartObj.getTime() : ''}"
-                        data-orig-end-ms="${origEndObj ? origEndObj.getTime() : ''}"
-                        style="background: #fb8c00; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; width: 100%;">
-                        ✏️ Edit / Flag Pass
-                    </button>
-                </div>
-            `;
-            container.appendChild(card);
-        });
-    }
     
-    function renderHistoryTab() {
-        const myName = user.displayName;
-        
-        // Define Today & Yesterday midnight boundaries
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        
-        const yesterdayStart = new Date(todayStart);
-        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    // 1. Initialize the tab click listeners
+    initTeacherHistoryControls();
 
-        // Filter 1: Pass MUST involve this teacher (Origin, Destination, or Sender)
-        const myHistory = allHistoryPasses.filter(pass => 
-            pass.targetTeacher === myName || 
-            pass.originTeacher === myName ||
-            pass.senderName === myName 
-        );
-
-        // Filter 2: Sort by Today vs Yesterday
-        let filteredPasses = [];
-
-        if (currentHistoryTab === 'today') {
-            filteredPasses = myHistory.filter(p => {
-                const passDate = p.returnedAt?.toDate?.() || p.createdAt?.toDate?.() || new Date(0);
-                return passDate >= todayStart;
-            });
-            renderHistoryPasses(filteredPasses, "list-history-today");
-            
-            // Toggle UI View
-            document.getElementById("list-history-today").classList.remove("hidden");
-            document.getElementById("list-history-yesterday").classList.add("hidden");
-            document.getElementById("tab-history-today").style.background = "#0277bd";
-            document.getElementById("tab-history-today").style.color = "white";
-            document.getElementById("tab-history-yesterday").style.background = "#e0e0e0";
-            document.getElementById("tab-history-yesterday").style.color = "#333";
-            
-        } else {
-            filteredPasses = myHistory.filter(p => {
-                const passDate = p.returnedAt?.toDate?.() || p.createdAt?.toDate?.() || new Date(0);
-                return passDate >= yesterdayStart && passDate < todayStart;
-            });
-            
-            // ✅ CORRECTED LINE:
-            renderHistoryPasses(filteredPasses, "list-history-yesterday");
-            
-            // Toggle UI View
-            document.getElementById("list-history-today").classList.add("hidden");
-            document.getElementById("list-history-yesterday").classList.remove("hidden");
-            document.getElementById("tab-history-today").style.background = "#e0e0e0";
-            document.getElementById("tab-history-today").style.color = "#333";
-            document.getElementById("tab-history-yesterday").style.background = "#0277bd";
-            document.getElementById("tab-history-yesterday").style.color = "white";
-        }
-    }
-
-    // Attach Click Listeners to the Tabs
-    const tabToday = document.getElementById("tab-history-today");
-    const tabYesterday = document.getElementById("tab-history-yesterday");
-    if (tabToday) tabToday.addEventListener("click", () => { currentHistoryTab = 'today'; renderHistoryTab(); });
-    if (tabYesterday) tabYesterday.addEventListener("click", () => { currentHistoryTab = 'yesterday'; renderHistoryTab(); });
-
-    // Activate the real-time Firebase Listener
+    // 2. Activate the real-time Firebase Listener and feed it to our new feature module
     if (typeof listenToPassHistory === "function") {
         listenToPassHistory((passes) => {
-            // Sort by most recently returned at the top
-            allHistoryPasses = passes.sort((a, b) => {
-                const timeA = a.returnedAt?.toDate?.() || new Date(0);
-                const timeB = b.returnedAt?.toDate?.() || new Date(0);
-                return timeB - timeA; 
-            });
-            renderHistoryTab();
+            // We pass 'user' so the module knows exactly who the teacher is!
+            updateTeacherHistoryData(passes, window.currentUser || user);
         });
     }
 
-    // Listen for Emergencies and drop down the banner
-    listenToEmergencyState((state) => {
-        const banner = document.getElementById("emergency-alert-banner");
-        const ribbon = document.getElementById("message-center-widget");
-        
-        if (banner) {
-            if (state.globalLockdown) {
-                // 🔴 1. LOUD LOCKDOWN EMERGENCY ACTIVE
-                banner.classList.remove("hidden");
-                banner.style.backgroundColor = "#c62828"; // Emergency Red
-                banner.style.color = "white";
-                banner.style.padding = "15px";
-                banner.style.textAlign = "center";
-                banner.innerHTML = "🚨 <strong>LOUD LOCKDOWN ACTIVE</strong> - Lock doors, turn off lights, and seek cover immediately! 🚨";
-                
-                // Turns the entire Message Center box red
-                if (ribbon) {
-                    ribbon.classList.add("lockdown-mode"); 
-                    ribbon.classList.remove("quiet-lockdown-mode");
-                }
-            } else if (state.quietLockdown) {
-                // 🟠 2. QUIET LOCKDOWN EMERGENCY ACTIVE
-                banner.classList.remove("hidden");
-                banner.style.backgroundColor = "#ef6c00"; // Alert Orange / Amber
-                banner.style.color = "white";
-                banner.style.padding = "15px";
-                banner.style.textAlign = "center";
-                banner.innerHTML = "⚠️ <strong>QUIET LOCKDOWN ACTIVE</strong> - Lock classroom doors. Continue teaching, but NO hall passes permitted. ⚠️";
-                
-                // Style the message center widget for caution
-                if (ribbon) {
-                    ribbon.classList.add("lockdown-mode"); 
-                    ribbon.classList.add("quiet-lockdown-mode");
-                }
-            } else {
-                // 🟢 3. NO EMERGENCY STATUS ACTIVE
-                banner.classList.add("hidden");
-                banner.innerHTML = "";
-                
-                // Returns the Message Center to normal white/gray
-                if (ribbon) {
-                    ribbon.classList.remove("lockdown-mode");
-                    ribbon.classList.remove("quiet-lockdown-mode");
-                }
-            }
-        }
-    });
+    // Save user info to window for the modal engine to use
+    window.currentUser = user; 
+    
+    // Start the global lockdown engine (Automatically handles Teacher UI alerts)
+    initLockdownListener();
 
     // Save user info to window for the modal engine to use
     window.currentUser = user; 
@@ -510,12 +299,12 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
         }
         
         // 🌟 2. CHECK-IN TIMELINE INTERCEPTS
-        if (action === "arrived") {
-            action = currentStatus; // Stay active
-            extraData.arrivedAt = new Date(); // Timestamp Arrival
-        } else if (action === "departed") {
-            action = currentStatus; // Stay active
-            extraData.departedAt = new Date(); // Timestamp Departure
+        if (newStatus === "arrived") {
+            newStatus = currentStatus; 
+            extraData.arrivedAt = true; // 🎯 FIX: Changed from new Date()
+        } else if (newStatus === "departed") {
+            newStatus = currentStatus; 
+            extraData.departedAt = true; // 🎯 FIX: Changed from new Date()
         }
         
         // 🌟 3. THE RETURN INTERCEPT

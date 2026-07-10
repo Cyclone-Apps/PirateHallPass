@@ -1,5 +1,6 @@
 import { setupStudentAutocomplete } from "../modules/ui-widgets.js";
-import { fetchAllStudents, createNewPass } from "../modules/pass-engine.js";
+import { fetchAllStudents } from "../modules/pass-engine.js";
+import { createNewPass } from "../modules/create-pass.js";
 import { MapController } from "../modules/map-engine.js";
 
 // ==========================================

@@ -1,4 +1,4 @@
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "../firebase-config.js"; 
 
 export async function initStudentSelect(inputElement, dropdownElement, onSelectCallback) {
@@ -6,7 +6,10 @@ export async function initStudentSelect(inputElement, dropdownElement, onSelectC
 
     // 1. Fetch data
     try {
-        const querySnapshot = await getDocs(collection(db, "students"));
+        // 🎯 MIGRATION FIX: Point to "users" and filter by role "student"
+        const q = query(collection(db, "users"), where("role", "==", "student"));
+        const querySnapshot = await getDocs(q);
+        
         querySnapshot.forEach((doc) => {
             const data = doc.data();
             const name = data.fullName || data.displayName || "Unknown Student";
@@ -89,12 +92,16 @@ export async function initStudentSelect(inputElement, dropdownElement, onSelectC
 // --- Multi-Select Student Dropdown ---
 export function initMultiStudentSelect(inputElement, dropdownElement, tagsContainer, maxSelections = 4, onChangeCallback) {
     let selectedStudents = [];
-    let allStudents = []; // This should be populated by your Firebase fetch logic similar to initStudentSelect
+    let allStudents = []; 
 
-    // Mock fetch for demonstration - replace with your actual Firebase fetching logic used in initStudentSelect
-    import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js").then(async ({ collection, getDocs }) => {
+    // 🎯 MIGRATION FIX: Add query and where to the dynamic import
+    import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js").then(async ({ collection, getDocs, query, where }) => {
         const { db } = await import("../firebase-config.js");
-        const querySnapshot = await getDocs(collection(db, "students"));
+        
+        // 🎯 MIGRATION FIX: Point to "users" and filter by role "student"
+        const q = query(collection(db, "users"), where("role", "==", "student"));
+        const querySnapshot = await getDocs(q);
+        
         allStudents = querySnapshot.docs.map(doc => ({
             id: doc.id,
             name: doc.data().displayName,

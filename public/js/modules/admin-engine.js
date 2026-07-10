@@ -2,16 +2,26 @@
 import { db } from "../firebase-config.js";
 import { collection, doc, setDoc, getDoc, getDocs, onSnapshot, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-const studentsRef = collection(db, "students");
+// 🎯 MIGRATION FIX: Point to the unified "users" collection
+const usersRef = collection(db, "users");
 
 /**
  * Saves a student to Firebase. Uses { merge: true } so manual restrictions are NOT overwritten.
  */
 export async function upsertStudentData(studentId, studentData) {
     try {
-        const studentDoc = doc(db, "students", studentId);
+        // 🎯 MIGRATION FIX: Target the document inside the "users" collection
+        const userDoc = doc(db, "users", studentId);
+        
+        // 🎯 MIGRATION FIX: Guarantee the role is set to "student" during the upsert!
+        // This ensures anyone added via the Admin Sync gets sorted into the correct dropdowns.
+        const payload = {
+            ...studentData,
+            role: "student" 
+        };
+
         // merge: true is the magic that protects your manually entered restrictions!
-        await setDoc(studentDoc, studentData, { merge: true });
+        await setDoc(userDoc, payload, { merge: true });
         return true;
     } catch (error) {
         console.error("Error upserting student:", error);
@@ -109,36 +119,6 @@ export async function fetchBellSchedules() {
         console.error("Error fetching bell schedules:", error);
         return {};
     }
-}
-
-/**
- * Sets the Global Emergency State
- * @param {Object} emergencyData - e.g., { globalLockdown: true, lockedAreas: [] }
- */
-export async function setEmergencyState(emergencyData) {
-    try {
-        const settingsDoc = doc(db, "settings", "emergencyState");
-        await setDoc(settingsDoc, emergencyData, { merge: true });
-        return true;
-    } catch (error) {
-        console.error("Error setting emergency state:", error);
-        return false;
-    }
-}
-
-/**
- * Listens for Emergency State changes in real-time
- */
-export function listenToEmergencyState(callback) {
-    const settingsDoc = doc(db, "settings", "emergencyState");
-    return onSnapshot(settingsDoc, (docSnap) => {
-        if (docSnap.exists()) {
-            callback(docSnap.data());
-        } else {
-            // Added quietLockdown to the default fallback state
-            callback({ globalLockdown: false, quietLockdown: false, lockedAreas: [] });
-        }
-    });
 }
 
 /**

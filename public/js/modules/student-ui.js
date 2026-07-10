@@ -184,27 +184,47 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
         return;
     }
 
-    // Direct extraction of processed data provided by the active time interval loop
-    let currentPeriod = timeMetrics?.currentPeriod || null;
-    let nextPeriod = timeMetrics?.nextPeriod || null;
+    // 🎯 Use the raw strings for the VISUAL display (e.g., "6A Class")
+    let currentDisplay = timeMetrics?.currentPeriod || null;
+    let nextDisplay = timeMetrics?.nextPeriod || null;
+
+    // 🎯 Use the "Base Periods" for the DATABASE lookup (e.g., "Period 6")
+    let currentBase = timeMetrics?.activeBasePeriod || currentDisplay;
+    let nextBase = timeMetrics?.nextBasePeriod || nextDisplay;
+    
     const sched = profile.schedule;
 
-    // 🟢 ALWAYS SHOW NEXT CLASS (Unless it's 9th period)
-    if (currentPeriod && !isNaN(parseInt(currentPeriod))) {
-        const pNum = parseInt(currentPeriod);
-        if (pNum < 9) {
-            nextPeriod = String(pNum + 1);
+    // 🛠 Helper: Safely lookup a class whether the database key is "Period 6", "6", or "6A Class"
+    const getClassData = (pName) => {
+        if (!pName) return null;
+        return sched[pName] || sched[pName.replace("Period ", "")] || sched[`Period ${pName}`] || null;
+    };
+
+    let currentClass = getClassData(currentBase);
+    let nextClass = getClassData(nextBase);
+
+    // 🟢 ALWAYS SHOW NEXT CLASS (If current exists but we don't naturally have a 'next' calculated)
+    if (currentBase && !nextClass) {
+        // Extract the number from "Period 6" or "6"
+        const match = String(currentBase).match(/\d+/);
+        if (match) {
+            const pNum = parseInt(match[0], 10);
+            if (pNum < 9) { // Assuming 9 periods max
+                nextBase = `Period ${pNum + 1}`;
+                nextClass = getClassData(nextBase);
+                nextDisplay = nextBase;
+            }
         }
     }
 
     // 🚨 NEW: GLOBALLY TRACK STUDENT LOCATION FOR PASS CREATION
     // If they are in a passing period, we assume the pass belongs to their NEXT class.
-    const activeP = currentPeriod || nextPeriod; 
+    const activeClassData = currentClass || nextClass; 
     
-    if (activeP && sched[activeP]) {
-        window.currentRoom = sched[activeP].room || "Unknown";
-        window.currentOriginTeacher = sched[activeP].teacher || "Unknown";
-        window.currentPeriod = activeP;
+    if (activeClassData) {
+        window.currentRoom = activeClassData.room || "Unknown";
+        window.currentOriginTeacher = activeClassData.teacher || "Unknown";
+        window.currentPeriod = currentBase; // Feed "Period 6" to the Pass Engine, not "6A Class"
     } else {
         window.currentRoom = "Unknown";
         window.currentOriginTeacher = "Unknown";
@@ -213,24 +233,30 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
 
     let html = '';
     
-    if (currentPeriod && sched[currentPeriod]) {
+    // Helper to format the display label nicely (e.g., "6A Class" or "7")
+    const formatLabel = (rawName) => {
+        if (!rawName) return "??";
+        return String(rawName).replace("Period ", ""); 
+    };
+
+    if (currentClass) {
         html += `
             <div style="margin-bottom: 10px;">
                 <div style="font-size: 0.7rem; color: #2e7d32; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;">📍 Current</div>
                 <div style="background: #e8f5e9; border-left: 3px solid #4caf50; padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; line-height: 1.3;">
-                    <strong style="color: #1b5e20;">P${currentPeriod}:</strong> ${sched[currentPeriod].courseName}<br>
-                    <span style="color: #555;">Room: ${sched[currentPeriod].room || "N/A"}</span>
+                    <strong style="color: #1b5e20;">P${formatLabel(currentDisplay)}:</strong> ${currentClass.courseName}<br>
+                    <span style="color: #555;">Room: ${currentClass.room || "N/A"}</span>
                 </div>
             </div>`;
     }
 
-    if (nextPeriod && sched[nextPeriod]) {
+    if (nextClass) {
         html += `
             <div>
                 <div style="font-size: 0.7rem; color: #1565c0; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;">➡️ Next</div>
                 <div style="background: #e3f2fd; border-left: 3px solid #2196f3; padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; line-height: 1.3;">
-                    <strong style="color: #0d47a1;">P${nextPeriod}:</strong> ${sched[nextPeriod].courseName}<br>
-                    <span style="color: #555;">Room: ${sched[nextPeriod].room || "N/A"}</span>
+                    <strong style="color: #0d47a1;">P${formatLabel(nextDisplay)}:</strong> ${nextClass.courseName}<br>
+                    <span style="color: #555;">Room: ${nextClass.room || "N/A"}</span>
                 </div>
             </div>`;
     }
@@ -301,20 +327,20 @@ export function renderStudentWaitingScreen(pass, statusData) {
         
         let studentMessage = "This pass is currently not allowed for you.";
         if (statusData.restrictionType === 'temporary') {
-            studentMessage += "<br><br><span style='font-size: 1.2rem; opacity: 0.9;'>Please try again in 5 minutes.</span>";
+            studentMessage += "<br><br><span style='font-size: 1.1rem; opacity: 0.9;'>Please try again in 5 minutes.</span>";
         } else if (statusData.restrictionType === 'capacity') {
-            studentMessage += `<br><br><span style='font-size: 1.2rem; opacity: 0.9;'>⏳ Waitlist Position: <strong>${statusData.waitlistPosition}</strong></span>`;
+            studentMessage += `<br><br><span style='font-size: 1.1rem; opacity: 0.9;'>⏳ Waitlist Position: <strong>${statusData.waitlistPosition}</strong></span>`;
         }
 
         extraInfoHtml = `
-            <div style="background: white; color: #721c24; padding: 20px; border-radius: 8px; margin: 20px auto; max-width: 80%; border: 2px solid #f5c6cb;">
-                <strong style="font-size: 1.2rem;">🛑 RESTRICTED REQUEST</strong><br><br>
-                ${studentMessage}
+            <div style="background: white; color: #721c24; padding: 10px; border-radius: 8px; margin: 10px auto; max-width: 90%; border: 2px solid #f5c6cb;">
+                <strong style="font-size: 1.1rem;">🛑 RESTRICTED REQUEST</strong><br>
+                <span style="font-size: 1rem;">${studentMessage}</span>
             </div>
         `;
 
         buttonsHtml = `
-            <button id="btn-teacher-reject" data-id="${pass.id}" class="danger-btn" style="width: 100%; max-width: 300px; font-size: 1.4rem; padding: 20px;">
+            <button id="btn-teacher-reject" data-id="${pass.id}" class="danger-btn" style="width: 100%; max-width: 300px; font-size: 1.3rem; padding: 15px;">
                 ❌ Cancel Request
             </button>
         `;
@@ -324,18 +350,17 @@ export function renderStudentWaitingScreen(pass, statusData) {
         titleColor = statusData.statusLevel === 'yellow' ? "#856404" : "#155724";
         
         buttonsHtml = `
-            <div style="display: flex; gap: 15px; justify-content: center; width: 100%; max-width: 500px; margin: 0 auto;">
-                <button id="btn-teacher-approve" data-id="${pass.id}" class="primary-btn" style="flex: 1; font-size: 1.4rem; padding: 20px;">✅ Approve</button>
-                <button id="btn-teacher-reject" data-id="${pass.id}" class="danger-btn" style="flex: 1; font-size: 1.4rem; padding: 20px;">❌ Reject</button>
+            <div style="display: flex; gap: 10px; justify-content: center; width: 100%; max-width: 500px; margin: 0 auto;">
+                <button id="btn-teacher-approve" data-id="${pass.id}" class="primary-btn" style="flex: 1; font-size: 1.3rem; padding: 15px;">✅ Approve</button>
+                <button id="btn-teacher-reject" data-id="${pass.id}" class="danger-btn" style="flex: 1; font-size: 1.3rem; padding: 15px;">❌ Reject</button>
             </div>
         `;
     }
 
-    // 🌟 NEW: Inject the requesting teacher's comment if this pass was scheduled by someone else!
     let teacherNoteHtml = '';
     if (pass.isProxy || pass.senderName) {
         teacherNoteHtml = `
-            <div style="background: rgba(255,255,255,0.6); padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 1.1rem; color: #444; border: 1px solid rgba(0,0,0,0.1); text-align: left; max-width: 80%; margin-left: auto; margin-right: auto;">
+            <div style="background: rgba(255,255,255,0.6); padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 1rem; color: #444; border: 1px solid rgba(0,0,0,0.1); text-align: left; max-width: 90%; margin-left: auto; margin-right: auto;">
                 <strong style="color: #1565c0;">📢 Scheduled By:</strong> ${pass.senderName || "A Teacher"}<br>
                 <strong style="color: #1565c0;">Purpose:</strong> ${pass.purpose || "Not specified"}
             </div>
@@ -344,29 +369,39 @@ export function renderStudentWaitingScreen(pass, statusData) {
 
     container.style.backgroundColor = bgColor;
 
+    // 🎯 NO MORE SCROLLBAR: We use overflow: hidden and min(vw, vh) to force mathematical shrinking
     container.innerHTML = `
-        <div style="width: 100%; max-width: 600px; text-align: center;">
-            <p style="color: ${titleColor}; font-size: 1.4rem; font-weight: 500; margin-bottom: 20px; text-transform: uppercase;">
-                Teacher Authorization Required<br>
-                <span style="font-size: 1.1rem; opacity: 0.8; text-transform: none;">please hand your iPad to your teacher</span>
-            </p>
+        <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; padding: 10px; overflow: hidden;">
             
-            <h1 style="color: ${textColor}; font-size: 4rem; margin: 10px 0; line-height: 1;">
-                ${pass.studentDisplayName}
-            </h1>
+            <div style="flex-shrink: 0; text-align: center;">
+                <p style="color: ${titleColor}; font-size: clamp(1.1rem, 3vh, 1.4rem); font-weight: 500; margin-bottom: 5px; text-transform: uppercase;">
+                    Teacher Authorization Required<br>
+                    <span style="font-size: 0.85em; opacity: 0.8; text-transform: none;">please hand your iPad to your teacher</span>
+                </p>
+            </div>
             
-            <p style="color: ${textColor}; font-size: 1.8rem; margin-bottom: 15px;">
-                Requests to go to <strong>${pass.destination}</strong>
-                ${pass.targetTeacher && pass.targetTeacher !== "Unknown" ? `<br><span style="font-size: 1.4rem;">(${pass.targetTeacher})</span>` : ""}
-            </p>
+            <div style="flex-grow: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; text-align: center; padding: 5px 0;">
+                
+                <h1 style="color: ${textColor}; font-size: clamp(1.5rem, min(7vw, 7vh), 4rem); margin: 0 0 10px 0; line-height: 1.1; width: 100%; word-break: break-word; overflow-wrap: break-word; hyphens: auto;">
+                    ${pass.studentDisplayName}
+                </h1>
+                
+                <p style="color: ${textColor}; font-size: clamp(1.1rem, min(4vw, 4vh), 1.6rem); margin-bottom: 15px; word-break: break-word;">
+                    Requests to go to <strong>${pass.destination}</strong>
+                    ${pass.targetTeacher && pass.targetTeacher !== "Unknown" ? `<br><span style="font-size: 0.9em;">(${pass.targetTeacher})</span>` : ""}
+                </p>
 
-            ${teacherNoteHtml}
-            ${extraInfoHtml}
-            ${buttonsHtml}
+                ${teacherNoteHtml}
+                ${extraInfoHtml}
+            </div>
 
-            <p style="margin-top: 15px; font-size: 0.9rem; color: ${textColor}; opacity: 0.8;">
-                ${statusData.statusLevel === 'red' ? 'Teacher can override restriction from their Teacher Dashboard.' : ''}
-            </p>
+            <div style="flex-shrink: 0; text-align: center; padding-top: 5px;">
+                ${buttonsHtml}
+                <p style="margin-top: 10px; font-size: 0.85rem; color: ${textColor}; opacity: 0.8;">
+                    ${statusData.statusLevel === 'red' ? 'Teacher can override restriction from their Teacher Dashboard.' : ''}
+                </p>
+            </div>
+
         </div>
     `;
 }
@@ -377,11 +412,8 @@ export function renderStudentActiveScreen(pass) {
 
     container.style.backgroundColor = ""; 
 
-    // Determine the current phase of the pass
     const hasArrived = !!pass.arrivedAt;
     const hasDeparted = !!pass.departedAt;
-    
-    // 🌟 NEW: Check our database flag OR if it is a Tardy pass
     const skipCheckIn = pass.requiresCheckIn === false || pass.type === "tardy";
 
     let titleHTML = "";
@@ -389,69 +421,90 @@ export function renderStudentActiveScreen(pass) {
     let instructionHTML = "";
     let buttonHTML = "";
 
-    // 🌟 NEW: Bypass logic takes priority!
     if (skipCheckIn) {
-        titleHTML = `<h2 style="color: #e65100; margin-top: 0; font-size: 2rem;">ACTIVE PASS</h2>`;
-        timerHTML = `<div id="student-timer-display" class="huge-timer" style="color: #333;">00:00</div>`;
-        instructionHTML = `<p style="color: #666; margin-top: 10px; font-weight: bold;">Return to your origin classroom when finished.</p>`;
+        titleHTML = `<h2 style="color: #2e7d32; margin-top: 0; font-size: clamp(1.1rem, 3vh, 1.8rem); text-align: center; text-transform: uppercase;">ACTIVE PASS</h2>`;
+        timerHTML = `<div id="student-timer-display" class="huge-timer" style="color: #333; text-align: center; margin: 5px 0;">00:00</div>`;
+        instructionHTML = `<p style="color: #666; margin: 5px 0; font-weight: bold; text-align: center;">Return to your origin classroom when finished.</p>`;
         buttonHTML = `
             <button id="btn-teacher-return" data-id="${pass.id}" class="toolbar-btn primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem; background-color: #d32f2f; color: white; border: none; border-radius: 8px; cursor: pointer;">
-                🛑 End Pass (Student Returned)
+                🛑 End Pass
             </button>
         `;
-    } 
-    // 🚶 PHASE 3: Transit to Origin
-    else if (hasDeparted) {
-        titleHTML = `<h2 style="color: #e65100; margin-top: 0; font-size: 2rem;">RETURNING TO CLASS</h2>`;
-        timerHTML = `<div id="student-timer-display" class="huge-timer" style="color: #333;">00:00</div>`;
-        instructionHTML = `<p style="color: #666; margin-top: 10px; font-weight: bold;">Proceed directly back to your origin classroom.</p>`;
+    } else if (hasDeparted) {
+        titleHTML = `<h2 style="color: #e65100; margin-top: 0; font-size: clamp(1.1rem, 3vh, 1.8rem); text-align: center; text-transform: uppercase;">RETURNING TO CLASS</h2>`;
+        timerHTML = `<div id="student-timer-display" class="huge-timer" style="color: #333; text-align: center; margin: 5px 0;">00:00</div>`;
+        instructionHTML = `<p style="color: #666; margin: 5px 0; font-weight: bold; text-align: center;">Proceed directly back to your origin classroom.</p>`;
         buttonHTML = `
             <button id="btn-teacher-return" data-id="${pass.id}" class="toolbar-btn primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem; background-color: #d32f2f; color: white; border: none; border-radius: 8px; cursor: pointer;">
-                🛑 End Pass (Student Returned)
+                🛑 End Pass
             </button>
         `;
-    } 
-    // 🏢 PHASE 2: At Destination (Timer hidden/paused)
-    else if (hasArrived) {
-        const arrivalTime = pass.arrivedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        titleHTML = `<h2 style="color: #1976d2; margin-top: 0; font-size: 2rem;">AT DESTINATION</h2>`;
+    } else if (hasArrived) {
+        let arrivalTime = "Just now";
+        if (pass.arrivedAt && typeof pass.arrivedAt.toDate === 'function') {
+            arrivalTime = pass.arrivedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        
+        titleHTML = `<h2 style="color: #1976d2; margin-top: 0; font-size: clamp(1.1rem, 3vh, 1.8rem); text-align: center; text-transform: uppercase;">AT DESTINATION</h2>`;
         timerHTML = `
-            <div style="font-size: 2.2rem; font-weight: bold; color: #1976d2; margin: 20px 0;">Checked In</div>
-            <div style="font-size: 1.2rem; color: #555; margin-bottom: 10px;">Arrival: ${arrivalTime}</div>
+            <div style="font-size: clamp(1.5rem, 4vh, 2rem); font-weight: bold; color: #1976d2; margin: 5px 0; text-align: center;">Checked In</div>
+            <div style="font-size: clamp(1rem, 2vh, 1.1rem); color: #555; margin-bottom: 5px; text-align: center;">Arrival: ${arrivalTime}</div>
         `;
-        instructionHTML = `<p style="color: #666; margin-top: 10px; font-weight: bold;">Destination Teacher: Click below when student leaves.</p>`;
+        instructionHTML = `<p style="color: #666; margin: 5px 0; font-weight: bold; text-align: center;">Destination Teacher: Click below when student leaves.</p>`;
         buttonHTML = `
             <button id="btn-teacher-depart" data-id="${pass.id}" class="toolbar-btn primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem; background-color: #f57c00; color: white; border: none; border-radius: 8px; cursor: pointer;">
-                🚶 Depart Student (Return to Origin)
+                🚶 Depart Student
             </button>
         `;
-    } 
-    // 🛫 PHASE 1: Transit to Destination
-    else {
-        titleHTML = `<h2 style="color: #e65100; margin-top: 0; font-size: 2rem;">ACTIVE PASS</h2>`;
-        timerHTML = `<div id="student-timer-display" class="huge-timer" style="color: #333;">00:00</div>`;
-        instructionHTML = `<p style="color: #666; margin-top: 10px; font-weight: bold;">Proceed directly to your destination.</p>`;
+    } else {
+        titleHTML = `<h2 style="color: #e65100; margin-top: 0; font-size: clamp(1.1rem, 3vh, 1.8rem); text-align: center; text-transform: uppercase;">ACTIVE PASS</h2>`;
+        timerHTML = `<div id="student-timer-display" class="huge-timer" style="color: #333; text-align: center; margin: 5px 0;">00:00</div>`;
+        instructionHTML = `<p style="color: #666; margin: 5px 0; font-weight: bold; text-align: center;">Proceed directly to your destination.</p>`;
         buttonHTML = `
             <button id="btn-teacher-checkin" data-id="${pass.id}" class="toolbar-btn primary-btn" style="width: 100%; padding: 15px; font-size: 1.2rem; background-color: #1976d2; color: white; border: none; border-radius: 8px; cursor: pointer;">
-                🏢 Check In Student (Dest. Teacher)
+                🏢 Check In Student
             </button>
         `;
     }
 
+    let originText = pass.originRoom || "Unknown";
+    if (pass.originTeacherLastName && pass.originTeacherLastName !== "Unknown" && pass.originTeacherLastName !== "No Receiving Teacher") {
+        originText += ` (${pass.originTeacherLastName})`;
+    }
+
+    // 🎯 REPLACED WITH THE SAME STRICT FLEX LAYOUT & SCALING TEXT (NO SCROLLBAR)
     container.innerHTML = `
-        <div class="active-pass-container">
-            ${titleHTML}
-            <p style="font-size: 1.2rem; color: #333; margin-bottom: 5px;">
-                Destination: <strong>${pass.destination}</strong>
-            </p>
+        <div class="active-pass-container" style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; padding: 10px; overflow: hidden; background: #fff;">
             
-            ${timerHTML}
-            
-            ${instructionHTML}
-            <div style="margin-top: 30px; border-top: 2px solid #ffe0b2; padding-top: 25px;">
-                <h4 style="margin-top: 0; margin-bottom: 15px; color: #e65100;">Teacher Use Only</h4>
-                ${buttonHTML}
+            <div style="flex-shrink: 0; width: 100%; text-align: center;">
+                ${titleHTML}
             </div>
+            
+            <div style="flex-grow: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; padding: 5px 0;">
+                
+                <h1 style="margin: 0 0 10px 0; color: #111; text-transform: uppercase; font-weight: 900; line-height: 1.1; font-size: clamp(1.5rem, min(7vw, 7vh), 4rem); text-align: center; width: 100%; word-break: break-word; overflow-wrap: break-word; hyphens: auto;">
+                    ${pass.studentDisplayName || "Student"}
+                </h1>
+
+                <div style="background: rgba(0,0,0,0.04); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(0,0,0,0.05); width: 100%; max-width: 100%; box-sizing: border-box;">
+                    <div style="font-size: clamp(1rem, 3vh, 1.2rem); color: #333; margin-bottom: 5px; word-break: break-word;">
+                        To: <strong style="color: #1976d2;">${pass.destination}</strong>
+                    </div>
+                    <div style="font-size: clamp(1rem, 3vh, 1.1rem); color: #555; word-break: break-word;">
+                        From: <strong>${originText}</strong>
+                    </div>
+                </div>
+
+            </div>
+            
+            <div style="flex-shrink: 0; width: 100%; text-align: center; padding-top: 5px;">
+                ${timerHTML}
+                ${instructionHTML}
+                <div style="margin-top: 10px;">
+                    ${buttonHTML}
+                </div>
+            </div>
+
         </div>
     `;
 }
@@ -508,63 +561,6 @@ function parseMenuData(menuStr) {
     
     return html;
 }
-
-// --- EMERGENCY UI ENGINE --- //
-window.updateEmergencyUI = function() {
-    const announcementWidget = document.getElementById("admin-messages-widget");
-    const announcementContainer = document.getElementById("admin-messages-container");
-    const mapBtn = document.getElementById("btn-open-map");
-    
-    // The button locks if EITHER lockdown is active
-    const isLockedDown = window.currentLoudLockdown || window.currentQuietLockdown;
-
-    // 1. INSTANTLY TOGGLE THE MAP BUTTON (If they are on the idle screen)
-    if (mapBtn) {
-        if (isLockedDown) {
-            mapBtn.innerHTML = "🛑 No Passes Are Allowed At This Moment";
-            mapBtn.disabled = true;
-            mapBtn.style.backgroundColor = "#c62828";
-            mapBtn.style.opacity = "0.8";
-            mapBtn.style.cursor = "not-allowed";
-        } else {
-            mapBtn.innerHTML = "🗺️ Open School Map";
-            mapBtn.disabled = false;
-            mapBtn.style.backgroundColor = ""; // Restores to CSS default
-            mapBtn.style.opacity = "1";
-            mapBtn.style.cursor = "pointer";
-        }
-    }
-
-    // 2. TOGGLE THE MESSAGE CENTER 
-    if (!announcementWidget || !announcementContainer) return; 
-
-    // ONLY Loud Lockdowns trigger the blinking red alert
-    if (window.currentLoudLockdown) {
-        announcementWidget.style.background = "#ffebee"; 
-        announcementWidget.style.borderColor = "var(--pirate-red)";
-        
-        announcementContainer.innerHTML = `
-            <div style="text-align: center; font-weight: 900; color: var(--pirate-red); font-size: 1.1rem; padding: 5px 0; animation: blinker 1.5s linear infinite;">
-                🚨 EMERGENCY LOCKDOWN ACTIVE 🚨
-            </div>
-            <p style="color: #c62828; margin: 5px 0 0 0; font-size: 0.85rem; text-align: center; font-weight: bold;">
-                Please remain in your classroom until cleared by administration.
-            </p>
-            <style>
-                @keyframes blinker { 50% { opacity: 0.2; } }
-            </style>
-        `;
-    } else {
-        // Restore standard aesthetics (Used for Normal days AND Quiet Lockdowns)
-        announcementWidget.style.background = "white";
-        announcementWidget.style.borderColor = "var(--pirate-silver)";
-        
-        // Ensure standard announcements return
-        announcementContainer.innerHTML = window.currentAdminAnnouncementText 
-            ? `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>`
-            : `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
-    }
-};
 
 /**
  * Real-time connection hook that subscribes to system/daily_info

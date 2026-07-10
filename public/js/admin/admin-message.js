@@ -118,39 +118,44 @@ export function openMessageModal() {
             try {
                 const firestore = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
                 
-                // Fetch Teachers
-                const teacherSnap = await firestore.getDocs(firestore.collection(db, "users"));
-                console.log(`🍎 Found ${teacherSnap.size} teachers in Firebase!`);
+                // 🚀 NEW: Fetch EVERYONE from the users collection in a single trip!
+                const usersSnap = await firestore.getDocs(firestore.collection(db, "users"));
+                console.log(`👥 Found ${usersSnap.size} total users in Firebase!`);
                 
-                teacherSnap.forEach(doc => {
+                let teacherCount = 0;
+                let studentCount = 0;
+
+                usersSnap.forEach(doc => {
                     const data = doc.data();
                     const emailValue = data.email || doc.id; 
-                    if (emailValue) window.allTeacherEmails.push(emailValue); // 👈 Save to array
-                    if (teacherDatalist) {
-                        teacherDatalist.innerHTML += `<option value="${emailValue}">${data.displayName || data.name || emailValue}</option>`;
+                    const role = (data.role || "").toLowerCase();
+
+                    // 🎓 Sort into STUDENTS
+                    if (role === "student") {
+                        if (emailValue) {
+                            window.allStudentEmails.push(emailValue); 
+                            window.allStudentsData.push({
+                                email: emailValue,
+                                grade: String(data.grade || "") // Force to string to safely match the checkbox value
+                            });
+                        }
+                        if (studentDatalist) {
+                            studentDatalist.innerHTML += `<option value="${emailValue}">${data.displayName || data.name || emailValue}</option>`;
+                        }
+                        studentCount++;
+                    } 
+                    // 🍎 Sort into TEACHERS/STAFF/ADMIN
+                    else {
+                        if (emailValue) window.allTeacherEmails.push(emailValue); 
+                        if (teacherDatalist) {
+                            teacherDatalist.innerHTML += `<option value="${emailValue}">${data.displayName || data.name || emailValue}</option>`;
+                        }
+                        teacherCount++;
                     }
                 });
 
-                // Fetch Students
-                const studentSnap = await firestore.getDocs(firestore.collection(db, "students"));
-                console.log(`🎓 Found ${studentSnap.size} students in Firebase!`);
-                
-                studentSnap.forEach(doc => {
-                    const data = doc.data();
-                    if (data.email) {
-                        window.allStudentEmails.push(data.email); 
-                        
-                        // 🚀 NEW: Save both email and grade so we can filter by checkboxes later!
-                        window.allStudentsData.push({
-                            email: data.email,
-                            grade: String(data.grade || "") // Force to string to safely match the checkbox value
-                        });
-                    }
-                    
-                    if (studentDatalist) {
-                        studentDatalist.innerHTML += `<option value="${data.email}">${data.displayName || data.name || data.email}</option>`;
-                    }
-                });
+                console.log(`Loaded ${teacherCount} teachers and ${studentCount} students into the UI.`);
+
             } catch (error) {
                 console.error("Error loading users for datalist:", error);
             }
@@ -221,7 +226,7 @@ function handleAudienceChange() {
     }
 }
 
-// 🟢 Creates a new specific person dropdown and wires up the "auto-add" logic
+// 🟢 Creates a new specific person dropdown and wires up "auto-add" and "auto-cleanup" logic
 function addPersonDropdown() {
     const wrapper = document.getElementById('specific-dropdowns-wrapper');
     
@@ -232,22 +237,27 @@ function addPersonDropdown() {
     // Default option
     select.innerHTML = `<option value="">-- Select a person --</option>`;
     
-    // Populate with actual users (Assuming objects like { id: "123", name: "John Doe" })
+    // Populate with actual users (This will soon be fed by your new "users" collection!)
     availableUsers.forEach(user => {
         const option = document.createElement('option');
-        option.value = user.id; // Or user.email depending on your database
+        option.value = user.id; 
         option.textContent = user.name || user.displayName;
         select.appendChild(option);
     });
 
-    // When this dropdown changes, check if we need to add another empty one
+    // Smart Change Listener: Auto-Add & Auto-Cleanup
     select.addEventListener('change', (e) => {
-        const allSelects = document.querySelectorAll('.specific-person-select');
+        const allSelects = Array.from(document.querySelectorAll('.specific-person-select'));
         const lastSelect = allSelects[allSelects.length - 1];
         
-        // If they actually picked someone in the LAST dropdown, add a new empty one below it
+        // 1. AUTO-ADD: If they picked someone in the LAST dropdown, add a new empty one
         if (e.target === lastSelect && e.target.value !== "") {
             addPersonDropdown();
+        }
+        
+        // 2. AUTO-CLEANUP: If they reset a dropdown to empty, remove it (unless it's the very last empty box)
+        if (e.target.value === "" && e.target !== lastSelect) {
+            e.target.remove();
         }
     });
 

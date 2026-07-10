@@ -15,7 +15,9 @@ import {
     initializeRotationDayEngine,
     calculateDynamicQueuePosition
 } from "./modules/student-ui.js";
-import { createNewPass, listenToStudentPass, updatePassStatus, fetchStudentProfileByEmail } from "./modules/pass-engine.js";
+import { listenToStudentPass, updatePassStatus, fetchStudentProfileByEmail } from "./modules/pass-engine.js";
+import { createNewPass } from "./modules/create-pass.js";
+import { initLockdownListener } from "./features/f-lockdowns.js";
 import { 
     initializeTimeEngine, 
     fetchTodaysSchedule, 
@@ -23,7 +25,7 @@ import {
     getAdjustedNow 
 } from "./modules/time-engine.js";
 import { db } from "./firebase-config.js";
-import { doc, onSnapshot, collection, query, where, updateDoc, arrayUnion, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, onSnapshot, collection, query, where, updateDoc, arrayUnion, serverTimestamp, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import './features/f-scheduled-pass-engine.js';
 
 window.db = db;
@@ -100,6 +102,19 @@ async function initStudentApp(user, role) {
 
     // Start the live rotation day & menu Firestore listener
     initializeRotationDayEngine(db, onSnapshot, doc);
+
+    // ==========================================================
+    // 🎯 LIVE LUNCH TRACK LISTENER
+    // Downloads the teacher A/B lunch map so the clock can sync correctly
+    // ==========================================================
+    onSnapshot(doc(db, "settings", "bell_schedule"), (docSnap) => {
+        if (docSnap.exists() && docSnap.data().teacherLunchTracks) {
+            window.liveTeacherLunchMap = docSnap.data().teacherLunchTracks;
+            console.log("🥪 Live Teacher Lunch Map updated!", window.liveTeacherLunchMap);
+        } else {
+            window.liveTeacherLunchMap = {}; // Failsafe
+        }
+    });
 
     // ==========================================================
     // --- LIVE TIME ENGINE TRACKING COLLABORATION ---
@@ -340,28 +355,35 @@ async function initStudentApp(user, role) {
         });
     }
 
-   // 🚨 STUDENT EMERGENCY ENGINE 🚨
-    onSnapshot(doc(db, "settings", "emergencyState"), (docSnap) => {
-        const state = docSnap.exists() ? docSnap.data() : { globalLockdown: false, quietLockdown: false };
-        
-        // Track BOTH lockdown states in global memory
-        window.currentLoudLockdown = state.globalLockdown;
-        window.currentQuietLockdown = state.quietLockdown;
-        
-        // 🌟 NEW: Track Area Lockdowns for pass-engine.js routing!
-        window.lockedCorridors = state.lockedCorridors || [];
-        
-        // Trigger the visual update instantly
-        if (typeof window.updateEmergencyUI === "function") {
-            window.updateEmergencyUI();
-        }
-    });
+   // Start the global lockdown engine (Automatically handles Student UI alerts)
+    initLockdownListener();
 
     // Start a continuous 1-second interval to evaluate current time metrics
     setInterval(() => {
         if (!activeSchedulePeriods) return;
 
-        const timeMetrics = evaluateCurrentTime(activeSchedulePeriods);
+        // =========================================================
+        // 🎯 LUNCH TRACK RESOLVER 
+        // Automatically calculate whether this student is 6A or 6B
+        // =========================================================
+        let studentLunchTrack = null;
+        
+        // Ensure we have both the student's profile and the live teacher lunch map loaded
+        if (window.currentStudentProfile && window.currentStudentProfile.schedule && window.liveTeacherLunchMap) {
+            // Find the Period 6 class in their schedule
+            const p6Class = window.currentStudentProfile.schedule["Period 6"] || window.currentStudentProfile.schedule["6"];
+            
+            if (p6Class && p6Class.teacher) {
+                // If the teacher has a mapped track, use it. Otherwise gracefully fallback to "A"
+                studentLunchTrack = window.liveTeacherLunchMap[p6Class.teacher] || "A";
+            }
+        }
+
+        // Pass the dynamically calculated track into the time engine!
+        const timeMetrics = evaluateCurrentTime(activeSchedulePeriods, studentLunchTrack);
+        
+        // =========================================================
+
         window.currentTimeState = timeMetrics; // Save globally so pass generation can read it
 
         // Update the new Fieldset Schedule Widget dynamically!
@@ -375,7 +397,11 @@ async function initStudentApp(user, role) {
             const pass = window.currentActivePass;
             let canUse = false;
             
-            if (pass.scheduledWhen === "class_period" && timeMetrics?.currentPeriod == pass.scheduledPeriod) {
+            // 🎯 NEW: Use the 'activeBasePeriod' (e.g. "Period 6") to check if scheduled passes unlock, 
+            // so we don't accidentally block them during split lunch tracks!
+            const currentPeriodCheck = timeMetrics?.activeBasePeriod || timeMetrics?.currentPeriod;
+            
+            if (pass.scheduledWhen === "class_period" && currentPeriodCheck == pass.scheduledPeriod) {
                 canUse = true; // Unlock if the requested period has started
             } else if (pass.scheduledWhen === "specific_time" && pass.scheduledTime) {
                 const now = new Date();
@@ -952,7 +978,71 @@ document.addEventListener("click", async (e) => {
         await finalizePassCreation(dest, targetTeacher, passType);
     }
 
-    // Helper function to actually build the payload and send it to Firebase
+    // =======================================================
+    // 🧠 HELPER: EMERGENCY STRING FALLBACKS (Only used if DB lookup fails)
+    // =======================================================
+    function fallbackFormatName(rawName) {
+        if (!rawName || rawName === "Unknown" || rawName === "No Receiving Teacher") return rawName;
+        let cleanName = rawName.trim();
+        if (cleanName.includes(",")) return cleanName.split(",")[0].trim();
+        
+        const parts = cleanName.split(/\s+/);
+        if (parts.length > 1) {
+            const titles = ["mr.", "mrs.", "ms.", "miss", "dr.", "coach"];
+            const firstWord = parts[0].toLowerCase();
+            if (titles.includes(firstWord)) {
+                return firstWord.charAt(0).toUpperCase() + firstWord.slice(1) + " " + parts[parts.length - 1];
+            }
+            return parts[parts.length - 1];
+        }
+        return cleanName;
+    }
+
+    function fallbackLastName(rawName) {
+        if (!rawName || rawName === "Unknown" || rawName === "No Receiving Teacher") return rawName;
+        let cleanName = rawName.trim();
+        if (cleanName.includes(",")) return cleanName.split(",")[0].trim();
+        const parts = cleanName.split(/\s+/);
+        return parts[parts.length - 1]; 
+    }
+
+    // =======================================================
+    // 🧠 HELPER: DATABASE TEACHER LOOKUP
+    // =======================================================
+    async function getTeacherProfileFromDB(searchName) {
+        if (!searchName || searchName === "Unknown" || searchName === "No Receiving Teacher") return null;
+        
+        try {
+            const usersRef = collection(db, "users");
+            
+            // 1. Try matching by scheduleAlias first (e.g., "Mr. Orr")
+            let q = query(usersRef, where("scheduleAlias", "==", searchName));
+            let snapshot = await getDocs(q);
+            
+            // 2. If no match, try matching by displayName (e.g., "Brian Orr")
+            if (snapshot.empty) {
+                q = query(usersRef, where("displayName", "==", searchName));
+                snapshot = await getDocs(q);
+            }
+            
+            // 3. If still no match, try matching strictly by lastName (e.g., "Orr")
+            if (snapshot.empty) {
+                q = query(usersRef, where("lastName", "==", searchName));
+                snapshot = await getDocs(q);
+            }
+
+            if (!snapshot.empty) {
+                return snapshot.docs[0].data(); // Return the exact Clever DB profile!
+            }
+        } catch (error) {
+            console.warn("⚠️ DB Teacher Lookup failed, using fallbacks.", error);
+        }
+        return null;
+    }
+
+    // =======================================================
+    // 🚀 FINAL PASS BUILDER & DISPATCHER
+    // =======================================================
     async function finalizePassCreation(dest, targetTeacher, passType) {
         document.getElementById("btn-confirm-destination").innerText = "Creating...";
         document.getElementById("btn-confirm-destination").disabled = true;
@@ -960,36 +1050,79 @@ document.addEventListener("click", async (e) => {
         const isProxyActive = passType === "proxy";
         const proxyTeacherName = isProxyActive ? (window.currentUser?.displayName || "Teacher") : "";
         
-        // 🌟 FIXED: Prioritize the Student Profile data, fallback to currentUser
+        // --- 1. IDENTIFY THE STUDENT ---
         const safeStudentId = window.currentStudentProfile?.id || window.currentUser?.uid || "unknown";
         const studentName = window.currentStudentProfile?.displayName || window.currentUser?.displayName || "Student";
         const studentEmail = window.currentStudentProfile?.email || window.currentUser?.email || "unknown@student.com";
 
+        // --- 2. IDENTIFY THE TIME & PERIOD ---
+        const currentPeriod = window.currentTimeState?.currentPeriod || "Unknown";
+
+        // --- 3. IDENTIFY THE ORIGIN (Clever Schedule Engine) ---
+        let originRoom = "Unknown";
+        let rawOriginTeacher = "Unknown";
+
+        if (window.currentStudentProfile && window.currentStudentProfile.schedule && currentPeriod !== "Unknown") {
+            const sched = window.currentStudentProfile.schedule;
+            let currentClass = null;
+
+            if (Array.isArray(sched)) {
+                currentClass = sched.find(c => String(c.period) === String(currentPeriod));
+            } else if (typeof sched === 'object') {
+                currentClass = sched[currentPeriod] || Object.values(sched).find(c => String(c?.period) === String(currentPeriod));
+            }
+            
+            if (currentClass) {
+                originRoom = currentClass.room || currentClass.ROOM || "Unknown";
+                rawOriginTeacher = currentClass.teacher || currentClass.TEACHER || "Unknown";
+            }
+        }
+
+        // --- 4. SECURE DATABASE LOOKUPS FOR EXACT NAMES ---
+        // Fetch official profiles from the 'users' collection
+        const originTeacherProfile = await getTeacherProfileFromDB(rawOriginTeacher);
+        const destTeacherProfile = await getTeacherProfileFromDB(targetTeacher);
+
+        // Build Origin Names (Prefer DB -> Fallback to String formatting)
+        const finalOriginTeacher = originTeacherProfile?.scheduleAlias || originTeacherProfile?.displayName || fallbackFormatName(rawOriginTeacher);
+        const originTeacherLastName = originTeacherProfile?.lastName || fallbackLastName(rawOriginTeacher);
+
+        // Build Destination Names (Prefer DB -> Fallback to String formatting)
+        const finalDestinationTeacher = destTeacherProfile?.scheduleAlias || destTeacherProfile?.displayName || fallbackFormatName(targetTeacher);
+        const destTeacherLastName = destTeacherProfile?.lastName || fallbackLastName(targetTeacher);
+
+        // --- 5. BUILD THE HARDCODED PAYLOAD ---
         const passData = {
             studentId: safeStudentId, 
             studentName: studentName,
             studentDisplayName: studentName,
             studentEmail: studentEmail,
             
-            destination: dest,
-            targetTeacher: targetTeacher, 
+            // 📍 Destination Data
+            destination: dest, 
+            destinationRoom: dest,
+            destinationTeacher: finalDestinationTeacher, 
+            destTeacherLastName: destTeacherLastName, // Stored for UI injection
+            targetTeacher: finalDestinationTeacher, // Legacy support
             
-            // Time Engine tracking values
-            origin: window.currentRoom || "Unknown",
-            originTeacher: window.currentOriginTeacher || "Unknown", 
-            period: window.currentPeriod || "Unknown", 
+            // 📍 Origin & Time Data
+            origin: originRoom, 
+            originRoom: originRoom,
+            originTeacher: finalOriginTeacher, 
+            originTeacherLastName: originTeacherLastName, // Stored for UI injection
+            period: currentPeriod, 
             
             type: passType,
             initiatedBy: isProxyActive ? "teacher_proxy" : "student",
             senderName: isProxyActive ? proxyTeacherName : studentName, 
             
-            // Dual Corridor Lockdown checks
             destCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(dest) : "Unknown",
-            originCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(window.currentRoom || "Unknown") : "Unknown",
+            originCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(originRoom) : "Unknown",
             
-            // 🌟 FIXED: Tardy passes go straight to active and bypass the inbox!
+            // 🚦 State Controls
             status: passType === "tardy" ? "active" : "pending", 
-            uiLocation: passType === "tardy" ? "pass_section" : "message_center",
+            // 🎯 ROUTING FIX: Scheduled passes go to message center, immediate passes go to green screen!
+            uiLocation: passType === "scheduled" ? "message_center" : "pass_section", 
             restrictionLevel: "none",
             restrictionType: "",
             restrictionReason: "",
@@ -997,6 +1130,7 @@ document.addEventListener("click", async (e) => {
             recentTravels: []
         };
 
+        // --- 6. SEND TO THE PASS ENGINE ---
         const result = await createNewPass(passData);
 
         if (result.success) {

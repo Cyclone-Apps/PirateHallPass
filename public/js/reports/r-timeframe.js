@@ -162,9 +162,10 @@ export function loadTimeframeReport(settingsContainer, reportContainer) {
         activeFilters = { grade: [], origin: [], destination: [], period: [], status: [] };
         
         try {
-            // Fetch all students to map emails to grades
-            const studentsRef = collection(db, "students");
-            const studentsSnap = await getDocs(studentsRef);
+            // 🎯 MIGRATION FIX: Fetch from "users" and filter by role "student"
+            const usersRef = collection(db, "users");
+            const studentQuery = query(usersRef, where("role", "==", "student"));
+            const studentsSnap = await getDocs(studentQuery);
             const studentGrades = {};
             
             studentsSnap.forEach(doc => {
