@@ -24,12 +24,16 @@ import { initStaffRoster } from "./features/f-staff-roster.js";
 import { initStaffSync } from "./features/f-staff-sync.js";
 import { initStaffSchedule } from "./features/f-staff-schedule.js";
 
+import { injectEmergencyControlsModal } from "./features/f-lockdowns-admin.js";
 // ==========================================
 // 🚀 APP INITIALIZATION
 // ==========================================
 
 // Start the background clock for the entire app
 initializeTimeEngine(); 
+
+// Build and inject the emergency controls modal into the DOM
+injectEmergencyControlsModal();
 
 // Bind Google Login
 const btnLogin = document.getElementById("btn-google-login");

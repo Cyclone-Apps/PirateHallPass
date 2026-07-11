@@ -22,8 +22,9 @@ export function renderStudentIdleScreen() {
         displayName = window.currentUser.displayName;
     }
 
-    // Check if ANY lockdown is active
-    const isLockedDown = window.currentLoudLockdown || window.currentQuietLockdown;
+    // 🌟 FIX: ONLY check for LOUD lockdown here! 
+    // Quiet lockdown leaves the button completely normal.
+    const isLockedDown = window.currentLoudLockdown === true;
 
     // Draw the button differently based on the lockdown state
     let buttonHTML = isLockedDown 

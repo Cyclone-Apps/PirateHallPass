@@ -8,6 +8,7 @@ import {
     setActiveDailySchedule, listenToDailyConfig
 } from "../modules/admin-engine.js";
 import { initLockdownListener, setEmergencyState } from "../features/f-lockdowns.js";
+import { initLockdownAdminListeners } from "../features/f-lockdowns-admin.js";
 
 // ==========================================
 // 🧠 STATE MANAGEMENT
@@ -43,11 +44,13 @@ function calculateCurrentAcademicYear() {
 // 🚀 INITIALIZATION & EVENT BINDING
 // ==========================================
 export function initSettingsManagement() {
-    
-    // Listen for global lockdowns, keep admin UI in sync, and update state memory
+    // Listen for global lockdowns and keep the admin UI in sync
     initLockdownListener((state) => {
         currentEmergencyState = state;
     });
+
+    // Bind the lockdown menu buttons!
+    initLockdownAdminListeners();
 
     loadBellSchedules();
     // ==========================================
@@ -95,42 +98,14 @@ export function initSettingsManagement() {
     document.getElementById("close-bell-schedule-modal")?.addEventListener("click", () => {
         document.getElementById("bell-schedule-modal")?.classList.add("hidden");
     });
-    document.getElementById("close-emergency-modal")?.addEventListener("click", () => {
-        document.getElementById("emergency-modal")?.classList.add("hidden");
-    });
 
     // ==========================================
     // 💾 OTHER SAVE & ACTION LISTENERS
     // ==========================================
     document.getElementById("btn-save-gcal-config")?.addEventListener("click", saveGoogleCalendarSetup);
     
-    // Emergency Control Buttons
-    document.getElementById("btn-toggle-quiet-lockdown")?.addEventListener("click", () => handleEmergencyToggle("quiet"));
-    document.getElementById("btn-toggle-loud-lockdown")?.addEventListener("click", () => handleEmergencyToggle("loud"));
-    document.getElementById("btn-modify-area-lockdown")?.addEventListener("click", () => handleEmergencyToggle("area"));
-    
     document.getElementById("btn-save-schedule")?.addEventListener("click", handleSaveBellSchedule);
     document.getElementById("schedule-type-select")?.addEventListener("change", (e) => renderScheduleEditor(e.target.value));
-}
-
-// Ensure these functions map perfectly to your database schema!
-async function handleEmergencyToggle(type) {
-    if (type === "loud") {
-        const newState = !currentEmergencyState.globalLockdown;
-        await setEmergencyState({ 
-            globalLockdown: newState,
-            quietLockdown: newState ? false : currentEmergencyState.quietLockdown 
-        });
-    } else if (type === "quiet") {
-        const newState = !currentEmergencyState.quietLockdown;
-        await setEmergencyState({ 
-            quietLockdown: newState,
-            globalLockdown: newState ? false : currentEmergencyState.globalLockdown
-        });
-    } else if (type === "area") {
-        // 🚫 Alert removed! 
-        // The map popout is now handled entirely by the custom listener in main-admin.js
-    }
 }
 
 // ==========================================

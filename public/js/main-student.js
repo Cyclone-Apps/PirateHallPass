@@ -142,6 +142,12 @@ async function initStudentApp(user, role) {
     
     // 🚀 UNIFIED RENDERER
     window.renderMessageCenter = () => {
+            // 🛑 EMERGENCY OVERRIDE: Stop drawing normal messages if a lockdown is actively displaying!
+            if (window.currentLoudLockdown || (window.currentQuietLockdown && window.emergencyState?.quietShowToStudents)) {
+                console.log("🛑 renderMessageCenter: Emergency active. Yielding to lockdown UI.");
+                return; // This completely stops the normal widget from drawing over our custom HTML!
+            }
+
         console.log("🎨 renderMessageCenter CALLED!");
         const container = document.getElementById("admin-messages-container");
         
@@ -1137,9 +1143,39 @@ document.addEventListener("click", async (e) => {
             document.getElementById("map-modal").classList.add("hidden");
             document.getElementById("map-modal-container").innerHTML = '';
         } else {
-            alert("Failed to create pass. Please try again.");
-            document.getElementById("btn-confirm-destination").innerText = "Confirm Destination";
-            document.getElementById("btn-confirm-destination").disabled = false;
+            // 1. Hide the map modal immediately
+            document.getElementById("map-modal").classList.add("hidden");
+            document.getElementById("map-modal-container").innerHTML = '';
+
+            // 2. Inject the custom restriction screen from image_de653b.png
+            const container = document.getElementById("kiosk-main-widget");
+            if (container) {
+                container.innerHTML = `
+                    <div style="background-color: #fff1f1; border: 4px solid #c62828; border-radius: 12px; padding: 40px 20px; text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <h1 style="color: #c62828; font-size: 3rem; margin-bottom: 20px; font-weight: 900; line-height: 1.1;">
+                            <span style="display: inline-block; transform: translateY(5px);">🛑</span> Request<br>temporarily<br>denied.
+                        </h1>
+                        <p style="color: #333; font-size: 1.5rem; margin-bottom: 40px;">
+                            ${result.message}
+                        </p>
+                        <button id="btn-cancel-denied-request" style="background-color: #c62828; color: white; border: none; font-size: 1.5rem; padding: 15px 40px; border-radius: 8px; width: 80%; cursor: pointer; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
+                            ❌ Cancel Request
+                        </button>
+                    </div>
+                `;
+
+                // 3. Bind the cancel button to return to the normal screen
+                document.getElementById("btn-cancel-denied-request").addEventListener("click", () => {
+                    // This calls your existing UI function to redraw the normal "Where to?" screen!
+                    import("./student-ui.js").then(module => {
+                        if (typeof module.renderStudentIdleScreen === "function") {
+                            module.renderStudentIdleScreen();
+                        } else {
+                            location.reload(); // Failsafe fallback
+                        }
+                    }).catch(() => location.reload()); 
+                });
+            }
         }
     }
 

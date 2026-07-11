@@ -1,4 +1,5 @@
 import { doc, getDoc, getDocs, query, where, addDoc, serverTimestamp, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { evaluateLockdownState } from "../features/f-lockdowns.js";
 
 // ⚠️ IMPORTANT: You need to import your 'db' from wherever your Firebase configuration lives. 
 import { db } from "../firebase-config.js"; 
@@ -10,6 +11,21 @@ const passesRef = collection(db, "passes");
  * Creates a brand new pass in the database (With Restriction, Cooldown & Waitlist Gatekeepers)
  */
 export async function createNewPass(passData) {
+
+    // =========================================================
+    // 🛑 0. GATEKEEPER 0: LOCKDOWN CHECK
+    // =========================================================
+    const lockdownStatus = evaluateLockdownState();
+    if (!lockdownStatus.allowed) {
+        console.warn("Pass creation blocked:", lockdownStatus.message);
+        
+        // Return a clean failure object instead of throwing a hard error
+        return { 
+            success: false, 
+            message: lockdownStatus.message,
+            error: lockdownStatus.message // Including both keys just to be safe!
+        };
+    }
 
     // =========================================================
     // 🌟 NEW: SKIP CHECK-IN FLAG ASSIGNMENT
