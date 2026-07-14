@@ -9,6 +9,8 @@ import {
 } from "../modules/admin-engine.js";
 import { initLockdownListener, setEmergencyState } from "../features/f-lockdowns.js";
 import { initLockdownAdminListeners } from "../features/f-lockdowns-admin.js";
+import { initTimeOffsetControls, initDevTimeMachine } from "../features/f-time-controls.js";
+import { getAdjustedNow } from "../modules/time-engine.js";
 
 // ==========================================
 // 🧠 STATE MANAGEMENT
@@ -33,7 +35,7 @@ let currentAcademicStartYear = calculateCurrentAcademicYear();
 let masterCalendarData = {}; 
 
 function calculateCurrentAcademicYear() {
-    const today = new Date();
+    const today = getAdjustedNow();
     const currentYear = today.getFullYear();
     const currentMonth = today.getMonth(); // 0 = Jan, 7 = Aug
     if (currentMonth >= 7) return currentYear;
@@ -166,17 +168,14 @@ async function saveGoogleCalendarSetup() {
 let currentlyEditingSchedule = []; 
 
 async function loadBellSchedules() {
-    listenToTimeOffset((offsetSeconds) => {
-        const offsetInput = document.getElementById("input-time-offset");
-        if (offsetInput) offsetInput.value = offsetSeconds;
-    });
-
+    initTimeOffsetControls();
+    initDevTimeMachine();
+    
     listenToDailyConfig((config) => {
         const activeSelect = document.getElementById("active-schedule-select");
         if (activeSelect) activeSelect.value = config.activeSchedule || "HS - Regular";
     });
 
-    document.getElementById("btn-save-time-offset")?.addEventListener("click", handleSaveTimeOffset);
     document.getElementById("btn-set-active-schedule")?.addEventListener("click", handleSetActiveSchedule);
     document.getElementById("btn-add-period")?.addEventListener("click", addPeriodRow);
     document.getElementById("btn-remove-period")?.addEventListener("click", removePeriodRow);
@@ -449,14 +448,6 @@ if (typeof fetchBellSchedules === "function") {
 
 // Start the global lockdown engine (Automatically handles Admin UI alerts)
 initLockdownListener();
-
-async function handleSaveTimeOffset() {
-    const offsetInput = document.getElementById("input-time-offset")?.value;
-    if (typeof saveTimeOffset === "function") {
-        const success = await saveTimeOffset(offsetInput);
-        if (success) alert("Building Time Offset Synced!");
-    }
-}
 
 async function handleSetActiveSchedule() {
     const activeSelect = document.getElementById("active-schedule-select")?.value;

@@ -10,6 +10,7 @@ import {
 import { renderPassList } from "../modules/ui-widgets.js";
 // 🌟 Import our decoupled history feature file
 import { initAdminHistory } from "../features/f-pass-history.js";
+import { getAdjustedNow } from "../modules/time-engine.js";
 
 // ==========================================
 // 📦 STATE MANAGEMENT
@@ -46,7 +47,7 @@ export function initDashboardManagement() {
 
     if (typeof listenToScheduledPasses === "function") {
         listenToScheduledPasses((passes) => {
-            const now = new Date();
+            const now = getAdjustedNow();
             
             // Filter out expired passes
             cachedSentPasses = passes.filter(p => {
@@ -101,10 +102,10 @@ document.addEventListener("click", async (e) => {
         // 🌟 2. CHECK-IN TIMELINE INTERCEPTS
         if (newStatus === "arrived") {
             newStatus = currentStatus; // Stay active
-            extraData.arrivedAt = true; // 🎯 FIX: Changed from new Date() to true
+            extraData.arrivedAt = true; // 🎯 FIX: Changed from getAdjustedNow() to true
         } else if (newStatus === "departed") {
             newStatus = currentStatus; // Stay active
-            extraData.departedAt = true; // 🎯 FIX: Changed from new Date() to true
+            extraData.departedAt = true; // 🎯 FIX: Changed from getAdjustedNow() to true
         }
 
         // 🌟 3. RETURN INTERCEPT

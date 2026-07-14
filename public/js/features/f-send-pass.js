@@ -2,6 +2,7 @@ import { setupStudentAutocomplete } from "../modules/ui-widgets.js";
 import { fetchAllStudents } from "../modules/pass-engine.js";
 import { createNewPass } from "../modules/create-pass.js";
 import { MapController } from "../modules/map-engine.js";
+import { getAdjustedNow } from "../modules/time-engine.js";
 
 // ==========================================
 // 🏗️ HTML TEMPLATE
@@ -291,7 +292,7 @@ function submitProxyPass(e) {
         proxyBy: window.currentUser?.displayName || "Unknown Teacher", 
         isProxy: true,
         uiLocation: "message_center", // <--- Start in the inbox
-        createdAt: new Date().toISOString()
+        createdAt: getAdjustedNow().toISOString()
     };
 
     // Add specific data based on pass type

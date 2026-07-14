@@ -1,5 +1,6 @@
 // public/js/features/f-pass-history.js
 import { fetchAdminPassHistory, updatePassStatus } from "../modules/pass-engine.js";
+import { getAdjustedNow } from "../modules/time-engine.js";
 
 let allAdminHistory = []; 
 
@@ -11,7 +12,7 @@ export function initAdminHistory() {
     document.addEventListener("click", async (e) => {
         // 1. Open Modal
         if (e.target.id === "btn-open-admin-history") {
-            const now = new Date();
+            const now = getAdjustedNow();
             const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
             
             document.getElementById("filter-history-start-date").value = todayStr;

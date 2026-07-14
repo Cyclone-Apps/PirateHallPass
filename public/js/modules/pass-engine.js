@@ -14,6 +14,7 @@ import {
     getDoc,
     orderBy // 🟢 ADDED: orderBy for waitlist sorting
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getSpoofSafeTimestamp } from "./time-engine.js";
 
 const passesRef = collection(db, "passes");
 
@@ -151,24 +152,24 @@ export async function updatePassStatus(passId, newStatus, extraFields = {}) {
         
         // 🎯 FIREBASE 400 FIX: Safely convert our boolean flags to serverTimestamps
         if (extraFields.arrivedAt === true) {
-            updateData.arrivedAt = serverTimestamp();
+            updateData.arrivedAt = getSpoofSafeTimestamp();
         }
         if (extraFields.departedAt === true) {
-            updateData.departedAt = serverTimestamp();
+            updateData.departedAt = getSpoofSafeTimestamp();
         }
         
         const isAlreadyActive = passData && (passData.status === "active" || passData.status === "active_bypassed");
         if ((newStatus === "active" || newStatus === "active_bypassed") && !isAlreadyActive) {
-            updateData.acceptedAt = serverTimestamp();
+            updateData.acceptedAt = getSpoofSafeTimestamp();
         }
         
         const isAlreadyReturned = passData && (passData.status === "returned" || passData.status === "returned_bypassed");
         if ((newStatus === "returned" || newStatus === "returned_bypassed") && !isAlreadyReturned) {
-            updateData.returnedAt = serverTimestamp();
+            updateData.returnedAt = getSpoofSafeTimestamp();
         }
         
         if (newStatus === "archived" && (!passData || passData.status !== "archived")) {
-            updateData.archivedAt = serverTimestamp();
+            updateData.archivedAt = getSpoofSafeTimestamp();
         }
         
         // Ensure no undefined values sneak into Firebase causing a 400 Error
@@ -203,7 +204,7 @@ export async function processRoomRelease(roomId) {
             // Promote to "pending" (or pending_student) so they have 2 mins to accept
             await updateDoc(doc(db, "passes", nextPass.id), {
                 status: "pending_student", // Student must click "Use" to accept
-                promotedAt: serverTimestamp() // We will use this in the Cloud Function!
+                promotedAt: getSpoofSafeTimestamp() // We will use this in the Cloud Function!
             });
             
             console.log(`Promoted pass ${nextPass.id} from waitlist.`);
@@ -378,7 +379,7 @@ export async function editPassHistory(passId, updates, editorName) {
         await updateDoc(passDoc, {
             ...updates, // 🟢 Now accepts destination, acceptedAt, and returnedAt dynamically!
             editedBy: editorName,
-            editedAt: serverTimestamp()
+            editedAt: getSpoofSafeTimestamp()
         });
         return true;
     } catch (error) {
@@ -396,7 +397,7 @@ export async function flagPassFraudulent(passId, explanation) {
         await updateDoc(passDoc, {
             status: "fraudulent_review", // This status triggers it to move to the Admin column
             fraudExplanation: explanation,
-            flaggedAt: serverTimestamp()
+            flaggedAt: getSpoofSafeTimestamp()
         });
         return true;
     } catch (error) {

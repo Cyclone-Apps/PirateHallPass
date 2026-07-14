@@ -1,5 +1,7 @@
 // public/js/features/f-teacher-history.js
 
+import { getAdjustedNow } from "../modules/time-engine.js";
+
 let allHistoryPasses = []; 
 let currentHistoryTab = 'today'; 
 let currentTeacherProfile = null; // Store the teacher's profile so we can check all their names
@@ -63,7 +65,7 @@ function renderHistoryTab() {
         `Dr. ${myLastName}`
     ].map(n => n.toLowerCase().trim()); // Make it lowercase so it matches perfectly
 
-    const todayStart = new Date();
+    const todayStart = getAdjustedNow();
     todayStart.setHours(0, 0, 0, 0);
     const yesterdayStart = new Date(todayStart);
     yesterdayStart.setDate(yesterdayStart.getDate() - 1);

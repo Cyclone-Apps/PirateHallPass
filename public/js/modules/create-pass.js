@@ -1,5 +1,6 @@
-import { doc, getDoc, getDocs, query, where, addDoc, serverTimestamp, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, getDoc, getDocs, query, where, addDoc, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { evaluateLockdownState } from "../features/f-lockdowns.js";
+import { getSpoofSafeTimestamp, getAdjustedNow } from "./time-engine.js";
 
 // ⚠️ IMPORTANT: You need to import your 'db' from wherever your Firebase configuration lives. 
 import { db } from "../firebase-config.js"; 
@@ -174,7 +175,7 @@ export async function createNewPass(passData) {
                 restrictionType: "area_lockdown", 
                 lockedAreaName: blockedCorridor, 
                 debugCalculatedRoute: calculatedRoute, // Added for debugging in Firebase
-                createdAt: serverTimestamp()
+                createdAt: getSpoofSafeTimestamp()
             });
             
             return { success: true, status: "blocked_blind" }; 
@@ -267,7 +268,7 @@ export async function createNewPass(passData) {
                         restrictedPeer: activePass.studentId || "Unknown", 
                         restrictedPeerName: peerName,
                         restrictionReason: "Admin No-Contact Restriction",
-                        createdAt: serverTimestamp()
+                        createdAt: getSpoofSafeTimestamp()
                     });
                     
                     return { success: true, status: "blocked_blind" };
@@ -291,7 +292,7 @@ export async function createNewPass(passData) {
             const dailyMaxPasses = settings.dailyMaxPasses || 3;    // Default 3 passes
 
             // Fetch the student's passes for TODAY
-            const startOfDay = new Date();
+            const startOfDay = getAdjustedNow();
             startOfDay.setHours(0, 0, 0, 0);
 
             const dailyQ = query(
@@ -366,7 +367,7 @@ export async function createNewPass(passData) {
                         ...passData,
                         status: "waitlist",
                         queuePosition: queuePosition,
-                        createdAt: serverTimestamp()
+                        createdAt: getSpoofSafeTimestamp()
                     });
                     
                     return { success: true, status: "waitlist", position: queuePosition };
@@ -386,7 +387,7 @@ export async function createNewPass(passData) {
             status: finalStatus,
             warningReason: warningReason,
             dailyLogCount: dailyLog.length,
-            createdAt: serverTimestamp()
+            createdAt: getSpoofSafeTimestamp()
         });
         
         return { success: true, status: finalStatus };

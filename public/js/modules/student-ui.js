@@ -2,6 +2,7 @@
 import { schoolMapSVG } from "../map.js"; 
 import { doc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "../firebase-config.js";
+import { getAdjustedNow } from "./time-engine.js";
 
 // Keep a global reference to the student's profile so the 1-second interval can read it!
 window.currentStudentProfile = null;
@@ -56,35 +57,6 @@ export function renderStudentSidebar(studentProfile = null) {
     const container = document.getElementById("kiosk-sidebar-widget");
     if (!container) return;
 
-    let fullScheduleRows = "";
-
-    // Generate the Full Schedule Data for the Popup Modal
-    if (studentProfile && studentProfile.schedule) {
-        const scheduleData = studentProfile.schedule;
-        
-        // Safely sort periods numerically
-        const periods = Object.keys(scheduleData).sort((a, b) => {
-            const numA = parseInt(a);
-            const numB = parseInt(b);
-            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-            return a.localeCompare(b);
-        });
-
-        periods.forEach(p => {
-            const classInfo = scheduleData[p];
-            const className = classInfo.courseName || "Class";
-            const roomNum = classInfo.room || "TBA";
-            const teacher = classInfo.teacher || "N/A";
-
-            fullScheduleRows += `
-                <div style="background: #f8f9fa; border-left: 4px solid var(--pirate-silver); padding: 10px; margin-bottom: 8px; border-radius: 4px;">
-                    <strong style="color: #333;">Period ${p}:</strong> ${className}<br>
-                    <div style="font-size: 0.85rem; color: #555; margin-top: 2px;">Rm: ${roomNum} | Teacher: ${teacher}</div>
-                </div>
-            `;
-        });
-    }
-
     // Render the Sidebar with the Message Center, Schedule, and Meal Menu fieldsets
     container.innerHTML = `
         <fieldset id="admin-messages-widget" style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 5px 15px 10px 15px; margin-bottom: 8px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box; transition: all 0.3s ease;">
@@ -136,33 +108,13 @@ export function renderStudentSidebar(studentProfile = null) {
         </fieldset>
     `;
 
-    // Ensure the Full Schedule Modal exists in the DOM
-    if (!document.getElementById("full-schedule-modal")) {
-        const modalDiv = document.createElement("div");
-        modalDiv.id = "full-schedule-modal";
-        modalDiv.className = "hidden";
-        modalDiv.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 9999;";
-        modalDiv.innerHTML = `
-            <div style="background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); position: relative; max-height: 80vh; display: flex; flex-direction: column;">
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px;">
-                    <h3 style="margin: 0; color: var(--pirate-red);">📋 Full Schedule</h3>
-                    <span id="close-full-schedule" style="cursor: pointer; font-size: 1.5rem; color: #666; font-weight: bold; line-height: 1;">&times;</span>
-                </div>
-                <div id="full-schedule-content" style="overflow-y: auto; flex-grow: 1; padding-right: 5px;"></div>
-            </div>
-        `;
-        document.body.appendChild(modalDiv);
-
-        document.getElementById("close-full-schedule").addEventListener("click", () => {
-            modalDiv.classList.add("hidden");
-        });
-    }
-
-    const contentBox = document.getElementById("full-schedule-content");
-    if (contentBox) contentBox.innerHTML = fullScheduleRows || "<p style='color: #777;'>No schedule data found.</p>";
-
+    // 🚀 BIND THE BUTTON TO OUR NEW GLOBAL POP-UP FILE!
     document.getElementById("btn-open-full-schedule").addEventListener("click", () => {
-        document.getElementById("full-schedule-modal").classList.remove("hidden");
+        if (window.openSchedulePopup) {
+            window.openSchedulePopup(studentProfile);
+        } else {
+            console.error("⚠️ Schedule pop-up module not loaded! Ensure f-student-schedule.js is linked in the HTML.");
+        }
     });
 
     // ✨ GUARANTEE: Force checking emergency status every time sidebar redraws
@@ -206,7 +158,6 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
 
     // 🟢 ALWAYS SHOW NEXT CLASS (If current exists but we don't naturally have a 'next' calculated)
     if (currentBase && !nextClass) {
-        // Extract the number from "Period 6" or "6"
         const match = String(currentBase).match(/\d+/);
         if (match) {
             const pNum = parseInt(match[0], 10);
@@ -218,14 +169,23 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
         }
     }
 
-    // 🚨 NEW: GLOBALLY TRACK STUDENT LOCATION FOR PASS CREATION
-    // If they are in a passing period, we assume the pass belongs to their NEXT class.
+    // 🪚 EXTRACT TEACHER FROM CLEVER STRING (e.g. "JH Intensive English - Osman - 2" -> "Osman")
+    const extractTeacher = (classNameStr) => {
+        if (!classNameStr) return "Unknown";
+        const parts = classNameStr.split(" - ");
+        // Grab the second-to-last item (which is usually the teacher in Clever strings)
+        if (parts.length >= 2) return parts[parts.length - 2].trim();
+        return "Unknown";
+    };
+
+    // 🚨 GLOBALLY TRACK STUDENT LOCATION FOR PASS CREATION
     const activeClassData = currentClass || nextClass; 
     
     if (activeClassData) {
-        window.currentRoom = activeClassData.room || "Unknown";
-        window.currentOriginTeacher = activeClassData.teacher || "Unknown";
-        window.currentPeriod = currentBase; // Feed "Period 6" to the Pass Engine, not "6A Class"
+        window.currentRoom = activeClassData.room || "Unknown"; // Failsafe, as Clever drops rooms
+        // Try the explicit field first, fallback to our Clever string slicer
+        window.currentOriginTeacher = activeClassData.teacher || extractTeacher(activeClassData.className);
+        window.currentPeriod = currentBase; 
     } else {
         window.currentRoom = "Unknown";
         window.currentOriginTeacher = "Unknown";
@@ -240,13 +200,13 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
         return String(rawName).replace("Period ", ""); 
     };
 
+    // 🎨 RENDER THE HTML (Removed the Room span since the database omits it)
     if (currentClass) {
         html += `
             <div style="margin-bottom: 10px;">
                 <div style="font-size: 0.7rem; color: #2e7d32; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;">📍 Current</div>
                 <div style="background: #e8f5e9; border-left: 3px solid #4caf50; padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; line-height: 1.3;">
-                    <strong style="color: #1b5e20;">P${formatLabel(currentDisplay)}:</strong> ${currentClass.courseName}<br>
-                    <span style="color: #555;">Room: ${currentClass.room || "N/A"}</span>
+                    <strong style="color: #1b5e20;">P${formatLabel(currentDisplay)}:</strong> ${currentClass.className || "Unknown Class"}
                 </div>
             </div>`;
     }
@@ -256,8 +216,7 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
             <div>
                 <div style="font-size: 0.7rem; color: #1565c0; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;">➡️ Next</div>
                 <div style="background: #e3f2fd; border-left: 3px solid #2196f3; padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; line-height: 1.3;">
-                    <strong style="color: #0d47a1;">P${formatLabel(nextDisplay)}:</strong> ${nextClass.courseName}<br>
-                    <span style="color: #555;">Room: ${nextClass.room || "N/A"}</span>
+                    <strong style="color: #0d47a1;">P${formatLabel(nextDisplay)}:</strong> ${nextClass.className || "Unknown Class"}
                 </div>
             </div>`;
     }
@@ -897,7 +856,7 @@ export async function renderStudentYellowWarningScreen(pass) {
         sidebar.innerHTML = `<div class="kiosk-card panel" style="height: 100%; display: flex; justify-content: center; align-items: center;"><h2>Loading Log...</h2></div>`;
 
         // Fetch today's log from Firebase
-        const startOfDay = new Date();
+        const startOfDay = getAdjustedNow();
         startOfDay.setHours(0, 0, 0, 0);
 
         const q = query(

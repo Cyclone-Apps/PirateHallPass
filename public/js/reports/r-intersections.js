@@ -2,6 +2,7 @@ import { initMultiStudentSelect } from "./r-select.js";
 import { getDateFiltersHTML, getActionButtonsHTML, getDateRange, printReportContainer } from "./r-utils.js";
 import { collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "../firebase-config.js"; 
+import { getAdjustedNow } from "../modules/time-engine.js";
 
 let selectedStudentsList = [];
 
@@ -40,8 +41,8 @@ export function loadIntersectionsReport(settingsContainer, reportContainer) {
     // Set Default Dates (1 Week Ago to Today)
     const dateInputs = settingsContainer.querySelectorAll('input[type="date"]');
     if (dateInputs.length >= 2) {
-        const today = new Date();
-        const lastWeek = new Date();
+        const today = getAdjustedNow();
+        const lastWeek = getAdjustedNow();
         lastWeek.setDate(today.getDate() - 7);
         
         dateInputs[0].value = lastWeek.toISOString().split('T')[0];

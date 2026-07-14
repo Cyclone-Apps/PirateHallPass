@@ -10,8 +10,27 @@ import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion } from
 import { db } from "./firebase-config.js";
 import { initSendPassFeature } from './features/f-send-pass.js';
 import { initTeacherHistoryControls, updateTeacherHistoryData } from "./features/f-teacher-history.js";
+import { getAdjustedNow } from "./modules/time-engine.js";
+import { checkMissingRoomsWarning } from "./features/f-staff-rooms.js";
 
 window.cancelPass = cancelScheduledPass;
+
+// 📢 1. DEFINE THE MESSAGE CENTER RENDERER FIRST! (So it is ready immediately)
+window.renderTeacherMessageCenter = function() {
+    const announcementContainer = document.getElementById("admin-messages-container"); 
+    if (!announcementContainer) return;
+
+    if (window.currentAdminAnnouncementText) {
+        // PRIORITY 1: Real Admin Announcements
+        announcementContainer.innerHTML = `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>`;
+    } else if (window.staffRoomWarningText) {
+        // PRIORITY 2: Room Warning
+        announcementContainer.innerHTML = window.staffRoomWarningText;
+    } else {
+        // Default Empty State
+        announcementContainer.innerHTML = `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
+    }
+};
 
 // --- INIT AUTH & UI ---
 const btnLogin = document.getElementById("btn-google-login");
@@ -19,6 +38,15 @@ if (btnLogin) btnLogin.addEventListener("click", handleGoogleLogin);
 
 initAuthListener("teacher", async (user, role) => {
     console.log(`Welcome Teacher: ${user.displayName}`);
+
+    // 🚀 2. CHECK ROOMS ON LOGIN 
+    // Wait a tiny fraction of a second to ensure the DOM is fully un-hidden
+    if (user) {
+        setTimeout(() => {
+            // Check if roomAssignments exists, if not pass null to force the full warning
+            checkMissingRoomsWarning(user.roomAssignments || null);
+        }, 500); 
+    }
     
     // renderHeader handles rendering both the global top header and the role toolbar ribbon
     renderHeader(user, role);
@@ -45,7 +73,25 @@ initAuthListener("teacher", async (user, role) => {
         console.error("Failed to setup virtual kiosk autocomplete:", err);
     }
 
-    // 📢 NEW: ANNOUNCEMENTS LISTENER
+    // 📢 NEW: UNIFIED MESSAGE CENTER RENDERER
+    // This safely decides what to show without overwriting things!
+    window.renderTeacherMessageCenter = function() {
+        const announcementContainer = document.getElementById("admin-messages-container"); 
+        if (!announcementContainer) return;
+
+        if (window.currentAdminAnnouncementText) {
+            // PRIORITY 1: Real Admin Announcements
+            announcementContainer.innerHTML = `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>`;
+        } else if (window.staffRoomWarningText) {
+            // PRIORITY 2: Room Warning (Only shows if no admin announcements exist!)
+            announcementContainer.innerHTML = window.staffRoomWarningText;
+        } else {
+            // Default Empty State
+            announcementContainer.innerHTML = `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
+        }
+    };
+
+    // 📢 ANNOUNCEMENTS LISTENER
     const qAnnouncements = query(collection(db, "announcements"), where("active", "==", true));
     
     onSnapshot(qAnnouncements, (snapshot) => {
@@ -56,7 +102,7 @@ initAuthListener("teacher", async (user, role) => {
             const data = docSnap.data();
             const docId = docSnap.id;
             
-            // 🛑 NEW: Check if this specific user has already cleared it
+            // 🛑 Check if this specific user has already cleared it
             if (data.readBy && data.readBy.includes(userEmail)) {
                 return; // Skip drawing this message!
             }
@@ -70,7 +116,7 @@ initAuthListener("teacher", async (user, role) => {
             }
             
             if (isTarget) {
-                // 🎨 NEW: Red, bold text, optional link, and the Clear button
+                // 🎨 Red, bold text, optional link, and the Clear button
                 let msgHtml = `<strong style="color: #c62828; font-weight: 900;">Admin: ${data.message}</strong>`;
                 
                 if (data.link) {
@@ -83,18 +129,15 @@ initAuthListener("teacher", async (user, role) => {
             }
         });
         
+        // Store the admin text globally
         if (validMessages.length > 0) {
             window.currentAdminAnnouncementText = validMessages.join('<br><hr style="border: 0; border-top: 1px solid #eee; margin: 8px 0;"><br>');
         } else {
             window.currentAdminAnnouncementText = "";
         }
         
-        const announcementContainer = document.getElementById("admin-messages-container"); 
-        if (announcementContainer) {
-            announcementContainer.innerHTML = window.currentAdminAnnouncementText 
-                ? `<div style="padding: 5px;">${window.currentAdminAnnouncementText}</div>`
-                : `<p style="color: #888; font-style: italic; margin: 5px 0; text-align: center;">No active announcements.</p>`;
-        }
+        // Let our new referee function draw the screen!
+        window.renderTeacherMessageCenter();
     });
 
     // 🧹 NEW: Global function so the inline button can trigger the database update
@@ -138,7 +181,7 @@ initAuthListener("teacher", async (user, role) => {
             
             scheduledContainerTeacher.innerHTML = "";
             const myName = user.displayName;
-            const now = new Date();
+            const now = getAdjustedNow();
 
             // Filter: Must be sent by THIS teacher, and must not be expired
             const myScheduledPasses = passes.filter(p => {
@@ -301,10 +344,10 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
         // 🌟 2. CHECK-IN TIMELINE INTERCEPTS
         if (newStatus === "arrived") {
             newStatus = currentStatus; 
-            extraData.arrivedAt = true; // 🎯 FIX: Changed from new Date()
+            extraData.arrivedAt = true; // 🎯 FIX: Changed from getAdjustedNow()
         } else if (newStatus === "departed") {
             newStatus = currentStatus; 
-            extraData.departedAt = true; // 🎯 FIX: Changed from new Date()
+            extraData.departedAt = true; // 🎯 FIX: Changed from getAdjustedNow()
         }
         
         // 🌟 3. THE RETURN INTERCEPT

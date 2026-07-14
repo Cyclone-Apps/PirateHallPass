@@ -1,5 +1,42 @@
 // js/modules/ui-widgets.js
 import { handleLogout } from "./auth-roles.js";
+import { initOTAUpdater, openOTAModal } from "../features/f-ota-updater.js";
+import { getAdjustedNow, isTimeSpoofed } from "./time-engine.js";
+
+// ==========================================
+// 🕒 LIVE CLOCK HELPER
+// ==========================================
+function startLiveClock() {
+    const dateEl = document.getElementById("clock-date");
+    const timeEl = document.getElementById("clock-time");
+
+    if (!dateEl || !timeEl) return;
+
+    function updateClock() {
+        // 🎯 1. Use the Time Engine instead of new Date ()!
+        const now = getAdjustedNow(); 
+        const spoofed = isTimeSpoofed();
+        
+        // 2. Format Date: "Sunday, Jul 12, 2026"
+        const dateOptions = { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' };
+        let dateStr = now.toLocaleDateString('en-US', dateOptions);
+        
+        // 🕵️‍♂️ 3. Add the visual indicator if Time Machine is active
+        if (spoofed) {
+            dateStr += ` <span style="color: #ffeb3b; font-weight: 900; margin-left: 5px;">(Spoofed)</span>`;
+        }
+        dateEl.innerHTML = dateStr;
+
+        // 4. Format Time: "07:58:55 AM"
+        const timeOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true };
+        timeEl.innerText = now.toLocaleTimeString('en-US', timeOptions);
+    }
+
+    updateClock();
+    if (window.liveClockInterval) clearInterval(window.liveClockInterval);
+    window.liveClockInterval = setInterval(updateClock, 1000);
+}
+
 
 export function renderHeader(user, role) {
     const headerContainer = document.getElementById("global-header");
@@ -17,15 +54,36 @@ export function renderHeader(user, role) {
             <h1>Pirate Hall Pass</h1>
             <span class="role-badge ${role}">${displayRole}</span>
         </div>
-        <div class="header-user">
+        
+        <div style="flex: 1; display: flex; justify-content: center; align-items: center;">
+            <div id="live-clock-widget" style="display: flex; flex-direction: column; align-items: center; justify-content: center; color: inherit; font-family: sans-serif; line-height: 1.1;">
+                <div id="clock-date" style="font-size: 0.85rem; font-weight: 600; opacity: 0.9;">Loading...</div>
+                <div id="clock-time" style="font-size: 1.4rem; font-weight: 900; letter-spacing: 0.5px;">--:--:--</div>
+            </div>
+        </div>
+
+        <div class="header-user" style="display: flex; align-items: center; gap: 15px;">
             <span id="header-name">${user.displayName}</span>
             <button id="btn-logout" class="toolbar-btn">Logout</button>
+            
+            <button id="btn-open-ota" style="background: transparent; border: none; font-size: 1.5rem; cursor: pointer; padding: 0 5px;" title="System Settings">⚙️</button>
         </div>
     `;
+
+    // 🚀 Start the clock immediately after injecting the HTML
+    startLiveClock();
 
     const btnLogout = document.getElementById("btn-logout");
     if (btnLogout) {
         btnLogout.addEventListener("click", handleLogout);
+    }
+
+    // 🌟 NEW OTA UPDATE WIRING
+    initOTAUpdater(); // Injects the modal HTML to the bottom of the page
+    
+    const btnOTA = document.getElementById("btn-open-ota");
+    if (btnOTA) {
+        btnOTA.addEventListener("click", openOTAModal);
     }
 
     // ==========================================
@@ -37,8 +95,8 @@ export function renderHeader(user, role) {
     if (adminToolbar) {
         adminToolbar.className = "admin-toolbar"; 
         adminToolbar.style.display = "flex";
-        adminToolbar.style.flexWrap = "wrap"; // 🟢 Allows fluid wrapping
-        adminToolbar.style.flexDirection = "row"; // 🟢 Resets it from column to horizontal
+        adminToolbar.style.flexWrap = "wrap"; 
+        adminToolbar.style.flexDirection = "row"; 
         adminToolbar.style.gap = "10px";
 
        adminToolbar.innerHTML = `
@@ -53,6 +111,7 @@ export function renderHeader(user, role) {
             <button id="btn-open-management" class="admin-dashboard-btn btn-base">👥 Student Management</button>
             <button id="btn-open-teacher-management" class="admin-dashboard-btn btn-light">👨‍🏫 Teacher Management</button>            
             <button id="btn-open-teacher-schedule" class="admin-dashboard-btn btn-light">📋 Teacher Schedule</button>
+            <button id="btn-open-room-assignments" class="admin-dashboard-btn btn-light">🏫 Room Assignments</button>
             
             <button id="btn-open-bell-schedule" class="admin-dashboard-btn btn-base">⏱️ Bell Schedules</button>
             <button id="btn-open-academic-cal-modal" class="admin-dashboard-btn btn-base">📅 Academic Calendar</button>
@@ -66,9 +125,10 @@ export function renderHeader(user, role) {
         teacherToolbar.innerHTML = `
             <button id="btn-open-send-pass" class="toolbar-btn" style="background-color: #2e7d32; color: white; border: none;">🎫 Send Student a Pass</button>
             <button id="btn-open-proxy-setup" class="toolbar-btn" style="background-color: #8e24aa; color: white; border: none;">💻 Open Pass As Student</button>
+            <button id="btn-open-room-assignments" class="toolbar-btn" style="background-color: #1976d2; color: white; border: none;">🏫 Room Assignments</button>
         `;
     }
-} 
+}
 
 /**
  * Dynamically renders pass cards into designated dashboard containers

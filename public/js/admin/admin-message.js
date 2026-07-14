@@ -1,8 +1,9 @@
 // /js/admin/admin-message.js
 
 // 👇 We added query, where, onSnapshot, deleteDoc, and doc to this list
-import { collection, addDoc, serverTimestamp, query, where, onSnapshot, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "../firebase-config.js";
+import { getSpoofSafeTimestamp } from "../modules/time-engine.js";
 
 // 🟢 Global state to hold our user list for the dropdowns
 let availableUsers = [];
@@ -327,7 +328,7 @@ async function handleSendMessage() {
         message: messageBody,
         link: linkValue,          
         readBy: [],               
-        createdAt: serverTimestamp(),
+        createdAt: getSpoofSafeTimestamp(),
         active: true
     };
 

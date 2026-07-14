@@ -6,6 +6,7 @@ import { createNewPass } from "../modules/create-pass.js";
 import { setupStudentAutocomplete } from "../modules/ui-widgets.js";
 import { MapController } from "../modules/map-engine.js";
 import { initSendPassFeature } from '../features/f-send-pass.js';
+import { getAdjustedNow } from "../modules/time-engine.js";
 
 // ==========================================
 // 🚀 INITIALIZATION & EVENT BINDING
@@ -143,7 +144,7 @@ async function submitProxyPass(e) {
         senderName: window.currentUser?.displayName || "Admin",
         proxyBy: window.currentUser?.displayName || "Admin", // 🌟 NEW: Bulletproof Admin name
         isProxy: true,
-        createdAt: new Date().toISOString()
+        createdAt: getAdjustedNow().toISOString()
     };
 
     if (passType === "tardy") {

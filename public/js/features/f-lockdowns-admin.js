@@ -132,8 +132,8 @@ export function initLockdownAdminListeners() {
     });
 
     // Toggle Buttons
-    document.getElementById("btn-toggle-quiet-lockdown")?.addEventListener("click", () => toggleLockdown("quiet"));
-    document.getElementById("btn-toggle-loud-lockdown")?.addEventListener("click", () => toggleLockdown("loud"));
+    document.getElementById("btn-toggle-quiet-lockdown")?.addEventListener("click", () => triggerEmergencyToggle("quiet"));
+    document.getElementById("btn-toggle-loud-lockdown")?.addEventListener("click", () => triggerEmergencyToggle("loud"));
 }
 
 // ==========================================

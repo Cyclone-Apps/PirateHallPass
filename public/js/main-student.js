@@ -22,10 +22,11 @@ import {
     initializeTimeEngine, 
     fetchTodaysSchedule, 
     evaluateCurrentTime, 
+    getSpoofSafeTimestamp,
     getAdjustedNow 
 } from "./modules/time-engine.js";
 import { db } from "./firebase-config.js";
-import { doc, onSnapshot, collection, query, where, updateDoc, arrayUnion, serverTimestamp, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, onSnapshot, collection, query, where, updateDoc, arrayUnion, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import './features/f-scheduled-pass-engine.js';
 
 window.db = db;
@@ -94,8 +95,22 @@ async function initStudentApp(user, role) {
 
     renderMapModal();
     
-    // Fetch their schedule based on their login email!
-    const studentProfile = await fetchStudentProfileByEmail(user.email);
+    // ==========================================================
+    // 🛑 SAFETY NET: 2-Second Kill Switch for Broken Fetches
+    // Forces the app to load even if the database fetches hang
+    // ==========================================================
+    const withTimeout = (promise, fallback, ms = 2000) => {
+        return Promise.race([
+            promise,
+            new Promise(resolve => setTimeout(() => resolve(fallback), ms))
+        ]);
+    };
+
+    console.log("🚀 Fetching student profile...");
+    const studentProfile = await withTimeout(
+        fetchStudentProfileByEmail(user.email), 
+        { email: user.email, schedule: {} } // Safe fallback if it hangs
+    );
     window.currentStudentProfile = studentProfile; 
     
     renderStudentSidebar(studentProfile);
@@ -103,10 +118,7 @@ async function initStudentApp(user, role) {
     // Start the live rotation day & menu Firestore listener
     initializeRotationDayEngine(db, onSnapshot, doc);
 
-    // ==========================================================
     // 🎯 LIVE LUNCH TRACK LISTENER
-    // Downloads the teacher A/B lunch map so the clock can sync correctly
-    // ==========================================================
     onSnapshot(doc(db, "settings", "bell_schedule"), (docSnap) => {
         if (docSnap.exists() && docSnap.data().teacherLunchTracks) {
             window.liveTeacherLunchMap = docSnap.data().teacherLunchTracks;
@@ -116,16 +128,16 @@ async function initStudentApp(user, role) {
         }
     });
 
-    // ==========================================================
-    // --- LIVE TIME ENGINE TRACKING COLLABORATION ---
-    // ==========================================================
     let activeSchedulePeriods = null;
     
-    // Fetch today's schedule from Academic Calendar 
-    const todayScheduleInfo = await fetchTodaysSchedule("HS"); 
+    console.log("🚀 Fetching today's schedule...");
+    // 🛑 Wrap the broken schedule fetch in our 2-second Kill Switch
+    const todayScheduleInfo = await withTimeout(
+        fetchTodaysSchedule("HS"),
+        { isNoSchool: false, periods: {} } // 👈 CHANGED TO EMPTY OBJECT
+    );
     
     if (todayScheduleInfo.isNoSchool) {
-        // Trigger a lockout state screen if marked as No School
         const container = document.getElementById("kiosk-main-display");
         if (container) {
             container.innerHTML = `
@@ -134,19 +146,18 @@ async function initStudentApp(user, role) {
                     <p style="font-size: 1.2rem; color: #555;">Passes cannot be issued outside of school operation hours.</p>
                 </div>`;
         }
-        return; // Stops the initialization
+        return; 
     } else {
         activeSchedulePeriods = todayScheduleInfo.periods;
     }
 
-    
     // 🚀 UNIFIED RENDERER
     window.renderMessageCenter = () => {
-            // 🛑 EMERGENCY OVERRIDE: Stop drawing normal messages if a lockdown is actively displaying!
-            if (window.currentLoudLockdown || (window.currentQuietLockdown && window.emergencyState?.quietShowToStudents)) {
-                console.log("🛑 renderMessageCenter: Emergency active. Yielding to lockdown UI.");
-                return; // This completely stops the normal widget from drawing over our custom HTML!
-            }
+        // 🛑 EMERGENCY OVERRIDE: Stop drawing normal messages if a lockdown is actively displaying!
+        if (window.currentLoudLockdown || (window.currentQuietLockdown && window.emergencyState?.quietShowToStudents)) {
+            console.log("🛑 renderMessageCenter: Emergency active. Yielding to lockdown UI.");
+            return; // This completely stops the normal widget from drawing over our custom HTML!
+        }
 
         console.log("🎨 renderMessageCenter CALLED!");
         const container = document.getElementById("admin-messages-container");
@@ -261,7 +272,7 @@ async function initStudentApp(user, role) {
                 const passId = docSnap.id;
                 
                 if (passData.uiLocation === "message_center") {
-                    // 1. Human-readable Date Formatting (e.g., "2026-07-15" ➡️ "Wed, Jul 15")
+                    // 1. Human-readable Date Formatting
                     let dateStr = "upcoming date";
                     if (passData.scheduledDate) {
                         const d = new Date(passData.scheduledDate + "T12:00:00");
@@ -294,34 +305,29 @@ async function initStudentApp(user, role) {
                     let actionButtonsHtml = "";
                     
                     if (isTardy) {
-                        // Keep tardy passes looking the same just in case
                         headerTitle = `⏳ Tardy Pass from ${teacherName}:`;
                         middleText = `<span style="font-size: 0.95rem; color: #333; display: inline-block; margin-top: 4px;">You received a Tardy Pass to <strong>${passData.destination}</strong>.</span>`;
                         
-                        // Tardy passes only get a view button
                         actionButtonsHtml = `
                             <button onclick="window.viewScheduledPass('${passId}')" style="background: #4593F1; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: opacity 0.2s;">
                                 👁️ View
                             </button>
                         `;
                     } else {
-                        // 🌟 Your new streamlined layout for Scheduled/Required passes!
+                        // 🌟 Streamlined layout for Scheduled/Required passes!
                         const passLabel = isRequired ? "Required Pass" : "Scheduled Pass";
                         headerTitle = `🎫 ${passLabel} from ${teacherName} on ${dateStr}.`;
-                        // middleText remains empty because you requested to remove the middle text!
 
                         // 📅 Calculate today's local date string (YYYY-MM-DD)
-                        const today = new Date();
+                        const today = getAdjustedNow();
                         const yyyy = today.getFullYear();
                         const mm = String(today.getMonth() + 1).padStart(2, '0');
                         const dd = String(today.getDate()).padStart(2, '0');
                         const todayStr = `${yyyy}-${mm}-${dd}`;
 
-                        // Check if the scheduled pass is valid to use today
                         const isToday = passData.scheduledDate === todayStr;
 
                         if (isToday) {
-                            // If it's today, show both buttons side-by-side using Flexbox
                             actionButtonsHtml = `
                                 <div style="display: flex; gap: 8px; width: 100%;">
                                     <button onclick="window.viewScheduledPass('${passId}')" style="flex: 1; background: #4593F1; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: opacity 0.2s;">
@@ -333,7 +339,6 @@ async function initStudentApp(user, role) {
                                 </div>
                             `;
                         } else {
-                            // If it's a future date, only show the full-width View button
                             actionButtonsHtml = `
                                 <button onclick="window.viewScheduledPass('${passId}')" style="background: #4593F1; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: opacity 0.2s;">
                                     👁️ View
@@ -361,35 +366,32 @@ async function initStudentApp(user, role) {
         });
     }
 
-   // Start the global lockdown engine (Automatically handles Student UI alerts)
+   // Start the global lockdown engine
     initLockdownListener();
 
     // Start a continuous 1-second interval to evaluate current time metrics
     setInterval(() => {
         if (!activeSchedulePeriods) return;
 
-        // =========================================================
-        // 🎯 LUNCH TRACK RESOLVER 
-        // Automatically calculate whether this student is 6A or 6B
-        // =========================================================
         let studentLunchTrack = null;
         
-        // Ensure we have both the student's profile and the live teacher lunch map loaded
         if (window.currentStudentProfile && window.currentStudentProfile.schedule && window.liveTeacherLunchMap) {
-            // Find the Period 6 class in their schedule
             const p6Class = window.currentStudentProfile.schedule["Period 6"] || window.currentStudentProfile.schedule["6"];
-            
             if (p6Class && p6Class.teacher) {
-                // If the teacher has a mapped track, use it. Otherwise gracefully fallback to "A"
                 studentLunchTrack = window.liveTeacherLunchMap[p6Class.teacher] || "A";
             }
         }
 
-        // Pass the dynamically calculated track into the time engine!
         const timeMetrics = evaluateCurrentTime(activeSchedulePeriods, studentLunchTrack);
         
         // =========================================================
-
+        // 🌟 NEW: LUNCH UI INJECTOR (Forces Dashboard to say "Lunch")
+        // =========================================================
+        if (timeMetrics && (timeMetrics.isLunch || String(timeMetrics.currentPeriod).toLowerCase().includes("lunch") || timeMetrics.phase === "lunch")) {
+            timeMetrics.currentClassName = "Lunch";
+            timeMetrics.currentTeacherName = "Cafeteria";
+        }
+        
         window.currentTimeState = timeMetrics; // Save globally so pass generation can read it
 
         // Update the new Fieldset Schedule Widget dynamically!
@@ -397,33 +399,30 @@ async function initStudentApp(user, role) {
             window.updateStudentScheduleWidget(timeMetrics);
         }
         
-        // 🌟 NEW: Check Scheduled Pass Time Unlock dynamically
+        // Check Scheduled Pass Time Unlock dynamically
         const useBtn = document.getElementById("btn-use-scheduled-pass");
         if (useBtn && window.currentActivePass && window.currentActivePass.status === "scheduled") {
             const pass = window.currentActivePass;
             let canUse = false;
             
-            // 🎯 NEW: Use the 'activeBasePeriod' (e.g. "Period 6") to check if scheduled passes unlock, 
-            // so we don't accidentally block them during split lunch tracks!
             const currentPeriodCheck = timeMetrics?.activeBasePeriod || timeMetrics?.currentPeriod;
             
             if (pass.scheduledWhen === "class_period" && currentPeriodCheck == pass.scheduledPeriod) {
-                canUse = true; // Unlock if the requested period has started
+                canUse = true; 
             } else if (pass.scheduledWhen === "specific_time" && pass.scheduledTime) {
-                const now = new Date();
+                const now = getAdjustedNow();
                 const passTime = new Date(`${pass.scheduledDate || now.toISOString().split('T')[0]}T${pass.scheduledTime}`);
-                // Unlock exactly 5 minutes before the scheduled time
                 if (now >= new Date(passTime.getTime() - 5 * 60000)) {
                     canUse = true;
                 }
             } else if (pass.scheduledWhen === "available" || (!pass.scheduledTime && !pass.scheduledPeriod)) {
-                canUse = true; // Unlock instantly if set to "whenever available"
+                canUse = true; 
             }
 
             useBtn.style.display = canUse ? "block" : "none";
         }
         
-        // ✨ BULLETPROOF BANNER HIDER: Finds any element containing this text and hides it
+        // ✨ BULLETPROOF BANNER HIDER
         document.querySelectorAll("*").forEach(el => {
             if (el.innerHTML === "⏳ Synchronizing Time Engine...") {
                 el.style.display = "none";
@@ -433,18 +432,15 @@ async function initStudentApp(user, role) {
     }, 1000);
 
     // LISTEN TO THE DATABASE IN REAL-TIME
-    // 🔒 CHANGED: Pass the actual studentId instead of their name
     const activeListenerId = window.currentStudentProfile?.id || user.uid;
     
-    // 🟢 Keep track of the waitlist listener so we can turn it off when they leave the line
     let activeWaitlistListener = null; 
 
     listenToStudentPass(activeListenerId, (currentPass) => {
         clearInterval(activeTimerInterval);
 
-        // 🟢 Clean up the waitlist listener if they are no longer waitlisted
         if (activeWaitlistListener && (!currentPass || currentPass.status !== "waitlist")) {
-            activeWaitlistListener(); // Unsubscribe from the listener
+            activeWaitlistListener(); 
             activeWaitlistListener = null;
         }
 
@@ -454,7 +450,6 @@ async function initStudentApp(user, role) {
             renderStudentIdleScreen();
             renderStudentSidebar(window.currentStudentProfile); 
             
-            // 🚀 NEW: Re-inject our messages in case the sidebar redraw just erased them!
             if (typeof window.renderMessageCenter === "function") {
                 console.log("🔄 Sidebar was redrawn! Forcing Message Center to render again...");
                 window.renderMessageCenter();
@@ -463,7 +458,6 @@ async function initStudentApp(user, role) {
         else if (currentPass.status === "scheduled") {
             console.log("📅 Scheduled pass activated! Directing to left-side renderer...");
             
-            // Look for the renderer locally or globally on the window object
             const renderer = (typeof renderStudentScheduledScreen === "function") 
                 ? renderStudentScheduledScreen 
                 : window.renderStudentScheduledScreen;
@@ -477,15 +471,12 @@ async function initStudentApp(user, role) {
                 }
             }
             
-            // Ensure the message center updates alongside the new screen
             if (typeof window.renderMessageCenter === "function") window.renderMessageCenter();
         }
         else if (currentPass.status === "waitlist") {
             renderStudentWaitlistScreen(currentPass);
 
-            // 🟢 START THE DYNAMIC COUNTDOWN LISTENER
             if (!activeWaitlistListener) {
-                // Optimized query: Only pull the waitlist for THIS specific room
                 const q = query(
                     collection(db, "passes"), 
                     where("status", "==", "waitlist"),
@@ -494,11 +485,8 @@ async function initStudentApp(user, role) {
                 
                 activeWaitlistListener = onSnapshot(q, (snapshot) => {
                     const allWaiting = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    
-                    // Recalculate their specific position
                     const newPos = calculateDynamicQueuePosition(currentPass, allWaiting);
                     
-                    // Update the giant number on the screen instantly
                     const posEl = document.getElementById("queue-pos-display");
                     if (posEl) posEl.innerText = `#${newPos}`;
                 });
@@ -506,15 +494,15 @@ async function initStudentApp(user, role) {
         }
         else if (currentPass.status === "pending_student") {
             renderStudentAcceptScreen(currentPass);
-            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); // 👈 ADD THIS
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); 
         }
         else if (currentPass.status === "pending_restricted") {
             renderStudentBlindRestrictionScreen(currentPass);
-            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); // 👈 ADD THIS
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); 
         }
         else if (currentPass.status === "pending_warning") {
             renderStudentYellowWarningScreen(currentPass);
-            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); // 👈 ADD THIS
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); 
         }
         else if (currentPass.status.startsWith("pending")) {
             const statusData = {
@@ -524,25 +512,22 @@ async function initStudentApp(user, role) {
                 waitlistPosition: currentPass.waitlistPosition || null
             };
             renderStudentWaitingScreen(currentPass, statusData);
-            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); // 👈 ADD THIS
+            if (typeof window.renderMessageCenter === "function") window.renderMessageCenter(); 
         }
         else if (currentPass.status === "active" || currentPass.status === "active_bypassed") {
             renderStudentActiveScreen(currentPass);
             
-            // Start the massive timer
-            // 🌟 NEW: Calculate time based on current phase
-            let startTime = new Date();
+            let startTime = getAdjustedNow();
             if (currentPass.departedAt) {
-                startTime = currentPass.departedAt.toDate(); // Phase 3 (Returning) Timer
+                startTime = currentPass.departedAt.toDate(); // Phase 3
             } else if (currentPass.acceptedAt) {
-                startTime = currentPass.acceptedAt.toDate(); // Phase 1 (Transit) Timer
+                startTime = currentPass.acceptedAt.toDate(); // Phase 1
             } else if (currentPass.createdAt) {
                 startTime = currentPass.createdAt.toDate();
             }
 
             activeTimerInterval = setInterval(() => {
-                elapsedSeconds = Math.floor((new Date() - startTime) / 1000);
-                // Prevent negative numbers just in case of slight clock sync delays
+                elapsedSeconds = Math.floor((getAdjustedNow() - startTime) / 1000);
                 if (elapsedSeconds < 0) elapsedSeconds = 0; 
 
                 const mins = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
@@ -582,10 +567,6 @@ function startStopwatchTimer() {
 }
 
 // Global Event Listeners
-
-// ==========================================
-// 🟢 OVERRIDE: FORCE CORRECT MAP LABELS ON ZOOM
-// ==========================================
 window.showTeacherNamesOnMap = function() {
     const mapSvg = document.getElementById("interactive-school-map");
     if (!mapSvg) return;
@@ -608,11 +589,9 @@ window.showTeacherNamesOnMap = function() {
         const matchKey = dataId.toLowerCase().replace(/^room\s+/i, '').trim();
         let rawName = null;
 
-        // 1st Priority: Locked Rooms
         if (scheduleData && scheduleData.lockedRooms && scheduleData.lockedRooms[matchKey]) {
             rawName = scheduleData.lockedRooms[matchKey];
         } 
-        // 2nd Priority: Normal Schedule
         else if (scheduleData && scheduleData[activePeriod]) {
             const assignments = scheduleData[activePeriod][matchKey];
             if (assignments && assignments.length > 0) {
@@ -623,13 +602,11 @@ window.showTeacherNamesOnMap = function() {
         }
 
         if (rawName) {
-            // 🌟 TRIGGER THE BUILT-IN BYPASS: Save it to the exact DOM element your popup bypass is looking for!
             const destInput = document.getElementById("proxy-destination-input") || 
                               document.getElementById("input-proxy-destination") ||
                               document.getElementById("input-destination");
             if (destInput) destInput.dataset.teacher = rawName;
 
-            // FORMAT NAME: Strip first name
             let cleanName = rawName.trim();
             if (cleanName.includes(",")) {
                 cleanName = cleanName.split(",")[0].trim();
@@ -739,15 +716,12 @@ document.addEventListener("click", async (e) => {
 
         let teacherDisplay = "";
 
-        // 🟢 NEW: Unified Logic matching map-engine.js!
         let rawName = null;
         const scheduleData = window.liveMasterSchedule || window.currentLiveScheduleData;
 
-        // 1st Priority - Locked Room Override
         if (scheduleData && scheduleData.lockedRooms && scheduleData.lockedRooms[matchKey]) {
             rawName = scheduleData.lockedRooms[matchKey];
         } 
-        // 2nd Priority - Normal Schedule Check
         else if (scheduleData && scheduleData[activePeriod]) {
             const assignments = scheduleData[activePeriod][matchKey];
             if (assignments && assignments.length > 0) {
@@ -758,10 +732,8 @@ document.addEventListener("click", async (e) => {
         }
 
         if (rawName) {
-            // 🌟 ULTIMATE FIX: Attach the database name straight to the room shape they clicked!
             mapNode.dataset.officialTeacher = rawName;
 
-            // FORMAT NAME: Strip first name
             let cleanName = rawName.trim();
             if (cleanName.includes(",")) {
                 cleanName = cleanName.split(",")[0].trim();
@@ -805,9 +777,6 @@ document.addEventListener("click", async (e) => {
         }
     }
 
-    // ==========================================
-    // 🟢 FIXED: GLOBAL WAITLIST CONTROLS (Moved out of mapNode nesting!)
-    // ==========================================
     if (e.target.id === "btn-accept-waitlist") {
         const passId = e.target.getAttribute("data-id");
         if (!passId) return;
@@ -843,15 +812,13 @@ document.addEventListener("click", async (e) => {
         if (!passId) return;
 
         try {
-            // Prevent double clicks
             checkInBtn.disabled = true;
             checkInBtn.innerText = "⏳ Checking in...";
 
             const passRef = doc(db, "passes", passId);
             await updateDoc(passRef, {
-                arrivedAt: serverTimestamp()
+                arrivedAt: getSpoofSafeTimestamp()
             });
-            // The onSnapshot listener will automatically detect this change and re-render the screen!
         } catch (error) {
             console.error("Error checking in:", error);
             alert("Failed to check in. Please try again.");
@@ -869,15 +836,13 @@ document.addEventListener("click", async (e) => {
         if (!passId) return;
 
         try {
-            // Prevent double clicks
             departBtn.disabled = true;
             departBtn.innerText = "⏳ Updating...";
 
             const passRef = doc(db, "passes", passId);
             await updateDoc(passRef, {
-                departedAt: serverTimestamp()
+                departedAt: getSpoofSafeTimestamp()
             });
-            // The onSnapshot listener will catch this and flip to Phase 3
         } catch (error) {
             console.error("Error departing:", error);
             alert("Failed to update departure. Please try again.");
@@ -890,31 +855,25 @@ document.addEventListener("click", async (e) => {
     // --- 1. STUDENT CONFIRMS MAP DESTINATION ---
     // ==========================================
     if (e.target.id === "btn-confirm-destination") {
-        const dest = window.selectedDestination; // 🟢 FIXED: Added window.
-        if (!dest) return; // 🟢 FIXED: Safety check to prevent the null error
+        const dest = window.selectedDestination; 
+        if (!dest) return; 
 
         const passType = window.currentUser?.role === "teacher" || window.currentUser?.role === "admin" ? "proxy" : "standard";
 
-        // 1. Check if the room is a "No Check-in" room (Restroom, Fountain, etc.)
         const matchKey = dest.toLowerCase().replace(/^room\s+/i, '').trim();
         const sched = window.liveMasterSchedule || window.currentLiveScheduleData || {};
         const isNoCheckIn = sched.noCheckInRooms && sched.noCheckInRooms[matchKey];
 
-        // 2. See if there is already a teacher natively mapped to this room right now
         let targetTeacher = "Unknown";
         
-        // 🌟 ULTIMATE FIX: Look at the highlighted room on the map and grab the attached name!
         const selectedMapNode = document.querySelector(".map-node.selected");
         if (selectedMapNode && selectedMapNode.dataset.officialTeacher) {
             targetTeacher = selectedMapNode.dataset.officialTeacher;
             console.log("Successfully grabbed teacher directly from the map node:", targetTeacher);
         }
 
-        // 3. THE POPUP: If no teacher is found and it requires one!
         if (targetTeacher === "Unknown" && !isNoCheckIn) {
-            // ... (the rest of your popup code stays exactly the same)
             
-            // Build the staff dropdown
             let staffOptions = `<option value="No Receiving Teacher" style="font-weight: bold; color: #d32f2f;">-- No Receiving Teacher --</option>`;
             if (window.activeStaffList) {
                 window.activeStaffList.forEach(staff => {
@@ -922,26 +881,21 @@ document.addEventListener("click", async (e) => {
                 });
             }
 
-            // 🔥 THE BYPASS: Did the map already tell us who the teacher is?
             const destInput = document.getElementById("proxy-destination-input") || 
                               document.getElementById("input-proxy-destination") ||
-                              document.getElementById("input-destination"); // Catch both proxy and student flows
+                              document.getElementById("input-destination"); 
             
             let preSelectedTeacher = destInput ? destInput.dataset.teacher : null;
 
-            // If the map found a specific teacher (and it's not "Unknown"), skip the popup entirely!
             if (preSelectedTeacher && preSelectedTeacher !== "Unknown" && preSelectedTeacher.trim() !== "") {
                 console.log("Skipping popup! Map already provided teacher:", preSelectedTeacher);
                 
-                // If it's a proxy pass, we might just need to set the value. 
-                // If it's the final step, call the finalization function.
                 if (typeof finalizePassCreation === "function") {
                     await finalizePassCreation(dest, preSelectedTeacher, passType);
-                    return; // Stop running this function, do NOT create the popup overlay!
+                    return; 
                 }
             }
 
-            // Create Popup Overlay
             const overlay = document.createElement("div");
             overlay.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; justify-content: center; align-items: center;";
             
@@ -962,30 +916,27 @@ document.addEventListener("click", async (e) => {
             `;
             document.body.appendChild(overlay);
 
-            // Handle Popup Cancel
             document.getElementById("popup-btn-cancel").addEventListener("click", () => {
                 document.body.removeChild(overlay);
                 document.getElementById("btn-confirm-destination").innerText = "Confirm Destination";
                 document.getElementById("btn-confirm-destination").disabled = false;
             });
 
-            // Handle Popup Confirm
             document.getElementById("popup-btn-confirm").addEventListener("click", async () => {
                 targetTeacher = document.getElementById("popup-staff-select").value;
                 document.body.removeChild(overlay);
                 await finalizePassCreation(dest, targetTeacher, passType);
             });
 
-            return; // Stop here and wait for the popup
+            return; 
         } 
         
-        // If it's a restroom or already had a teacher, proceed normally!
         if (isNoCheckIn) targetTeacher = "No Receiving Teacher";
         await finalizePassCreation(dest, targetTeacher, passType);
     }
 
     // =======================================================
-    // 🧠 HELPER: EMERGENCY STRING FALLBACKS (Only used if DB lookup fails)
+    // 🧠 HELPER: EMERGENCY STRING FALLBACKS 
     // =======================================================
     function fallbackFormatName(rawName) {
         if (!rawName || rawName === "Unknown" || rawName === "No Receiving Teacher") return rawName;
@@ -1021,24 +972,21 @@ document.addEventListener("click", async (e) => {
         try {
             const usersRef = collection(db, "users");
             
-            // 1. Try matching by scheduleAlias first (e.g., "Mr. Orr")
             let q = query(usersRef, where("scheduleAlias", "==", searchName));
             let snapshot = await getDocs(q);
             
-            // 2. If no match, try matching by displayName (e.g., "Brian Orr")
             if (snapshot.empty) {
                 q = query(usersRef, where("displayName", "==", searchName));
                 snapshot = await getDocs(q);
             }
             
-            // 3. If still no match, try matching strictly by lastName (e.g., "Orr")
             if (snapshot.empty) {
                 q = query(usersRef, where("lastName", "==", searchName));
                 snapshot = await getDocs(q);
             }
 
             if (!snapshot.empty) {
-                return snapshot.docs[0].data(); // Return the exact Clever DB profile!
+                return snapshot.docs[0].data(); 
             }
         } catch (error) {
             console.warn("⚠️ DB Teacher Lookup failed, using fallbacks.", error);
@@ -1064,11 +1012,17 @@ document.addEventListener("click", async (e) => {
         // --- 2. IDENTIFY THE TIME & PERIOD ---
         const currentPeriod = window.currentTimeState?.currentPeriod || "Unknown";
 
-        // --- 3. IDENTIFY THE ORIGIN (Clever Schedule Engine) ---
+        // --- 3. IDENTIFY THE ORIGIN (Clever Schedule Engine & Lunch Check) ---
         let originRoom = "Unknown";
         let rawOriginTeacher = "Unknown";
+        
+        // 🌟 NEW LUNCH DETECTION ENGINE
+        const isLunchTime = window.currentTimeState?.isLunch || String(currentPeriod).toLowerCase().includes("lunch") || window.currentTimeState?.phase === "lunch";
 
-        if (window.currentStudentProfile && window.currentStudentProfile.schedule && currentPeriod !== "Unknown") {
+        if (isLunchTime) {
+            originRoom = "Cafeteria";
+            rawOriginTeacher = "Lunch";
+        } else if (window.currentStudentProfile && window.currentStudentProfile.schedule && currentPeriod !== "Unknown") {
             const sched = window.currentStudentProfile.schedule;
             let currentClass = null;
 
@@ -1084,10 +1038,25 @@ document.addEventListener("click", async (e) => {
             }
         }
 
-        // --- 4. SECURE DATABASE LOOKUPS FOR EXACT NAMES ---
-        // Fetch official profiles from the 'users' collection
+        // --- 4. SECURE DATABASE LOOKUPS FOR EXACT NAMES & ROOM ASSIGNMENTS ---
         const originTeacherProfile = await getTeacherProfileFromDB(rawOriginTeacher);
         const destTeacherProfile = await getTeacherProfileFromDB(targetTeacher);
+        
+        // 🌟 NEW: OVERRIDE ORIGIN ROOM USING THE TEACHER'S ROOM ASSIGNMENTS (Ditch Clever fallback)
+        if (!isLunchTime && originTeacherProfile && originTeacherProfile.roomAssignments && originTeacherProfile.roomAssignments[currentPeriod]) {
+            const dbRoom = originTeacherProfile.roomAssignments[currentPeriod].room;
+            if (dbRoom && dbRoom !== "No Room") {
+                originRoom = dbRoom;
+            }
+        }
+
+        // 🌟 NEW: SECURE THE DESTINATION ROOM IF THEY SELECTED A TEACHER FROM THE POPUP
+        if (destTeacherProfile && destTeacherProfile.roomAssignments && destTeacherProfile.roomAssignments[currentPeriod]) {
+            const destDbRoom = destTeacherProfile.roomAssignments[currentPeriod].room;
+            if (destDbRoom && destDbRoom !== "No Room") {
+                dest = destDbRoom; // Override map click with their ACTUAL room this period!
+            }
+        }
 
         // Build Origin Names (Prefer DB -> Fallback to String formatting)
         const finalOriginTeacher = originTeacherProfile?.scheduleAlias || originTeacherProfile?.displayName || fallbackFormatName(rawOriginTeacher);
@@ -1108,14 +1077,14 @@ document.addEventListener("click", async (e) => {
             destination: dest, 
             destinationRoom: dest,
             destinationTeacher: finalDestinationTeacher, 
-            destTeacherLastName: destTeacherLastName, // Stored for UI injection
-            targetTeacher: finalDestinationTeacher, // Legacy support
+            destTeacherLastName: destTeacherLastName, 
+            targetTeacher: finalDestinationTeacher, 
             
             // 📍 Origin & Time Data
             origin: originRoom, 
             originRoom: originRoom,
             originTeacher: finalOriginTeacher, 
-            originTeacherLastName: originTeacherLastName, // Stored for UI injection
+            originTeacherLastName: originTeacherLastName, 
             period: currentPeriod, 
             
             type: passType,
@@ -1127,7 +1096,6 @@ document.addEventListener("click", async (e) => {
             
             // 🚦 State Controls
             status: passType === "tardy" ? "active" : "pending", 
-            // 🎯 ROUTING FIX: Scheduled passes go to message center, immediate passes go to green screen!
             uiLocation: passType === "scheduled" ? "message_center" : "pass_section", 
             restrictionLevel: "none",
             restrictionType: "",
@@ -1143,11 +1111,9 @@ document.addEventListener("click", async (e) => {
             document.getElementById("map-modal").classList.add("hidden");
             document.getElementById("map-modal-container").innerHTML = '';
         } else {
-            // 1. Hide the map modal immediately
             document.getElementById("map-modal").classList.add("hidden");
             document.getElementById("map-modal-container").innerHTML = '';
 
-            // 2. Inject the custom restriction screen from image_de653b.png
             const container = document.getElementById("kiosk-main-widget");
             if (container) {
                 container.innerHTML = `
@@ -1164,14 +1130,12 @@ document.addEventListener("click", async (e) => {
                     </div>
                 `;
 
-                // 3. Bind the cancel button to return to the normal screen
                 document.getElementById("btn-cancel-denied-request").addEventListener("click", () => {
-                    // This calls your existing UI function to redraw the normal "Where to?" screen!
                     import("./student-ui.js").then(module => {
                         if (typeof module.renderStudentIdleScreen === "function") {
                             module.renderStudentIdleScreen();
                         } else {
-                            location.reload(); // Failsafe fallback
+                            location.reload(); 
                         }
                     }).catch(() => location.reload()); 
                 });
@@ -1179,9 +1143,6 @@ document.addEventListener("click", async (e) => {
         }
     }
 
-    // ==========================================
-    // --- 2. TEACHER APPROVAL HANDOFF CONTROLS ---
-    // ==========================================
     if (e.target && e.target.id === "btn-teacher-approve") {
         const passId = e.target.getAttribute("data-id");
         if (passId) {
@@ -1208,9 +1169,6 @@ document.addEventListener("click", async (e) => {
         }
     }
 
-    // ==========================================
-    // --- 3. TEACHER RETURN HANDOFF CONTROL ---
-    // ==========================================
     if (e.target && e.target.id === "btn-teacher-return") {
         const passId = e.target.getAttribute("data-id");
         if (passId) {
