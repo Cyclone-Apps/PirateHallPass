@@ -184,7 +184,6 @@ export class MapController {
     getTeacherForRoom(matchKey) {
         let rawName = null;
 
-        // 🌟 FAILSAFE: Check both potential global objects the dashboard might use
         const scheduleData = window.liveMasterSchedule || window.currentLiveScheduleData;
 
         // 1st Priority - Is this room permanently locked?
@@ -217,25 +216,25 @@ export class MapController {
             }
         }
 
-        // If no teacher is found in the schedule, stop here.
         if (!rawName) return null;
 
         // ==========================================
-        // 🟢 NEW: PRECISE ALIAS & MAP NAME LOOKUP
+        // 🧠 NEW: DYNAMIC TEACHER LOOKUP
         // ==========================================
-        
-        // 1. Check if the activeStaffList is available globally
         const staffList = window.activeStaffList || [];
+        const rawLower = rawName.toLowerCase().trim();
         
-        // 2. Find the user whose Schedule Link (Alias) matches the raw schedule name
-        const matchedStaff = staffList.find(staff => staff.scheduleAlias === rawName);
+        // Find the user by checking if the raw schedule name includes their last name
+        const matchedStaff = staffList.find(staff => {
+            const lName = (staff.lastName || "").toLowerCase().trim();
+            const dName = (staff.displayName || "").toLowerCase().trim();
+            return (lName && rawLower.includes(lName)) || (dName && rawLower === dName);
+        });
 
-        // 3. If we found a linked account AND they have a custom Map Name set, use it!
         if (matchedStaff && matchedStaff.mapName && matchedStaff.mapName.trim() !== "") {
             return matchedStaff.mapName.trim();
         }
 
-        // 4. Fallback: If no link is made or no map name is set yet, just return the raw schedule name
         return rawName.trim();
     }
 

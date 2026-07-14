@@ -217,7 +217,7 @@ export async function fetchTodaysSchedule(schoolLevel = "HS") {
 
 /**
  * Evaluates the adjusted time against the active bell schedule layout.
- * 🌟 UPGRADED: Now accepts an optional 'lunchTrack' ("A" or "B") to filter split blocks!
+ * 🌟 UPGRADED: Now accepts an optional 'lunchTrack' ("A", "B", or "JH") to filter split blocks!
  */
 export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
     if (!scheduleData || Object.keys(scheduleData).length === 0) {
@@ -235,7 +235,6 @@ export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
     let periods = [];
     
     if (Array.isArray(scheduleData)) {
-        // If it's an array (HS - Regular), pull the name from the "period" field
         periods = scheduleData.map(p => ({
             name: p.period, 
             startStr: p.start,
@@ -244,7 +243,6 @@ export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
             endMins: timeToMinutes(p.end)
         }));
     } else {
-        // If it's a Map (HS - Early Out), pull the name from the Object Key
         periods = Object.keys(scheduleData).map(key => ({
             name: key,
             startStr: scheduleData[key].start,
@@ -255,15 +253,22 @@ export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
     }
 
     // ==========================================================
-    // 🎯 A/B LUNCH TRACK FILTER
+    // 🎯 A/B / JH LUNCH TRACK FILTER
     // ==========================================================
     if (lunchTrack) {
         periods = periods.filter(p => {
             const pName = p.name.toUpperCase();
-            // If they are track A, completely hide 6B blocks
-            if (lunchTrack.toUpperCase() === "A" && pName.startsWith("6B")) return false;
-            // If they are track B, completely hide 6A blocks
-            if (lunchTrack.toUpperCase() === "B" && pName.startsWith("6A")) return false;
+            
+            if (lunchTrack.toUpperCase() === "A") {
+                // If Track A: Hide 6B and all exclusive JH blocks
+                if (pName.startsWith("6B") || pName === "WIN" || pName === "LUNCH" || pName === "6-ADVISOR") return false;
+            } else if (lunchTrack.toUpperCase() === "B") {
+                // If Track B: Hide 6A and all exclusive JH blocks
+                if (pName.startsWith("6A") || pName === "WIN" || pName === "LUNCH" || pName === "6-ADVISOR") return false;
+            } else if (lunchTrack.toUpperCase() === "JH") {
+                // If Track JH: Hide HS blocks (6A/6B)
+                if (pName.startsWith("6A") || pName.startsWith("6B")) return false;
+            }
             return true; 
         });
     }
@@ -296,11 +301,16 @@ export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
         }
     }
 
-    // 🌟 Helper to convert "6A Class" or "6B Lunch" safely back to "Period 6"
+    // 🌟 Helper to safely map schedule blocks to their database period equivalents
     const getBasePeriod = (pName) => {
         if (!pName) return null;
-        if (pName.startsWith("6A") || pName.startsWith("6B")) return "Period 6";
-        if (!pName.toLowerCase().includes("period") && !isNaN(pName.charAt(0))) {
+        
+        const upperName = pName.toUpperCase();
+        if (upperName.startsWith("6A") || upperName.startsWith("6B") || upperName === "6-ADVISOR") return "Period 6";
+        if (upperName === "WIN") return "WIN";
+        if (upperName === "LUNCH") return "Lunch";
+        
+        if (!upperName.includes("PERIOD") && !isNaN(pName.charAt(0))) {
             return `Period ${pName}`;
         }
         return pName;

@@ -1025,171 +1025,203 @@ document.addEventListener("click", async (e) => {
     }
 
     // =======================================================
-    // 🧠 HELPER: DATABASE TEACHER LOOKUP
-    // =======================================================
-    async function getTeacherProfileFromDB(searchName) {
-        if (!searchName || searchName === "Unknown" || searchName === "No Receiving Teacher") return null;
+// 🧠 HELPER: DATABASE TEACHER LOOKUP
+// =======================================================
+async function getTeacherProfileFromDB(searchName) {
+    if (!searchName || searchName === "Unknown" || searchName === "No Receiving Teacher") return null;
+    
+    try {
+        const usersRef = collection(db, "users");
+        let snapshot;
         
-        try {
-            const usersRef = collection(db, "users");
-            
-            // 1. Try matching by scheduleAlias first (e.g., "Mr. Orr")
-            let q = query(usersRef, where("scheduleAlias", "==", searchName));
-            let snapshot = await getDocs(q);
-            
-            // 2. If no match, try matching by displayName (e.g., "Brian Orr")
-            if (snapshot.empty) {
-                q = query(usersRef, where("displayName", "==", searchName));
+        // 1. Try matching by displayName first (e.g., "Brian Orr")
+        let q = query(usersRef, where("displayName", "==", searchName));
+        snapshot = await getDocs(q);
+        
+        // 2. If no match, try matching strictly by lastName (e.g., "Orr")
+        if (snapshot.empty) {
+            q = query(usersRef, where("lastName", "==", searchName));
+            snapshot = await getDocs(q);
+        }
+        
+        // 3. Smart Fallback: If it's a title format (e.g., "Mr. Orr" or "Coach Orr"),
+        //    isolate the last word and run an exact check against lastName.
+        if (snapshot.empty && searchName.includes(" ")) {
+            const isolatedLastName = searchName.trim().split(" ").pop();
+            if (isolatedLastName) {
+                q = query(usersRef, where("lastName", "==", isolatedLastName));
                 snapshot = await getDocs(q);
             }
-            
-            // 3. If still no match, try matching strictly by lastName (e.g., "Orr")
-            if (snapshot.empty) {
-                q = query(usersRef, where("lastName", "==", searchName));
-                snapshot = await getDocs(q);
-            }
-
-            if (!snapshot.empty) {
-                return snapshot.docs[0].data(); // Return the exact Clever DB profile!
-            }
-        } catch (error) {
-            console.warn("⚠️ DB Teacher Lookup failed, using fallbacks.", error);
         }
-        return null;
+
+        if (!snapshot.empty) {
+            const docSnap = snapshot.docs[0];
+            return { id: docSnap.id, ...docSnap.data() }; // Return profile with ID bound
+        }
+    } catch (error) {
+        console.warn("⚠️ DB Teacher Lookup failed, using fallbacks.", error);
     }
+    return null;
+}
 
     // =======================================================
-    // 🚀 FINAL PASS BUILDER & DISPATCHER
-    // =======================================================
-    async function finalizePassCreation(dest, targetTeacher, passType) {
-        document.getElementById("btn-confirm-destination").innerText = "Creating...";
-        document.getElementById("btn-confirm-destination").disabled = true;
+// 🚀 FINAL PASS BUILDER & DISPATCHER
+// =======================================================
+async function finalizePassCreation(dest, targetTeacher, passType) {
+    document.getElementById("btn-confirm-destination").innerText = "Creating...";
+    document.getElementById("btn-confirm-destination").disabled = true;
 
-        const isProxyActive = passType === "proxy";
-        const proxyTeacherName = isProxyActive ? (window.currentUser?.displayName || "Teacher") : "";
+    const isProxyActive = passType === "proxy";
+    const proxyTeacherName = isProxyActive ? (window.currentUser?.displayName || "Teacher") : "";
+    
+    // --- 1. IDENTIFY THE STUDENT ---
+    const safeStudentId = window.currentStudentProfile?.id || window.currentUser?.uid || "unknown";
+    const studentName = window.currentStudentProfile?.displayName || window.currentUser?.displayName || "Student";
+    const studentEmail = window.currentStudentProfile?.email || window.currentUser?.email || "unknown@student.com";
+
+    // --- 2. IDENTIFY THE TIME & PERIOD ---
+    const currentPeriod = window.currentTimeState?.currentPeriod || "Unknown";
+    const activeBasePeriod = window.currentTimeState?.activeBasePeriod || currentPeriod; // Grab base period for splits
+
+    // --- 3. IDENTIFY THE ORIGIN (Clever Schedule Engine) ---
+    let originRoom = "Unknown";
+    let rawOriginTeacher = "Unknown";
+
+    if (window.currentStudentProfile && window.currentStudentProfile.schedule && currentPeriod !== "Unknown") {
+        const sched = window.currentStudentProfile.schedule;
+        let currentClass = null;
+
+        if (Array.isArray(sched)) {
+            currentClass = sched.find(c => String(c.period) === String(currentPeriod));
+        } else if (typeof sched === 'object') {
+            currentClass = sched[currentPeriod] || Object.values(sched).find(c => String(c?.period) === String(currentPeriod));
+        }
         
-        // --- 1. IDENTIFY THE STUDENT ---
-        const safeStudentId = window.currentStudentProfile?.id || window.currentUser?.uid || "unknown";
-        const studentName = window.currentStudentProfile?.displayName || window.currentUser?.displayName || "Student";
-        const studentEmail = window.currentStudentProfile?.email || window.currentUser?.email || "unknown@student.com";
-
-        // --- 2. IDENTIFY THE TIME & PERIOD ---
-        const currentPeriod = window.currentTimeState?.currentPeriod || "Unknown";
-
-        // --- 3. IDENTIFY THE ORIGIN (Clever Schedule Engine) ---
-        let originRoom = "Unknown";
-        let rawOriginTeacher = "Unknown";
-
-        if (window.currentStudentProfile && window.currentStudentProfile.schedule && currentPeriod !== "Unknown") {
-            const sched = window.currentStudentProfile.schedule;
-            let currentClass = null;
-
-            if (Array.isArray(sched)) {
-                currentClass = sched.find(c => String(c.period) === String(currentPeriod));
-            } else if (typeof sched === 'object') {
-                currentClass = sched[currentPeriod] || Object.values(sched).find(c => String(c?.period) === String(currentPeriod));
-            }
-            
-            if (currentClass) {
-                originRoom = currentClass.room || currentClass.ROOM || "Unknown";
-                rawOriginTeacher = currentClass.teacher || currentClass.TEACHER || "Unknown";
-            }
-        }
-
-        // --- 4. SECURE DATABASE LOOKUPS FOR EXACT NAMES ---
-        // Fetch official profiles from the 'users' collection
-        const originTeacherProfile = await getTeacherProfileFromDB(rawOriginTeacher);
-        const destTeacherProfile = await getTeacherProfileFromDB(targetTeacher);
-
-        // Build Origin Names (Prefer DB -> Fallback to String formatting)
-        const finalOriginTeacher = originTeacherProfile?.scheduleAlias || originTeacherProfile?.displayName || fallbackFormatName(rawOriginTeacher);
-        const originTeacherLastName = originTeacherProfile?.lastName || fallbackLastName(rawOriginTeacher);
-
-        // Build Destination Names (Prefer DB -> Fallback to String formatting)
-        const finalDestinationTeacher = destTeacherProfile?.scheduleAlias || destTeacherProfile?.displayName || fallbackFormatName(targetTeacher);
-        const destTeacherLastName = destTeacherProfile?.lastName || fallbackLastName(targetTeacher);
-
-        // --- 5. BUILD THE HARDCODED PAYLOAD ---
-        const passData = {
-            studentId: safeStudentId, 
-            studentName: studentName,
-            studentDisplayName: studentName,
-            studentEmail: studentEmail,
-            
-            // 📍 Destination Data
-            destination: dest, 
-            destinationRoom: dest,
-            destinationTeacher: finalDestinationTeacher, 
-            destTeacherLastName: destTeacherLastName, // Stored for UI injection
-            targetTeacher: finalDestinationTeacher, // Legacy support
-            
-            // 📍 Origin & Time Data
-            origin: originRoom, 
-            originRoom: originRoom,
-            originTeacher: finalOriginTeacher, 
-            originTeacherLastName: originTeacherLastName, // Stored for UI injection
-            period: currentPeriod, 
-            
-            type: passType,
-            initiatedBy: isProxyActive ? "teacher_proxy" : "student",
-            senderName: isProxyActive ? proxyTeacherName : studentName, 
-            
-            destCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(dest) : "Unknown",
-            originCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(originRoom) : "Unknown",
-            
-            // 🚦 State Controls
-            status: passType === "tardy" ? "active" : "pending", 
-            // 🎯 ROUTING FIX: Scheduled passes go to message center, immediate passes go to green screen!
-            uiLocation: passType === "scheduled" ? "message_center" : "pass_section", 
-            restrictionLevel: "none",
-            restrictionType: "",
-            restrictionReason: "",
-            waitlistPosition: 0,
-            recentTravels: []
-        };
-
-        // --- 6. SEND TO THE PASS ENGINE ---
-        const result = await createNewPass(passData);
-
-        if (result.success) {
-            document.getElementById("map-modal").classList.add("hidden");
-            document.getElementById("map-modal-container").innerHTML = '';
-        } else {
-            // 1. Hide the map modal immediately
-            document.getElementById("map-modal").classList.add("hidden");
-            document.getElementById("map-modal-container").innerHTML = '';
-
-            // 2. Inject the custom restriction screen from image_de653b.png
-            const container = document.getElementById("kiosk-main-widget");
-            if (container) {
-                container.innerHTML = `
-                    <div style="background-color: #fff1f1; border: 4px solid #c62828; border-radius: 12px; padding: 40px 20px; text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-                        <h1 style="color: #c62828; font-size: 3rem; margin-bottom: 20px; font-weight: 900; line-height: 1.1;">
-                            <span style="display: inline-block; transform: translateY(5px);">🛑</span> Request<br>temporarily<br>denied.
-                        </h1>
-                        <p style="color: #333; font-size: 1.5rem; margin-bottom: 40px;">
-                            ${result.message}
-                        </p>
-                        <button id="btn-cancel-denied-request" style="background-color: #c62828; color: white; border: none; font-size: 1.5rem; padding: 15px 40px; border-radius: 8px; width: 80%; cursor: pointer; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
-                            ❌ Cancel Request
-                        </button>
-                    </div>
-                `;
-
-                // 3. Bind the cancel button to return to the normal screen
-                document.getElementById("btn-cancel-denied-request").addEventListener("click", () => {
-                    // This calls your existing UI function to redraw the normal "Where to?" screen!
-                    import("./student-ui.js").then(module => {
-                        if (typeof module.renderStudentIdleScreen === "function") {
-                            module.renderStudentIdleScreen();
-                        } else {
-                            location.reload(); // Failsafe fallback
-                        }
-                    }).catch(() => location.reload()); 
-                });
-            }
+        if (currentClass) {
+            originRoom = currentClass.room || currentClass.ROOM || "Unknown";
+            rawOriginTeacher = currentClass.teacher || currentClass.TEACHER || "Unknown";
         }
     }
+
+    // 🍔 LUNCH & WIN TIME ORIGIN OVERRIDE 
+    if (currentPeriod.toLowerCase().includes("lunch")) {
+        originRoom = "Cafeteria";
+        rawOriginTeacher = "Lunch Staff";
+    } else if (currentPeriod === "WIN Time" && !originRoom) {
+        originRoom = "TBA";
+        rawOriginTeacher = "WIN Time";
+    }
+
+    // --- 4. SECURE DATABASE LOOKUPS FOR EXACT NAMES ---
+    // Fetch official profiles from the 'users' collection
+    const originTeacherProfile = await getTeacherProfileFromDB(rawOriginTeacher);
+    const destTeacherProfile = await getTeacherProfileFromDB(targetTeacher);
+
+    // 🚀 DYNAMIC ROOM ROUTING ENGINE (Overrides incoming 'dest')
+    if (destTeacherProfile && destTeacherProfile.roomAssignments) {
+        // 1. Try exact match (e.g. "WIN Time" or "6A Class")
+        if (destTeacherProfile.roomAssignments[currentPeriod]) {
+            dest = destTeacherProfile.roomAssignments[currentPeriod].room;
+        } 
+        // 2. Fallback to base period (e.g. "Period 6")
+        else if (destTeacherProfile.roomAssignments[activeBasePeriod]) {
+            dest = destTeacherProfile.roomAssignments[activeBasePeriod].room;
+        }
+    }
+    
+    // Absolute fallback if no track info found
+    if (!dest || dest === "TBA" || dest === "No Room") {
+        dest = destTeacherProfile?.mapName || destTeacherProfile?.room || destTeacherProfile?.roomNumber || "TBA";
+    }
+    if (dest === "No Room") dest = "TBA";
+
+    // Build Origin Names (Prefer DB -> Fallback to String formatting)
+    const finalOriginTeacher = originTeacherProfile?.displayName || fallbackFormatName(rawOriginTeacher);
+    const originTeacherLastName = originTeacherProfile?.lastName || fallbackLastName(rawOriginTeacher);
+
+    // Build Destination Names (Prefer DB -> Fallback to String formatting)
+    const finalDestinationTeacher = destTeacherProfile?.displayName || fallbackFormatName(targetTeacher);
+    const destTeacherLastName = destTeacherProfile?.lastName || fallbackLastName(targetTeacher);
+
+    // --- 5. BUILD THE HARDCODED PAYLOAD ---
+    const passData = {
+        studentId: safeStudentId, 
+        studentName: studentName,
+        studentDisplayName: studentName,
+        studentEmail: studentEmail,
+        
+        // 📍 Destination Data
+        destination: dest, // 👈 Now dynamically overridden!
+        destinationRoom: dest,
+        destinationTeacher: finalDestinationTeacher, 
+        destTeacherLastName: destTeacherLastName, 
+        targetTeacher: finalDestinationTeacher, 
+        
+        // 📍 Origin & Time Data
+        origin: originRoom, 
+        originRoom: originRoom,
+        originTeacher: finalOriginTeacher, 
+        originTeacherLastName: originTeacherLastName, 
+        period: currentPeriod, 
+        
+        type: passType,
+        initiatedBy: isProxyActive ? "teacher_proxy" : "student",
+        senderName: isProxyActive ? proxyTeacherName : studentName, 
+        
+        destCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(dest) : "Unknown",
+        originCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(originRoom) : "Unknown",
+        
+        // 🚦 State Controls
+        status: passType === "tardy" ? "active" : "pending", 
+        uiLocation: passType === "scheduled" ? "message_center" : "pass_section", 
+        restrictionLevel: "none",
+        restrictionType: "",
+        restrictionReason: "",
+        waitlistPosition: 0,
+        recentTravels: []
+    };
+
+    // --- 6. SEND TO THE PASS ENGINE ---
+    const result = await createNewPass(passData);
+
+    if (result.success) {
+        document.getElementById("map-modal").classList.add("hidden");
+        document.getElementById("map-modal-container").innerHTML = '';
+    } else {
+        // 1. Hide the map modal immediately
+        document.getElementById("map-modal").classList.add("hidden");
+        document.getElementById("map-modal-container").innerHTML = '';
+
+        // 2. Inject the custom restriction screen
+        const container = document.getElementById("kiosk-main-widget");
+        if (container) {
+            container.innerHTML = `
+                <div style="background-color: #fff1f1; border: 4px solid #c62828; border-radius: 12px; padding: 40px 20px; text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                    <h1 style="color: #c62828; font-size: 3rem; margin-bottom: 20px; font-weight: 900; line-height: 1.1;">
+                        <span style="display: inline-block; transform: translateY(5px);">🛑</span> Request<br>temporarily<br>denied.
+                    </h1>
+                    <p style="color: #333; font-size: 1.5rem; margin-bottom: 40px;">
+                        ${result.message}
+                    </p>
+                    <button id="btn-cancel-denied-request" style="background-color: #c62828; color: white; border: none; font-size: 1.5rem; padding: 15px 40px; border-radius: 8px; width: 80%; cursor: pointer; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
+                        ❌ Cancel Request
+                    </button>
+                </div>
+            `;
+
+            // 3. Bind the cancel button to return to the normal screen
+            document.getElementById("btn-cancel-denied-request").addEventListener("click", () => {
+                import("./student-ui.js").then(module => {
+                    if (typeof module.renderStudentIdleScreen === "function") {
+                        module.renderStudentIdleScreen();
+                    } else {
+                        location.reload(); 
+                    }
+                }).catch(() => location.reload()); 
+            });
+        }
+    }
+}
 
     // ==========================================
     // --- 2. TEACHER APPROVAL HANDOFF CONTROLS ---

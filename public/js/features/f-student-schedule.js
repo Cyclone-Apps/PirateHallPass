@@ -120,8 +120,15 @@ window.openSchedulePopup = async function(student) {
                 const lastName = teacherData.lastName || extractedLastName;
                 teacherName = (title + lastName).trim();
                 
-                // Keep hunting for the room
-                roomName = teacherData.mapName || teacherData.room || teacherData.roomNumber || null;
+                // 🚀 NEW ROOM ENGINE: Look in roomAssignments for this specific period
+                if (teacherData.roomAssignments && teacherData.roomAssignments[p]) {
+                    roomName = teacherData.roomAssignments[p].room;
+                    // Hide the warning text from the student UI
+                    if (roomName === "No Room") roomName = "TBA"; 
+                } else {
+                    // Fallback to legacy fields if the teacher hasn't set up the new system yet
+                    roomName = teacherData.mapName || teacherData.room || teacherData.roomNumber || null;
+                }
             } else {
                 teacherName = extractedLastName; // Clean fallback
             }

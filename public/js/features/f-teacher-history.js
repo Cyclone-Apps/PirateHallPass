@@ -44,7 +44,6 @@ function renderHistoryTab() {
 
     // Grab the auth name (e.g., "Brian Orr")
     const myName = currentTeacherProfile.displayName || "";
-    const myAlias = currentTeacherProfile.scheduleAlias || "";
     
     // 🎯 FIX 1: If lastName isn't attached to the Auth object, extract it mathematically!
     let myLastName = currentTeacherProfile.lastName || "";
@@ -55,7 +54,6 @@ function renderHistoryTab() {
     // Build an array of every possible way a student might label this teacher
     const nameVariations = [
         myName, 
-        myAlias, 
         myLastName,
         `Mr. ${myLastName}`,
         `Mrs. ${myLastName}`,

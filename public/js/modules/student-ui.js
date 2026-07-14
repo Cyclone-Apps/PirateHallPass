@@ -137,7 +137,7 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
         return;
     }
 
-    // 🎯 Use the raw strings for the VISUAL display (e.g., "6A Class")
+    // 🎯 Use the raw strings for the VISUAL display (e.g., "6A Class", "A Lunch", "WIN Time")
     let currentDisplay = timeMetrics?.currentPeriod || null;
     let nextDisplay = timeMetrics?.nextPeriod || null;
 
@@ -169,11 +169,31 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
         }
     }
 
-    // 🪚 EXTRACT TEACHER FROM CLEVER STRING (e.g. "JH Intensive English - Osman - 2" -> "Osman")
+    // 🍔 LUNCH & WIN TIME VISUAL OVERRIDES
+    const applySpecialBlockOverride = (displayInfo, classInfo) => {
+        if (!displayInfo) return classInfo;
+        const displayLower = displayInfo.toLowerCase();
+        
+        if (displayLower.includes("lunch")) {
+            return { className: "Lunch 🍔", room: "Cafeteria", teacher: "Lunch Staff" };
+        } else if (displayInfo === "WIN Time") {
+            // Keep their assigned class if they have one, just append the eagle!
+            return { 
+                className: classInfo ? `${classInfo.className} (WIN Time 🦅)` : "WIN Time 🦅", 
+                room: classInfo ? classInfo.room : "TBA", 
+                teacher: classInfo ? classInfo.teacher : "WIN Time"
+            };
+        }
+        return classInfo;
+    };
+
+    currentClass = applySpecialBlockOverride(currentDisplay, currentClass);
+    nextClass = applySpecialBlockOverride(nextDisplay, nextClass);
+
+    // 🪚 EXTRACT TEACHER FROM CLEVER STRING
     const extractTeacher = (classNameStr) => {
         if (!classNameStr) return "Unknown";
         const parts = classNameStr.split(" - ");
-        // Grab the second-to-last item (which is usually the teacher in Clever strings)
         if (parts.length >= 2) return parts[parts.length - 2].trim();
         return "Unknown";
     };
@@ -182,8 +202,7 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
     const activeClassData = currentClass || nextClass; 
     
     if (activeClassData) {
-        window.currentRoom = activeClassData.room || "Unknown"; // Failsafe, as Clever drops rooms
-        // Try the explicit field first, fallback to our Clever string slicer
+        window.currentRoom = activeClassData.room || "Unknown"; 
         window.currentOriginTeacher = activeClassData.teacher || extractTeacher(activeClassData.className);
         window.currentPeriod = currentBase; 
     } else {
@@ -194,19 +213,22 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
 
     let html = '';
     
-    // Helper to format the display label nicely (e.g., "6A Class" or "7")
-    const formatLabel = (rawName) => {
-        if (!rawName) return "??";
-        return String(rawName).replace("Period ", ""); 
+    // Helper to format the display label natively without forcing "P" on lunches
+    const getPeriodPrefix = (rawName) => {
+        if (!rawName) return "??:";
+        const rawLower = String(rawName).toLowerCase();
+        if (rawLower.includes("lunch")) return `${rawName}:`;
+        if (rawName === "WIN Time") return `WIN:`;
+        return `P${String(rawName).replace("Period ", "")}:`; 
     };
 
-    // 🎨 RENDER THE HTML (Removed the Room span since the database omits it)
+    // 🎨 RENDER THE HTML
     if (currentClass) {
         html += `
             <div style="margin-bottom: 10px;">
                 <div style="font-size: 0.7rem; color: #2e7d32; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;">📍 Current</div>
                 <div style="background: #e8f5e9; border-left: 3px solid #4caf50; padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; line-height: 1.3;">
-                    <strong style="color: #1b5e20;">P${formatLabel(currentDisplay)}:</strong> ${currentClass.className || "Unknown Class"}
+                    <strong style="color: #1b5e20;">${getPeriodPrefix(currentDisplay)}</strong> ${currentClass.className || "Unknown Class"}
                 </div>
             </div>`;
     }
@@ -216,7 +238,7 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
             <div>
                 <div style="font-size: 0.7rem; color: #1565c0; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;">➡️ Next</div>
                 <div style="background: #e3f2fd; border-left: 3px solid #2196f3; padding: 6px 8px; border-radius: 4px; font-size: 0.85rem; line-height: 1.3;">
-                    <strong style="color: #0d47a1;">P${formatLabel(nextDisplay)}:</strong> ${nextClass.className || "Unknown Class"}
+                    <strong style="color: #0d47a1;">${getPeriodPrefix(nextDisplay)}</strong> ${nextClass.className || "Unknown Class"}
                 </div>
             </div>`;
     }

@@ -6,9 +6,6 @@ import { db } from "../firebase-config.js";
 import { collection, doc, getDoc, updateDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { schoolMapSVG } from "../map.js"; 
 
-// Ensure you import schoolMapSVG here if it is not a global window variable!
-// import { schoolMapSVG } from "../your-svg-file.js"; 
-
 let globalRoomsList = []; 
 
 // ==========================================
@@ -42,9 +39,7 @@ export function loadMapRooms() {
 // 🏫 MAIN MODAL BUILDER
 // ==========================================
 window.openRoomAssignmentsModal = async function(user) {
-    // 1. Guarantee the map is parsed right before we build the dropdowns!
     loadMapRooms();
-
     if (!user) return;
     
     const userDocRef = doc(db, "users", user.email);
@@ -52,23 +47,25 @@ window.openRoomAssignmentsModal = async function(user) {
     const userData = userSnap.exists() ? userSnap.data() : {};
     
     const existingData = userData.roomAssignments || {};
-    const lunchTrack = existingData.lunchTrack || "";
+    let currentLunchTrack = existingData.lunchTrack || "";
 
     const allStaffSnap = await getDocs(collection(db, "users"));
     const claimedRooms = {}; 
     
-    for (let i = 1; i <= 9; i++) claimedRooms[i] = {};
+    // We now support 1-9 plus WIN
+    const allPossiblePeriods = [1, 2, 'WIN', 3, 4, 5, 6, 7, 8, 9];
+    allPossiblePeriods.forEach(p => claimedRooms[p] = {});
     
     allStaffSnap.forEach(doc => {
         const staff = doc.data();
         if (staff.email === user.email || !staff.roomAssignments) return; 
         
-        for (let i = 1; i <= 9; i++) {
-            const assignment = staff.roomAssignments[i];
+        allPossiblePeriods.forEach(p => {
+            const assignment = staff.roomAssignments[p];
             if (assignment && assignment.room && assignment.room !== "No Room" && !assignment.coTeacher) {
-                claimedRooms[i][assignment.room] = staff.title ? `${staff.title} ${staff.lastName}` : staff.lastName;
+                claimedRooms[p][assignment.room] = staff.title ? `${staff.title} ${staff.lastName}` : staff.lastName;
             }
-        }
+        });
     });
 
     const modal = document.createElement("div");
@@ -78,125 +75,149 @@ window.openRoomAssignmentsModal = async function(user) {
     const box = document.createElement("div");
     box.style.cssText = "background: white; padding: 20px; border-radius: 8px; width: 95%; max-width: 600px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-height: 90vh; display: flex; flex-direction: column;";
 
-    let html = `
+    box.innerHTML = `
         <h2 style="margin-top: 0; color: #1565c0; border-bottom: 2px solid #eee; padding-bottom: 10px;">🏫 My Room Assignments</h2>
         
         <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 4px; border-left: 4px solid #ffeeba; margin-bottom: 15px; font-size: 0.9rem;">
-            <strong>Required:</strong> Please select your 6th Period Lunch Track (A or B) before assigning rooms.
-            <div style="margin-top: 8px; font-weight: bold;">
-                Lunch Track: 
-                <label><input type="radio" name="lunchTrack" value="A" ${lunchTrack === "A" ? "checked" : ""}> 6A</label> &nbsp;&nbsp;
-                <label><input type="radio" name="lunchTrack" value="B" ${lunchTrack === "B" ? "checked" : ""}> 6B</label>
+            <strong>Required:</strong> Please select your Lunch Track before assigning rooms.
+            <div style="margin-top: 8px; font-weight: bold; display: flex; gap: 15px;">
+                <label><input type="radio" name="lunchTrack" value="A" ${currentLunchTrack === "A" ? "checked" : ""}> 6A (HS)</label>
+                <label><input type="radio" name="lunchTrack" value="B" ${currentLunchTrack === "B" ? "checked" : ""}> 6B (HS)</label>
+                <label><input type="radio" name="lunchTrack" value="JH" ${currentLunchTrack === "JH" ? "checked" : ""}> JH (7th/8th)</label>
             </div>
         </div>
 
         <div style="overflow-y: auto; flex-grow: 1; padding-right: 10px;" id="room-assignments-list">
-    `;
-
-    // Build the dropdowns
-    for (let p = 1; p <= 9; p++) {
-        const pdData = existingData[p] || { room: "", available: true, coTeacher: false };
-        
-        let roomOptions = "";
-
-        // 🎯 If the room is completely missing from the DB, force this placeholder!
-        if (!pdData.room || pdData.room === "") {
-            roomOptions += `<option value="" disabled selected>⚠️ Needs Selected</option>`;
-        }
-        
-        roomOptions += `<option value="No Room" ${pdData.room === "No Room" ? "selected" : ""}>No Room</option>`;
-        
-        // Add the dynamically fetched rooms
-        globalRoomsList.forEach(r => {
-            roomOptions += `<option value="${r}" ${pdData.room === r ? "selected" : ""}>${r}</option>`;
-        });
-
-        // Fallback: Preserve legacy rooms that might have been removed from the map
-        if (pdData.room !== "No Room" && pdData.room !== "" && !globalRoomsList.includes(pdData.room)) {
-             roomOptions += `<option value="${pdData.room}" selected>${pdData.room} (Legacy Room)</option>`;
-        }
-
-        html += `
-            <div style="background: #f8f9fa; padding: 12px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #ddd;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <strong style="font-size: 1.1rem; color: #333;">Period ${p}</strong>
-                    <label style="font-size: 0.85rem; color: #555;">
-                        <input type="checkbox" id="coTeacher_${p}" ${pdData.coTeacher ? "checked" : ""}> Co-Teacher's Room
-                    </label>
-                </div>
-                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                    <select id="roomSelect_${p}" data-period="${p}" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex-grow: 1;">
-                        ${roomOptions}
-                    </select>
-                    <label style="font-size: 0.9rem; font-weight: bold; color: ${pdData.available ? '#2e7d32' : '#c62828'}; cursor: pointer;">
-                        <input type="checkbox" id="available_${p}" ${pdData.available ? "checked" : ""}> 
-                        <span id="availLabel_${p}">${pdData.available ? "✅ Available (Accepts Passes)" : "❌ Unavailable (Do Not Disturb)"}</span>
-                    </label>
-                </div>
             </div>
-        `;
-    }
 
-    html += `</div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; border-top: 2px solid #eee; padding-top: 15px;">
             <button id="btn-cancel-rooms" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">Cancel</button>
             <button id="btn-save-rooms" style="background: #2e7d32; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">💾 Save Assignments</button>
         </div>
     `;
 
-    box.innerHTML = html;
     modal.appendChild(box);
     document.body.appendChild(modal);
 
-    // Event Bindings inside the modal
-    for (let p = 1; p <= 9; p++) {
-        const select = document.getElementById(`roomSelect_${p}`);
-        const coTeacherCheck = document.getElementById(`coTeacher_${p}`);
-        const availCheck = document.getElementById(`available_${p}`);
-        const availLabel = document.getElementById(`availLabel_${p}`);
+    const listContainer = document.getElementById("room-assignments-list");
 
-        availCheck.addEventListener("change", (e) => {
-            if (e.target.checked) {
-                availLabel.innerHTML = "✅ Available (Accepts Passes)";
-                availLabel.style.color = "#2e7d32";
-            } else {
-                availLabel.innerHTML = "❌ Unavailable (Do Not Disturb)";
-                availLabel.style.color = "#c62828";
+    // 🚀 DYNAMIC RENDERER: Builds the UI chronologically based on the track selected
+    function renderPeriods() {
+        const trackSelected = document.querySelector('input[name="lunchTrack"]:checked')?.value || "";
+        
+        // Default to HS Schedule
+        let activePeriods = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let labels = { 6: "Period 6" };
+
+        // Morph to JH Schedule
+        if (trackSelected === "JH") {
+            activePeriods = [1, 2, 'WIN', 3, 4, 5, 6, 7, 8, 9];
+            labels = { 'WIN': "WIN Time", 6: "Period 6 (Advisor)" };
+        }
+
+        let html = "";
+        activePeriods.forEach(p => {
+            const pdData = existingData[p] || { room: "", available: true, coTeacher: false };
+            let roomOptions = "";
+
+            if (!pdData.room || pdData.room === "") {
+                roomOptions += `<option value="" disabled selected>⚠️ Needs Selected</option>`;
             }
+            
+            roomOptions += `<option value="No Room" ${pdData.room === "No Room" ? "selected" : ""}>No Room</option>`;
+            
+            globalRoomsList.forEach(r => {
+                roomOptions += `<option value="${r}" ${pdData.room === r ? "selected" : ""}>${r}</option>`;
+            });
+
+            if (pdData.room !== "No Room" && pdData.room !== "" && !globalRoomsList.includes(pdData.room)) {
+                 roomOptions += `<option value="${pdData.room}" selected>${pdData.room} (Legacy Room)</option>`;
+            }
+
+            const periodLabel = labels[p] || `Period ${p}`;
+
+            html += `
+                <div class="period-row" data-period="${p}" style="background: #f8f9fa; padding: 12px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #ddd;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <strong style="font-size: 1.1rem; color: #333;">${periodLabel}</strong>
+                        <label style="font-size: 0.85rem; color: #555;">
+                            <input type="checkbox" id="coTeacher_${p}" ${pdData.coTeacher ? "checked" : ""}> Co-Teacher's Room
+                        </label>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <select id="roomSelect_${p}" data-period="${p}" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; flex-grow: 1;">
+                            ${roomOptions}
+                        </select>
+                        <label style="font-size: 0.9rem; font-weight: bold; color: ${pdData.available ? '#2e7d32' : '#c62828'}; cursor: pointer;">
+                            <input type="checkbox" id="available_${p}" ${pdData.available ? "checked" : ""}> 
+                            <span id="availLabel_${p}">${pdData.available ? "✅ Available (Accepts Passes)" : "❌ Unavailable (Do Not Disturb)"}</span>
+                        </label>
+                    </div>
+                </div>
+            `;
         });
 
-        select.addEventListener("change", (e) => {
-            const trackSelected = document.querySelector('input[name="lunchTrack"]:checked');
-            if (!trackSelected) {
-                alert("🛑 You must select your Lunch Track (6A or 6B) at the top before selecting rooms!");
-                e.target.value = ""; // Reset to blank
-                return;
-            }
+        listContainer.innerHTML = html;
 
-            const chosenRoom = e.target.value;
-            if (chosenRoom !== "No Room" && chosenRoom !== "" && !coTeacherCheck.checked) {
-                const claimant = claimedRooms[p][chosenRoom];
-                if (claimant) {
-                    alert(`🛑 Conflict Detected!\n\nThis room has been claimed by ${claimant} for Period ${p}.\n\nAsk them to remove it, or if you are co-teaching in their room, please check the "Co-Teacher's Room" box first!`);
-                    e.target.value = ""; // Reset to blank
+        // Re-bind events to the newly generated rows
+        activePeriods.forEach(p => {
+            const select = document.getElementById(`roomSelect_${p}`);
+            const coTeacherCheck = document.getElementById(`coTeacher_${p}`);
+            const availCheck = document.getElementById(`available_${p}`);
+            const availLabel = document.getElementById(`availLabel_${p}`);
+
+            availCheck.addEventListener("change", (e) => {
+                if (e.target.checked) {
+                    availLabel.innerHTML = "✅ Available (Accepts Passes)";
+                    availLabel.style.color = "#2e7d32";
+                } else {
+                    availLabel.innerHTML = "❌ Unavailable (Do Not Disturb)";
+                    availLabel.style.color = "#c62828";
                 }
-            }
+            });
+
+            select.addEventListener("change", (e) => {
+                const chosenRoom = e.target.value;
+                if (chosenRoom !== "No Room" && chosenRoom !== "" && !coTeacherCheck.checked) {
+                    const claimant = claimedRooms[p][chosenRoom];
+                    if (claimant) {
+                        alert(`🛑 Conflict Detected!\n\nThis room has been claimed by ${claimant} for ${labels[p] || 'Period ' + p}.\n\nAsk them to remove it, or if you are co-teaching in their room, please check the "Co-Teacher's Room" box first!`);
+                        e.target.value = ""; 
+                    }
+                }
+            });
         });
+    }
+
+    // Bind Radio Buttons to dynamically re-render the list
+    document.querySelectorAll('input[name="lunchTrack"]').forEach(radio => {
+        radio.addEventListener('change', () => renderPeriods());
+    });
+
+    // Render initially if they already have a track saved
+    if (currentLunchTrack) {
+        renderPeriods();
     }
 
     document.getElementById("btn-save-rooms").addEventListener("click", async () => {
         const trackSelected = document.querySelector('input[name="lunchTrack"]:checked');
         if (!trackSelected) {
-            alert("🛑 You must select your Lunch Track (6A or 6B) at the top!");
+            alert("🛑 You must select your Lunch Track (A, B, or JH) at the top!");
             return;
         }
 
         const newAssignments = { lunchTrack: trackSelected.value };
-        for (let p = 1; p <= 9; p++) {
+        const rows = document.querySelectorAll(".period-row");
+        
+        let hasErrors = false;
+
+        rows.forEach(row => {
+            const p = row.getAttribute("data-period");
             const selectedRoom = document.getElementById(`roomSelect_${p}`).value;
-            // Prevent saving if they still have the blank warning selected
+            
             if (!selectedRoom || selectedRoom === "") {
-                alert(`🛑 Please select a room (or "No Room") for Period ${p} before saving.`);
+                alert(`🛑 Please select a room (or "No Room") for the flagged periods before saving.`);
+                hasErrors = true;
                 return;
             }
             
@@ -205,14 +226,15 @@ window.openRoomAssignmentsModal = async function(user) {
                 available: document.getElementById(`available_${p}`).checked,
                 coTeacher: document.getElementById(`coTeacher_${p}`).checked
             };
-        }
+        });
+
+        if (hasErrors) return;
 
         try {
             await updateDoc(userDocRef, { roomAssignments: newAssignments });
             alert("✅ Room assignments saved successfully!");
             modal.remove();
             
-            // Update global user object and re-run warning check
             window.currentUser.roomAssignments = newAssignments;
             checkMissingRoomsWarning(newAssignments);
             
@@ -233,12 +255,17 @@ export function checkMissingRoomsWarning(roomAssignments) {
     let isFullyMissing = (!roomAssignments || !roomAssignments.lunchTrack);
 
     if (!isFullyMissing) {
-        for (let p = 1; p <= 9; p++) {
-            // Flag if undefined, blank, or still set to the "Needs Selected" empty string
+        // Only flag missing data for the periods dictated by their selected track
+        let requiredPeriods = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        if (roomAssignments.lunchTrack === "JH") {
+            requiredPeriods = [1, 2, 'WIN', 3, 4, 5, 6, 7, 8, 9];
+        }
+
+        requiredPeriods.forEach(p => {
             if (!roomAssignments[p] || !roomAssignments[p].room || roomAssignments[p].room === "") {
                 hasMissing = true;
             }
-        }
+        });
     }
 
     if (isFullyMissing) {
@@ -246,10 +273,9 @@ export function checkMissingRoomsWarning(roomAssignments) {
     } else if (hasMissing) {
         window.staffRoomWarningText = `<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 4px; border-left: 4px solid #ffeeba; text-align: center; margin-bottom: 5px;">⚠️ Reminder: You have unassigned periods. Please update your Room Assignments.</div>`;
     } else {
-        window.staffRoomWarningText = ""; // Clear it if they are perfect!
+        window.staffRoomWarningText = ""; 
     }
     
-    // Call the unified renderer from main-teacher.js
     if (typeof window.renderTeacherMessageCenter === "function") {
         window.renderTeacherMessageCenter();
     }

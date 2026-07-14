@@ -1,8 +1,8 @@
 // public/js/features/f-staff-roster.js
 import { db } from "../firebase-config.js";
-import { collection, doc, setDoc, query, where, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, doc, setDoc, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// Keep a local copy of the staff list available for other modules (like the sync engine)
+// Keep a local copy of the staff list available for other modules
 export let activeStaffList = [];
 
 export function initStaffRoster() {
@@ -147,19 +147,6 @@ function bindRosterEvents() {
                     e.target.style.borderColor = "green"; 
                 } catch (err) { e.target.style.borderColor = "red"; }
             }
-
-            // --- Schedule Alias Logic ---
-            if (e.target.classList.contains("teacher-alias-select")) {
-                const uid = e.target.getAttribute("data-uid");
-                const newAlias = e.target.value; 
-                
-                e.target.style.borderColor = "#0277bd";
-                try {
-                    await setDoc(doc(db, "users", uid), { 
-                        scheduleAlias: newAlias === "" ? null : newAlias 
-                    }, { merge: true });
-                } catch (err) { e.target.style.borderColor = "red"; }
-            }
         });
     }
 }
@@ -184,26 +171,11 @@ function listenToTeacherRoster() {
 
     const q = query(collection(db, "users"), where("role", "in", ["teacher", "admin"]));
     
-    onSnapshot(q, async (snapshot) => {
+    onSnapshot(q, (snapshot) => {
         if (snapshot.empty) {
-            tbody.innerHTML = '<tr><td colspan="8" style="padding: 20px; text-align: center; color: #888;">No staff records found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="padding: 20px; text-align: center; color: #888;">No staff records found.</td></tr>';
             return;
         }
-
-        let allScheduleNames = new Set();
-        try {
-            const schedSnap = await getDoc(doc(db, "settings", "master_schedule"));
-            if (schedSnap.exists()) {
-                const sched = schedSnap.data();
-                Object.keys(sched).forEach(period => {
-                    if (period !== 'lockedRooms' && period !== 'skipCheckInRooms') {
-                        Object.values(sched[period]).forEach(roomArr => {
-                            roomArr.forEach(a => { if (a.teacher) allScheduleNames.add(a.teacher.trim()); });
-                        });
-                    }
-                });
-            }
-        } catch (err) {}
 
         activeStaffList = [];
         snapshot.forEach(docSnap => {
@@ -211,9 +183,6 @@ function listenToTeacherRoster() {
             data.id = docSnap.id; 
             activeStaffList.push(data);
         });
-
-        const claimedNames = activeStaffList.map(s => s.scheduleAlias).filter(Boolean);
-        const availableNames = Array.from(allScheduleNames).filter(name => !claimedNames.includes(name)).sort();
 
         let html = "";
         let datalistHTML = ""; 
@@ -228,19 +197,7 @@ function listenToTeacherRoster() {
             const isB = lunchShift === "B";
             
             const mapName = data.mapName || lastName || "";
-            const currentAlias = data.scheduleAlias || "";
-
-            // 🧠 Title Auto-Guesser Logic
             let currentTitle = data.title || "";
-            if (!currentTitle && currentAlias) {
-                const aliasLower = currentAlias.toLowerCase();
-                if (aliasLower.startsWith("mr.")) currentTitle = "Mr.";
-                else if (aliasLower.startsWith("mrs.")) currentTitle = "Mrs.";
-                else if (aliasLower.startsWith("ms.")) currentTitle = "Ms.";
-                else if (aliasLower.startsWith("miss")) currentTitle = "Miss.";
-                else if (aliasLower.startsWith("dr.")) currentTitle = "Dr.";
-                else if (aliasLower.startsWith("coach")) currentTitle = "Coach";
-            }
 
             datalistHTML += `<option value="${data.displayName || firstName}">`;
 
@@ -256,12 +213,6 @@ function listenToTeacherRoster() {
             titleDropdown += `</select>`;
 
             const mapNameInput = `<input type="text" class="teacher-map-name-input" data-uid="${data.id}" value="${mapName}" placeholder="e.g. Smith" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; width: 100%; max-width: 100px; text-align: center; outline: none;" />`;
-
-            let aliasDropdown = `<select class="teacher-alias-select" data-uid="${data.id}" style="padding: 6px; border-radius: 4px; border: 1px solid #ccc; width: 100%; max-width: 180px; outline: none;">`;
-            aliasDropdown += `<option value="">-- No Link --</option>`;
-            if (currentAlias) aliasDropdown += `<option value="${currentAlias}" selected>${currentAlias}</option>`;
-            availableNames.forEach(avail => { aliasDropdown += `<option value="${avail}">${avail}</option>`; });
-            aliasDropdown += `</select>`;
 
             const checkboxHTML = `<div style="text-align: center;"><input type="checkbox" class="teacher-admin-toggle" data-email="${email}" ${isAdmin ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer;" /></div>`;
 
@@ -281,7 +232,6 @@ function listenToTeacherRoster() {
                     <td style="padding: 12px; color: #666; font-size: 0.9rem;">${email}</td>
                     <td style="padding: 12px; text-align: center;">${titleDropdown}</td>
                     <td style="padding: 12px; text-align: center;">${mapNameInput}</td>
-                    <td style="padding: 12px; text-align: center;">${aliasDropdown}</td>
                     <td style="padding: 12px;">${checkboxHTML}</td>
                     <td style="padding: 12px;">${lunchHTML}</td>
                 </tr>
