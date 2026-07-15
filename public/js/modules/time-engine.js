@@ -322,7 +322,8 @@ export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
         nextPeriod: nextPeriod,
         minutesLeft: minsLeft,
         activeBasePeriod: getBasePeriod(activePeriod), 
-        nextBasePeriod: getBasePeriod(nextPeriod)
+        nextBasePeriod: getBasePeriod(nextPeriod),
+        schedule: scheduleData
     };
 }
 

@@ -110,7 +110,6 @@ export function renderHeader(user, role) {
             
             <button id="btn-open-management" class="admin-dashboard-btn btn-base">👥 Student Management</button>
             <button id="btn-open-teacher-management" class="admin-dashboard-btn btn-light">👨‍🏫 Teacher Management</button>            
-            <button id="btn-open-teacher-schedule" class="admin-dashboard-btn btn-light">📋 Teacher Schedule</button>
             <button id="btn-open-room-assignments" class="admin-dashboard-btn btn-light">🏫 Room Assignments</button>
             
             <button id="btn-open-bell-schedule" class="admin-dashboard-btn btn-base">⏱️ Bell Schedules</button>
