@@ -48,9 +48,13 @@
                 <div style="display: flex; gap: 5px; margin-bottom: 10px;">
                     <button id="tab-history-today" style="flex: 1; padding: 8px; background: #0277bd; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Today</button>
                     <button id="tab-history-yesterday" style="flex: 1; padding: 8px; background: #e0e0e0; color: #333; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Yesterday</button>
+                    <!-- 🎯 NEW: Fix Issues Tab -->
+                    <button id="tab-history-issues" class="hidden" style="flex: 1; padding: 8px; background: #c62828; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">⚠️ Fix Issues (<span id="issues-count">0</span>)</button>
                 </div>
                 <div id="list-history-today" class="pass-list-container"></div>
                 <div id="list-history-yesterday" class="pass-list-container hidden"></div>
+                <!-- 🎯 NEW: Fix Issues Container -->
+                <div id="list-history-issues" class="pass-list-container hidden"></div>
             </div>
         </div>
 

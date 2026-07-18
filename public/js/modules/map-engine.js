@@ -182,61 +182,68 @@ export class MapController {
     }
 
     getTeacherForRoom(matchKey) {
-        let rawName = null;
+    if (!matchKey) return null;
+    
+    console.log(`\n🗺️ [MAP DEBUG] Looking up teacher for room: ${matchKey}`);
 
-        const scheduleData = window.liveMasterSchedule || window.currentLiveScheduleData;
-
-        // 1st Priority - Is this room permanently locked?
-        if (scheduleData && scheduleData.lockedRooms && scheduleData.lockedRooms[matchKey]) {
-            rawName = scheduleData.lockedRooms[matchKey];
-        } 
-        // 2nd Priority - Normal schedule check
-        else {
-            let activePeriod = this.periodOverride; 
-            if (!activePeriod) {
-                activePeriod = "1"; 
-                if (window.currentTimeState && window.currentTimeState.currentPeriod) {
-                    activePeriod = String(window.currentTimeState.currentPeriod);
-                }
-            }
-            
-            let currentDayNum = 1; 
-            if (window.currentRotationDayText) {
-                const parsed = parseInt(window.currentRotationDayText.replace(/\D/g, ''));
-                if (!isNaN(parsed)) currentDayNum = parsed;
-            }
-
-            if (scheduleData && scheduleData[activePeriod]) {
-                const assignments = scheduleData[activePeriod][matchKey];
-                if (assignments && assignments.length > 0) {
-                    let activeTeacher = assignments.find(a => a.days.includes(currentDayNum));
-                    if (!activeTeacher) activeTeacher = assignments[0]; 
-                    rawName = activeTeacher.teacher;
-                }
-            }
+    // 1. Determine the current period
+    let activePeriod = this.periodOverride; 
+    if (!activePeriod) {
+        activePeriod = "1"; // Safe fallback
+        if (window.currentTimeState && window.currentTimeState.currentPeriod) {
+            activePeriod = String(window.currentTimeState.currentPeriod); 
         }
-
-        if (!rawName) return null;
-
-        // ==========================================
-        // 🧠 NEW: DYNAMIC TEACHER LOOKUP
-        // ==========================================
-        const staffList = window.activeStaffList || [];
-        const rawLower = rawName.toLowerCase().trim();
-        
-        // Find the user by checking if the raw schedule name includes their last name
-        const matchedStaff = staffList.find(staff => {
-            const lName = (staff.lastName || "").toLowerCase().trim();
-            const dName = (staff.displayName || "").toLowerCase().trim();
-            return (lName && rawLower.includes(lName)) || (dName && rawLower === dName);
-        });
-
-        if (matchedStaff && matchedStaff.mapName && matchedStaff.mapName.trim() !== "") {
-            return matchedStaff.mapName.trim();
-        }
-
-        return rawName.trim();
     }
+    
+    console.log(`👉 Active Period for Map: ${activePeriod}`);
+
+    // 2. Loop through the live staff list directly
+    const staffList = window.activeStaffList || [];
+    
+    if (staffList.length === 0) {
+        console.error(`❌ [MAP DEBUG] FAILED: window.activeStaffList is empty or undefined! The map cannot match rooms.`);
+        return null;
+    }
+
+    const cleanMatchKey = matchKey.toLowerCase().replace(/^room\s+/i, '').trim();
+
+    for (const staff of staffList) {
+        let activeRoom = null;
+        
+        const p = activePeriod.trim();
+        const baseP = p.replace(/\D/g, ''); 
+        
+        if (staff.roomAssignments) {
+            // Check scheduled rooms first
+            if (staff.roomAssignments[p] && staff.roomAssignments[p].room !== "No Room") {
+                activeRoom = staff.roomAssignments[p].room;
+            } else if (baseP && staff.roomAssignments[baseP] && staff.roomAssignments[baseP].room !== "No Room") {
+                activeRoom = staff.roomAssignments[baseP].room;
+            } else {
+                // 🧠 FIX 2: If they are on prep ("No Room") this period, we do NOT fall back 
+                // to their default classroom to avoid clashing with traveling teachers.
+                activeRoom = null;
+            }
+        } else {
+            // 🧠 FIX 1: Non-scheduled staff (Counselors, Nurse, Admin) fallback to static rooms.
+            // Removed "staff.mapName" from this line so it doesn't try to use their name as a room ID!
+            activeRoom = staff.room || staff.roomNumber || null;
+        }
+
+        if (activeRoom) {
+            const cleanActiveRoom = activeRoom.toLowerCase().replace(/^room\s+/i, '').trim();
+            
+            if (cleanActiveRoom === cleanMatchKey) {
+                const finalName = (staff.mapName && staff.mapName.trim() !== "") ? staff.mapName.trim() : (staff.lastName || staff.displayName);
+                console.log(`✅ [MAP DEBUG] Found match! ${finalName} is in ${matchKey}`);
+                return finalName;
+            }
+        }
+    }
+
+    console.log(`⚠️ [MAP DEBUG] No teacher matched for room ${matchKey}`);
+    return null; 
+}
 
     showTeacherNames() {
         const mapNodes = this.svg.querySelectorAll(".map-node");

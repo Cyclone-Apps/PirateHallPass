@@ -64,7 +64,8 @@ export function initDashboardManagement() {
     // 🌟 Start Bypassed Passes Listener for the 4th Column!
     if (typeof listenToBypassedPasses === "function") {
         listenToBypassedPasses((passes) => {
-            renderPassList(passes, "list-bypassed-passes", "bypassed-count");
+            // 🎯 FIXED: Pointing target list and badge to our new Flagged tab HTML IDs
+            renderPassList(passes, "list-admin-flagged", "flagged-count");
         });
     }
 

@@ -10,6 +10,8 @@ import {
 import { initLockdownListener, setEmergencyState } from "../features/f-lockdowns.js";
 import { initLockdownAdminListeners } from "../features/f-lockdowns-admin.js";
 import { initTimeOffsetControls, initDevTimeMachine } from "../features/f-time-controls.js";
+import { renderMapRoomSettingsModal } from "../features/f-map-room-settings.js";
+import { renderRetroPassModal } from "../features/f-retro-pass.js";
 import { getAdjustedNow } from "../modules/time-engine.js";
 
 // ==========================================
@@ -67,6 +69,18 @@ export function initSettingsManagement() {
         if (e.target.closest("#btn-open-bell-schedule")) {
             document.getElementById("bell-schedule-modal")?.classList.remove("hidden");
         }
+        
+        // 🗺️ NEW MAP ROOM SETTINGS OPENER
+        if (e.target.closest("#btn-open-map-rooms")) {
+            e.preventDefault();
+            renderMapRoomSettingsModal();
+        }
+
+        if (e.target.closest("#btn-open-retro-pass")) {
+            e.preventDefault();
+            renderRetroPassModal();
+        }
+
         if (e.target.closest("#btn-emergency")) {
             document.getElementById("emergency-modal")?.classList.remove("hidden");
         }

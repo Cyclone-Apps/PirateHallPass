@@ -49,11 +49,11 @@
 
     <main id="screen-dashboard" class="dashboard-container" style="display: none;">
 
-        <script type="module" src="js/features/f-student-schedule.js"></script>
+        <script type="module" src="./js/features/f-schedule-utils.js"></script>
+        <script type="module" src="./js/features/f-schedule-popup.js"></script>
         
         <section id="admin-toolbar-widget">
             <!-- Academic Calendar launcher integrated directly into the admin screen toolbar ribbon -->
-
         </section>
 
         <section id="stats-ribbon-widget" class="stats-ribbon"></section>
@@ -89,9 +89,20 @@
                 <div id="list-sent-passes" class="pass-list-container"></div>
             </div>
 
-            <div id="bypassed-passes-widget" class="dashboard-column">
-                <h2 style="color: #c62828;">Bypassed Review <span id="bypassed-count" class="badge" style="background: #c62828;">0</span></h2>
-                <div id="list-bypassed-passes" class="pass-list-container"></div>
+            <!-- 🎯 NEW: Replaced Bypassed Column with Tabbed Issues Review -->
+            <div id="issues-review-widget" class="dashboard-column">
+                <div style="display: flex; cursor: pointer; margin-bottom: 10px; border-radius: 8px; overflow: hidden; border: 1px solid #ccc;">
+                    <div id="tab-admin-flagged" style="flex: 1; text-align: center; padding: 10px; background: #1976d2; color: white; font-weight: bold; font-size: 0.9em;">
+                        Flagged <span id="flagged-count" class="badge" style="background: rgba(255,255,255,0.3); color: white; margin-left: 5px;">0</span>
+                    </div>
+                    <div id="tab-admin-issues" style="flex: 1; text-align: center; padding: 10px; background: #e0e0e0; color: #333; font-weight: bold; font-size: 0.9em;">
+                        Fix Issues <span id="admin-issues-count" class="badge" style="background: #c62828; color: white; margin-left: 5px;">0</span>
+                    </div>
+                </div>
+
+                <!-- Tab Contents -->
+                <div id="list-admin-flagged" class="pass-list-container"></div>
+                <div id="list-admin-issues" class="pass-list-container hidden"></div>
             </div>
         </div>
 
@@ -230,7 +241,6 @@
                             <th style="padding: 12px; color: #444;">Last Name</th>
                             <th style="padding: 12px; color: #444;">Email Address</th>
                             <th style="padding: 12px; color: #444; text-align: center;">Title</th> <th style="padding: 12px; color: #444; text-align: center;">Map Name</th>
-                            <th style="padding: 12px; color: #444; text-align: center;">Schedule Link</th>
                             <th style="padding: 12px; color: #444; text-align: center;">Admin</th>
                             <th style="padding: 12px; color: #444; text-align: center;">Lunch</th> 
                         </tr>

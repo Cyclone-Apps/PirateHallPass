@@ -258,15 +258,11 @@ export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
     if (lunchTrack) {
         periods = periods.filter(p => {
             const pName = p.name.toUpperCase();
-            
             if (lunchTrack.toUpperCase() === "A") {
-                // If Track A: Hide 6B and all exclusive JH blocks
                 if (pName.startsWith("6B") || pName === "WIN" || pName === "LUNCH" || pName === "6-ADVISOR") return false;
             } else if (lunchTrack.toUpperCase() === "B") {
-                // If Track B: Hide 6A and all exclusive JH blocks
                 if (pName.startsWith("6A") || pName === "WIN" || pName === "LUNCH" || pName === "6-ADVISOR") return false;
             } else if (lunchTrack.toUpperCase() === "JH") {
-                // If Track JH: Hide HS blocks (6A/6B)
                 if (pName.startsWith("6A") || pName.startsWith("6B")) return false;
             }
             return true; 
@@ -283,6 +279,10 @@ export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
             activePeriod = p.name;
             minsLeft = p.endMins - currentMins;
             isPassing = false;
+            // 🌟 FIX: Grab the actual next chronological period before breaking!
+            if (i + 1 < periods.length) {
+                nextPeriod = periods[i + 1].name;
+            }
             break;
         }
 
@@ -301,18 +301,13 @@ export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
         }
     }
 
-    // 🌟 Helper to safely map schedule blocks to their database period equivalents
     const getBasePeriod = (pName) => {
         if (!pName) return null;
-        
         const upperName = pName.toUpperCase();
         if (upperName.startsWith("6A") || upperName.startsWith("6B") || upperName === "6-ADVISOR") return "Period 6";
         if (upperName === "WIN") return "WIN";
         if (upperName === "LUNCH") return "Lunch";
-        
-        if (!upperName.includes("PERIOD") && !isNaN(pName.charAt(0))) {
-            return `Period ${pName}`;
-        }
+        if (!upperName.includes("PERIOD") && !isNaN(pName.charAt(0))) return `Period ${pName}`;
         return pName;
     };
 
@@ -323,7 +318,8 @@ export function evaluateCurrentTime(scheduleData, lunchTrack = null) {
         minutesLeft: minsLeft,
         activeBasePeriod: getBasePeriod(activePeriod), 
         nextBasePeriod: getBasePeriod(nextPeriod),
-        schedule: scheduleData
+        schedule: scheduleData,
+        currentMins: currentMins
     };
 }
 

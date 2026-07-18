@@ -79,3 +79,16 @@ body {
   cursor: pointer;
   margin-top: 20px;
 }
+
+/* 🎯 Fix Issues Tab Pulsing Animation */
+@keyframes pulseAlert {
+    0% {
+        box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 8px rgba(198, 40, 40, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(198, 40, 40, 0);
+    }
+}

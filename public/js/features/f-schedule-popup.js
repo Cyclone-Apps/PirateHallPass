@@ -1,222 +1,10 @@
 // =====================================================================
-// 🏫 SHARED SCHEDULE UTILITIES & POPUP MODAL
-// FILE: public/js/features/f-student-schedule.js
+// 📅 GLOBAL FULL SCHEDULE POP-UP
+// FILE: public/js/features/f-schedule-popup.js
 // =====================================================================
 import { db } from "../firebase-config.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-window.ScheduleUtils = {
-    // 🪚 Extract just the class name
-    extractClassName: function(rawName) {
-        if (!rawName) return "Unknown Class";
-        return rawName.split(" - ")[0].trim();
-    },
-
-    // 🪚 Extract the teacher from the Clever string as a fallback
-    extractTeacher: function(rawName) {
-        if (!rawName) return "N/A";
-        const parts = rawName.split(" - ");
-        if (parts.length >= 2) return parts[parts.length - 2].trim();
-        return "N/A";
-    },
-
-    // 🎨 Build a single, perfectly formatted row for the Full Schedule list
-    buildScheduleRowHTML: function(periodString, classData, fetchedRoom = null, fetchedTeacher = null, customTime = null) {
-        const isLunch = periodString.toLowerCase().includes("lunch");
-
-        // 🍔 LUNCH ROW FORMAT
-        if (isLunch) {
-            const lunchBadge = periodString.replace(" Lunch", "").trim() || "🍔";
-            return `
-                <div style="display: flex; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0;">
-                    <div style="width: 50px; font-weight: bold; color: #ef1a14; font-size: 1.1rem; text-align: center;">${lunchBadge}</div>
-                    <div style="flex: 1; padding-left: 15px;">
-                        <div style="font-weight: 600; font-size: 1.05rem; color: #111;">${periodString}</div>
-                        <div style="font-size: 0.85rem; color: #666; margin-top: 2px;">
-                            <span>🕒 ${customTime || "Time varies"}</span> &nbsp;|&nbsp; <span>🚪 Cafeteria</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        // 📚 REGULAR CLASS FORMAT
-        if (!classData) return "";
-        const rawName = classData.className || classData.courseName || "Class";
-        const cleanClassName = this.extractClassName(rawName);
-        const teacherName = fetchedTeacher || classData.teacher || this.extractTeacher(rawName);
-        const roomName = fetchedRoom || classData.room || "TBA";
-
-        // Strips "Period " and " Class" to leave you perfectly with "1", "6A", "WIN Time", etc.
-        let displayPeriod = periodString.replace(/Period /gi, "").replace(/ Class/gi, "");
-
-        return `
-            <div style="display: flex; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0;">
-                <div style="width: 50px; font-weight: bold; color: #ef1a14; font-size: 1.1rem; text-align: center;">${displayPeriod}</div>
-                <div style="flex: 1; padding-left: 15px;">
-                    <div style="font-weight: 600; font-size: 1.05rem; color: #111;">${cleanClassName}</div>
-                    <div style="font-size: 0.85rem; color: #666; margin-top: 2px;">
-                        <span>🕒 ${customTime || "Time varies"}</span> &nbsp;|&nbsp; <span>🚪 ${roomName}</span> &nbsp;|&nbsp; <span>👤 ${teacherName}</span>
-                    </div>
-                </div>
-            </div>
-        `;
-    },
-
-    // 🕒 RESTORED: Needed for dashboard widgets!
-    getWidgetData: function(timeMetrics, studentProfile) {
-        if (!studentProfile || !studentProfile.schedule) return null;
-
-        let currentDisplay = timeMetrics?.currentPeriod || null;
-        let nextDisplay = timeMetrics?.nextPeriod || null;
-        let currentBase = timeMetrics?.activeBasePeriod || currentDisplay;
-        let nextBase = timeMetrics?.nextBasePeriod || nextDisplay;
-        const sched = studentProfile.schedule;
-
-        const getClassData = (pName) => {
-            if (!pName) return { data: null, key: null };
-            const stripped = String(pName).replace(/Period /gi, "").replace(/ Class/gi, "");
-            const possibleKeys = [
-                pName, stripped, `Period ${stripped}`, 
-                `${stripped}A Class`, `${stripped}B Class`, `${stripped}C Class`, 
-                `${stripped}A`, `${stripped}B`, `${stripped}C`, `${stripped} Class`
-            ];
-            for (let key of possibleKeys) {
-                if (sched[key]) return { data: sched[key], key: key };
-            }
-            return { data: null, key: null };
-        };
-
-        let currentMatch = getClassData(currentBase);
-        let nextMatch = getClassData(nextBase);
-
-        if (currentBase && !nextMatch.data) {
-            const match = String(currentBase).match(/\d+/);
-            if (match) {
-                const pNum = parseInt(match[0], 10);
-                if (pNum < 9) nextMatch = getClassData(String(pNum + 1));
-            }
-        }
-
-        let currentLabel = currentMatch.key || currentDisplay || currentBase || "Class";
-        let nextLabel = nextMatch.key || nextDisplay || nextBase || "Class";
-
-        const isLunch = (str) => str && str.toLowerCase().includes("lunch");
-        if (isLunch(currentDisplay)) currentLabel = currentDisplay;
-        if (isLunch(nextDisplay)) nextLabel = nextDisplay;
-        if (currentDisplay === "WIN Time") currentLabel = "WIN Time";
-        if (nextDisplay === "WIN Time") nextLabel = "WIN Time";
-
-        const resolveRoom = (classData, periodKey, extractedTeacher) => {
-            if (classData.room && classData.room !== "Unknown" && classData.room !== "TBA") return classData.room; 
-            if (!window.activeStaffList || !extractedTeacher) return "TBA";
-            
-            const searchLower = extractedTeacher.toLowerCase().trim();
-            const profile = window.activeStaffList.find(staff => {
-                const lName = (staff.lastName || "").toLowerCase().trim();
-                const dName = (staff.displayName || "").toLowerCase().trim();
-                return (lName && searchLower.includes(lName)) || (dName && searchLower === dName);
-            });
-
-            if (profile) {
-                const p = String(periodKey).trim();
-                if (profile.roomAssignments && profile.roomAssignments[p]) {
-                    return profile.roomAssignments[p].room === "No Room" ? "TBA" : profile.roomAssignments[p].room;
-                }
-                const baseP = p.replace(/\D/g, ''); 
-                if (baseP && profile.roomAssignments && profile.roomAssignments[baseP]) {
-                    return profile.roomAssignments[baseP].room === "No Room" ? "TBA" : profile.roomAssignments[baseP].room;
-                }
-                return profile.mapName || profile.room || profile.roomNumber || "TBA";
-            }
-            return "TBA";
-        };
-
-        // 🕒 NEW INTERNAL TIME HELPER: Fetches and formats the time string for the widget
-        const getTimeString = (periodKey) => {
-            const rawSchedule = (timeMetrics && timeMetrics.schedule) || 
-                                  window.activeBellSchedule || 
-                                  (window.sysInfo && window.sysInfo.bellSchedule) || 
-                                  null;
-                                  
-            if (!rawSchedule) return "Time varies";
-
-            const target = String(periodKey).replace(/Period/gi, "").replace(/Class/gi, "").trim().toLowerCase();
-            let bell = null;
-
-            // Handle both Arrays and Firebase Objects seamlessly
-            if (Array.isArray(rawSchedule)) {
-                bell = rawSchedule.find(b => {
-                    const cleanBell = String(b.period).replace(/Period/gi, "").replace(/Class/gi, "").trim().toLowerCase();
-                    return cleanBell === target || target.startsWith(cleanBell) || cleanBell.startsWith(target);
-                });
-            } else {
-                const matchedKey = Object.keys(rawSchedule).find(k => {
-                    const cleanKey = String(k).replace(/Period/gi, "").replace(/Class/gi, "").trim().toLowerCase();
-                    return cleanKey === target || target.startsWith(cleanKey) || cleanKey.startsWith(target);
-                });
-                if (matchedKey) bell = rawSchedule[matchedKey];
-            }
-
-            if (bell && bell.start && bell.end) {
-                const formatTime = (timeStr) => {
-                    if (!timeStr) return "";
-                    if (timeStr.toLowerCase().includes("m")) return timeStr; 
-                    let [h, m] = timeStr.split(":");
-                    let hour = parseInt(h, 10);
-                    let ampm = hour >= 12 ? "PM" : "AM";
-                    hour = hour % 12 || 12;
-                    return `${hour}:${m || "00"} ${ampm}`;
-                };
-                return `${formatTime(bell.start)} - ${formatTime(bell.end)}`;
-            }
-            return "Time varies";
-        };
-
-        const formatBlock = (matchObj, label, displayStr) => {
-            if (!matchObj.data && !isLunch(displayStr) && displayStr !== "WIN Time") return null;
-            
-            let packageData = {
-                label: label,
-                className: "Unknown",
-                teacher: "Unknown",
-                room: "TBA",
-                rawKey: matchObj.key || displayStr,
-                timeString: "Time varies" // 🕒 Added new property
-            };
-
-            if (isLunch(displayStr)) {
-                packageData.className = "Lunch 🍔";
-                packageData.teacher = "Lunch Staff";
-                packageData.room = "Cafeteria";
-                packageData.label = displayStr; 
-            } else if (displayStr === "WIN Time" || matchObj.key === "WIN Time") {
-                packageData.className = matchObj.data ? `${this.extractClassName(matchObj.data.className)} (WIN Time 🦅)` : "WIN Time 🦅";
-                packageData.teacher = matchObj.data ? (matchObj.data.teacher || this.extractTeacher(matchObj.data.className)) : "WIN Time";
-                packageData.room = matchObj.data ? resolveRoom(matchObj.data, "WIN Time", packageData.teacher) : "TBA";
-            } else if (matchObj.data) {
-                packageData.className = this.extractClassName(matchObj.data.className);
-                packageData.teacher = matchObj.data.teacher || this.extractTeacher(matchObj.data.className);
-                packageData.room = resolveRoom(matchObj.data, packageData.rawKey, packageData.teacher);
-            }
-            
-            // 🕒 Attach the generated time string directly to the data payload
-            packageData.timeString = getTimeString(packageData.rawKey);
-            
-            return packageData;
-        };
-
-        return {
-            current: formatBlock(currentMatch, currentLabel, currentDisplay),
-            next: formatBlock(nextMatch, nextLabel, nextDisplay),
-            currentBasePeriod: currentBase
-        };
-    }
-};
-
-// ==========================================
-// 📅 GLOBAL FULL SCHEDULE POP-UP
-// ==========================================
 window.openSchedulePopup = async function(student) {
     console.log("🚀 [SCHEDULE MODAL] Opening for:", student.displayName);
     const existingModal = document.getElementById("student-schedule-popup-modal");
@@ -322,7 +110,6 @@ window.openSchedulePopup = async function(student) {
     }
 
     // 🚀 3. DETERMINE LEVEL & FIND BELL SCHEDULE
-    // Now that lunch is injected, we can accurately see if they are a high schooler
     const isHS = Object.keys(sched).some(p => p.includes("6A") || p.includes("6B") || p.includes("6C"));
     const level = isHS ? "HS" : "JH";
     console.log(`🎓 [SCHEDULE MODAL] Detected Level: ${level}`);
@@ -377,16 +164,12 @@ window.openSchedulePopup = async function(student) {
         if (!scheduleObj) return null;
         
         const rawTrimmed = String(rawPeriod).trim();
-        
-        // 🎯 EXACT MATCH PRIORITY
         if (scheduleObj[rawTrimmed]) return scheduleObj[rawTrimmed];
         
         const target = rawTrimmed.replace(/Period/gi, "").replace(/Class/gi, "").trim().toLowerCase();
         
         for (const [key, val] of Object.entries(scheduleObj)) {
             const cleanKey = String(key).replace(/Period/gi, "").replace(/Class/gi, "").trim().toLowerCase();
-            
-            // Strictly isolate Lunch matching so Class doesn't match Lunch
             if (target.includes("lunch") || cleanKey.includes("lunch")) {
                 if (target.includes("lunch") && cleanKey.includes("lunch")) {
                     const targetTrack = target.match(/[a-c]/i);
@@ -397,7 +180,6 @@ window.openSchedulePopup = async function(student) {
                 }
                 continue; 
             }
-            
             if (cleanKey === target) return val; 
             if (cleanKey.startsWith(target + " ") || cleanKey.startsWith(target + "-")) return val;
         }
@@ -405,10 +187,15 @@ window.openSchedulePopup = async function(student) {
     };
 
     const periodTimes = {};
-    for (const p of Object.keys(sched)) {
+    const keysToProcess = Object.keys(sched); 
+    for (const p of keysToProcess) {
         let bell = null;
         if (bellSchedules) {
-            bell = getBellData(p, activeSchedObj) || getBellData(p, fallbackSchedObj);
+            bell = getBellData(p, activeSchedObj);
+            
+            if (!bell && fallbackSchedObj && (p.toLowerCase().includes("lunch") || p.toLowerCase().includes("6a") || p.toLowerCase().includes("6b"))) {
+                bell = getBellData(p, fallbackSchedObj);
+            }
         }
         
         if (bell && bell.start && bell.end) {
@@ -417,8 +204,8 @@ window.openSchedulePopup = async function(student) {
                 displayString: `${formatTime(bell.start)} - ${formatTime(bell.end)}`
             };
         } else {
-            console.warn(`⚠️ [SCHEDULE MODAL] Could not find times for: ${p}`);
-            periodTimes[p] = { startMinutes: 9999, displayString: "Time varies" };
+            console.log(`🗑️ [SCHEDULE MODAL] Dropping ${p} because it does not meet today.`);
+            delete sched[p];
         }
     }
 

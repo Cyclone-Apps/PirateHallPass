@@ -106,6 +106,7 @@ export function renderHeader(user, role) {
             
             <button id="btn-open-send-pass" class="admin-dashboard-btn btn-primary">🎫 Send Student a Pass</button>
             <button id="btn-open-proxy-setup" class="admin-dashboard-btn btn-primary">💻 Open Pass As Student</button>
+            <button id="btn-open-retro-pass" class="admin-dashboard-btn btn-primary">🕰️ Log Past Pass</button>
             <button id="btn-open-admin-history" class="admin-dashboard-btn btn-primary">📜 Pass History</button>
             
             <button id="btn-open-management" class="admin-dashboard-btn btn-base">👥 Student Management</button>
@@ -113,6 +114,7 @@ export function renderHeader(user, role) {
             <button id="btn-open-room-assignments" class="admin-dashboard-btn btn-light">🏫 Room Assignments</button>
             
             <button id="btn-open-bell-schedule" class="admin-dashboard-btn btn-base">⏱️ Bell Schedules</button>
+            <button id="btn-open-map-rooms" class="admin-dashboard-btn btn-base">🗺️ Map/Room ⚙️</button>
             <button id="btn-open-academic-cal-modal" class="admin-dashboard-btn btn-base">📅 Academic Calendar</button>
             <button id="btn-open-gcal-modal" class="admin-dashboard-btn btn-base">⚙️ Google Calendar Setup</button>
         `;
@@ -124,6 +126,7 @@ export function renderHeader(user, role) {
         teacherToolbar.innerHTML = `
             <button id="btn-open-send-pass" class="toolbar-btn" style="background-color: #2e7d32; color: white; border: none;">🎫 Send Student a Pass</button>
             <button id="btn-open-proxy-setup" class="toolbar-btn" style="background-color: #8e24aa; color: white; border: none;">💻 Open Pass As Student</button>
+            <button id="btn-open-retro-pass" class="toolbar-btn" style="background-color: #f57c00; color: white; border: none;">🕰️ Log Past Pass</button>
             <button id="btn-open-room-assignments" class="toolbar-btn" style="background-color: #1976d2; color: white; border: none;">🏫 Room Assignments</button>
         `;
     }
@@ -165,64 +168,101 @@ export function renderPassList(passes, containerId, countId) {
         // 🟢 BUTTON RENDERER
         if (['pending', 'pending_student', 'pending_restricted', 'pending_warning', 'waitlist'].includes(pass.status)) {
             
-            let approveBtnText = "Approve";
-            let approveBtnBg = "#2e7d32";
+            // 🎯 NEW: Check if the current user is the origin teacher OR an admin
+            const isOriginTeacher = pass.originTeacher === window.currentUser?.displayName;
+            const isAdmin = window.currentUser?.role === 'admin';
 
-            if (pass.status === 'pending_restricted') {
-                approveBtnText = "⚠️ Override & Approve";
-                approveBtnBg = "#f57c00";
-            } else if (pass.status === 'pending_warning') {
-                approveBtnText = "⚠️ Approve Warning";
-                approveBtnBg = "#fbc02d";
+            if (isOriginTeacher || isAdmin) {
+                let approveBtnText = "Approve";
+                let approveBtnBg = "#2e7d32";
+
+                if (pass.status === 'pending_restricted') {
+                    approveBtnText = "⚠️ Override & Approve";
+                    approveBtnBg = "#f57c00";
+                } else if (pass.status === 'pending_warning') {
+                    approveBtnText = "⚠️ Approve Warning";
+                    approveBtnBg = "#fbc02d";
+                }
+
+                actionButtons = `
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button class="card-btn" data-id="${pass.id}" data-action="active" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: ${approveBtnBg}; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; flex: 1;">${approveBtnText}</button>
+                        <button class="card-btn" data-id="${pass.id}" data-action="rejected" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #c62828; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Reject</button>
+                    </div>
+                `;
+            } else {
+                // They are the destination teacher looking at a pending pass
+                actionButtons = `
+                    <div style="display: flex; justify-content: center; margin-top: 10px; background: #f5f5f5; padding: 10px; border-radius: 4px; border: 1px dashed #ccc;">
+                        <span style="color: #666; font-style: italic; font-size: 0.9rem;">⏳ Waiting for origin teacher...</span>
+                    </div>
+                `;
             }
 
-            actionButtons = `
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button class="card-btn" data-id="${pass.id}" data-action="active" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: ${approveBtnBg}; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; flex: 1;">${approveBtnText}</button>
-                    <button class="card-btn" data-id="${pass.id}" data-action="rejected" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #c62828; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Reject</button>
-                </div>
-            `;
         } else if (pass.status === 'active' || pass.status === 'active_bypassed') {
-            if (requiresCheckIn) {
-                if (!pass.arrivedAt) {
-                    actionButtons = `
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <button class="card-btn" data-id="${pass.id}" data-action="arrived" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #0288d1; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; flex: 1;">📍 Arrived at Dest</button>
-                        </div>
-                    `;
-                } else if (!pass.departedAt) {
-                    actionButtons = `
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <button class="card-btn" data-id="${pass.id}" data-action="departed" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #f57c00; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; flex: 1;">🚶 Departed Dest</button>
-                        </div>
-                    `;
+            
+            // 🎯 NEW: Check if the user is involved in this pass or is an admin
+            const isOriginTeacher = pass.originTeacher === window.currentUser?.displayName;
+            const isTargetTeacher = pass.targetTeacher === window.currentUser?.displayName;
+            const isAdmin = window.currentUser?.role === 'admin';
+
+            if (isOriginTeacher || isTargetTeacher || isAdmin) {
+                if (requiresCheckIn) {
+                    if (!pass.arrivedAt) {
+                        actionButtons = `
+                            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                <button class="card-btn" data-id="${pass.id}" data-action="arrived" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #0288d1; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; flex: 1;">📍 Arrived at Dest</button>
+                            </div>
+                        `;
+                    } else if (!pass.departedAt) {
+                        actionButtons = `
+                            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                <button class="card-btn" data-id="${pass.id}" data-action="departed" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #f57c00; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; flex: 1;">🚶 Departed Dest</button>
+                            </div>
+                        `;
+                    } else {
+                        actionButtons = `
+                            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #2e7d32; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✅ Student Returned Home</button>
+                            </div>
+                        `;
+                    }
                 } else {
                     actionButtons = `
                         <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #2e7d32; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✅ Student Returned Home</button>
+                            <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #2e7d32; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✅ Student Returned</button>
                         </div>
                     `;
                 }
             } else {
+                // Not involved: Show nothing, or a tiny view-only indicator
                 actionButtons = `
-                    <div style="display: flex; gap: 10px; margin-top: 10px;">
-                        <button class="card-btn" data-id="${pass.id}" data-action="returned" data-current-status="${pass.status}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #2e7d32; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✅ Student Returned</button>
+                    <div style="display: flex; justify-content: center; margin-top: 10px;">
+                        <span style="color: #999; font-style: italic; font-size: 0.8rem;">🔒 View Only</span>
                     </div>
                 `;
             }
+
         } else if (pass.status === 'returned_bypassed') {
             actionButtons = `
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
                     <button class="card-btn" data-id="${pass.id}" data-action="archived" data-current-status="${pass.status}" style="width: 100%; padding: 10px; font-size: 1rem; background-color: #757575; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Clear Alert</button>
                 </div>
             `;
-        } else if (pass.status === 'returned' || pass.status === 'archived' || pass.status === 'fraudulent_review') {
-            actionButtons = `
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button class="card-btn btn-edit-history" data-id="${pass.id}" data-dest="${pass.destination}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #fbc02d; border: none; color: #333; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✏️ Edit / Flag</button>
-                </div>
-            `;
-        }
+        } else if (pass.status === 'fraudulent_review') {
+    actionButtons = `
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+            <button class="card-btn" data-id="${pass.id}" data-action="archived" data-current-status="${pass.status}" style="width: 100%; padding: 10px; font-size: 1rem; background-color: #757575; border: none; color: white; border-radius: 4px; cursor: pointer; font-weight: bold;">Clear Alert</button>
+            <button class="card-btn btn-edit-history" data-id="${pass.id}" data-dest="${pass.destination}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #fbc02d; border: none; color: #333; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✏️ Edit / Flag</button>
+        </div>
+    `;
+} else if (pass.status === 'returned' || pass.status === 'archived') {
+    actionButtons = `
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button class="card-btn btn-edit-history" data-id="${pass.id}" data-dest="${pass.destination}" style="padding: 8px 15px; font-size: 0.9rem; background-color: #fbc02d; border: none; color: #333; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">✏️ Edit / Flag</button>
+        </div>
+    `;
+}
         
         const teacherText = (pass.targetTeacher && pass.targetTeacher !== "Unknown" && pass.targetTeacher !== "No Receiving Teacher") ? ` (${pass.targetTeacher})` : "";
         
@@ -249,6 +289,30 @@ export function renderPassList(passes, containerId, countId) {
         } else if (isNormalActiveOrPending) {
             cardBgColor = '#e8f5e9'; 
             cardBorderColor = '#81c784';
+        }
+
+        // Check if the pass is from a previous day
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const passDate = pass.createdAt ? new Date(pass.createdAt.toDate()) : new Date();
+        const isStale = passDate < startOfToday && ['pending', 'active', 'waitlist'].includes(pass.status);
+
+        let staleNoteHTML = '';
+        
+        // 🎯 Override UI if this is an auto-cancelled pass needing review
+        if (pass.needsVerification) {
+            staleNoteHTML = `
+                <div style="background: #ffebee; border: 1px solid #c62828; color: #c62828; padding: 6px; border-radius: 4px; font-size: 0.85rem; margin-top: 8px; font-weight: bold;">
+                    ⚠️ UNVERIFIED: Student did not complete this pass previously. Please review.
+                </div>
+            `;
+            
+            actionButtons = `
+                <div style="display: flex; gap: 5px; margin-top: 10px;">
+                    <button onclick="window.resolveStalePass('${pass.id}', 'completed')" style="flex: 1; background: #2e7d32; color: white; border: none; padding: 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold; cursor: pointer;">Complete</button>
+                    <button onclick="window.resolveStalePass('${pass.id}', 'deleted')" style="flex: 1; background: #c62828; color: white; border: none; padding: 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold; cursor: pointer;">Delete</button>
+                </div>
+            `;
         }
         
         let leftBorderColor = '#0277bd'; 
@@ -333,6 +397,10 @@ export function renderPassList(passes, containerId, countId) {
                 ${editNoteHTML}
                 ${fraudNoteHTML}
                 ${pass.senderName ? `<div style="color: #888; font-size: 0.85rem; font-style: italic; margin-top: 4px;">Initiated by: ${pass.senderName}</div>` : ''}
+                
+                <!-- 🎯 INJECT STALE NOTE HERE -->
+                ${staleNoteHTML || ''}
+                
                 ${actionButtons}
             </div>
         `;

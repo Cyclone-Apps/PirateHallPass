@@ -1,6 +1,6 @@
 // js/modules/student-ui.js
 import { schoolMapSVG } from "../map.js"; 
-import { doc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, getDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "../firebase-config.js";
 import { getAdjustedNow } from "./time-engine.js";
 
@@ -23,19 +23,28 @@ export function renderStudentIdleScreen() {
         displayName = window.currentUser.displayName;
     }
 
-    // 🌟 FIX: ONLY check for LOUD lockdown here! 
-    // Quiet lockdown leaves the button completely normal.
     const isLockedDown = window.currentLoudLockdown === true;
 
-    // Draw the button differently based on the lockdown state
+    // Draw the buttons side-by-side using Flexbox
     let buttonHTML = isLockedDown 
-        ? `<button id="btn-open-map" class="primary-btn" style="font-size: 1.5rem; padding: 20px 40px; width: 100%; background-color: #c62828; cursor: not-allowed; opacity: 0.8;" disabled>
-               🛑 No Passes Are Allowed At This Moment
-           </button>`
-        : `<button id="btn-open-map" class="primary-btn" style="font-size: 1.5rem; padding: 20px 40px; width: 100%;">
-               🗺️ Open School Map
-           </button>`;
+        ? `<div style="display: flex; gap: 10px; width: 100%;">
+               <button id="btn-open-map" class="primary-btn" style="flex: 1; font-size: 1.2rem; padding: 15px; background-color: #c62828; cursor: not-allowed; opacity: 0.8;" disabled>
+                   🛑 Map Locked
+               </button>
+               <button id="btn-open-staff" class="primary-btn" style="flex: 1; font-size: 1.2rem; padding: 15px; background-color: #c62828; cursor: not-allowed; opacity: 0.8;" disabled>
+                   🛑 Staff Locked
+               </button>
+           </div>`
+        : `<div style="display: flex; gap: 10px; width: 100%;">
+               <button id="btn-open-map" class="primary-btn" style="flex: 1; font-size: 1.2rem; padding: 15px;">
+                   🗺️ Map
+               </button>
+               <button id="btn-open-staff" class="primary-btn" style="flex: 1; font-size: 1.2rem; padding: 15px;">
+                   👨‍🏫 Select Staff
+               </button>
+           </div>`;
 
+    // This is the part that injects it all into the screen!
     container.innerHTML = `
         <div class="kiosk-card">
             <h1 style="color: var(--pirate-red); font-size: 2.5rem; margin-bottom: 10px;">Where to, ${displayName}?</h1>
@@ -45,7 +54,6 @@ export function renderStudentIdleScreen() {
         </div>
     `;
     
-    // Ensure the message center also checks its state if a redraw happens
     if (typeof window.updateEmergencyUI === "function") {
         window.updateEmergencyUI();
     }
@@ -75,7 +83,7 @@ export function renderStudentSidebar(studentProfile = null) {
             
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0;">
                 <span id="schedule-rotation-display" style="color: var(--pirate-red); font-size: 1.25rem; font-weight: 900; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    ${window.currentRotationDayText}
+                    ${window.currentRotationDayText} <span id="sidebar-schedule-indicator" style="font-size: 0.7em; color: #666; font-weight: normal; margin-left: 5px;"></span>
                 </span>
                 <button id="btn-open-full-schedule" style="background: white; border: 1px solid #ced4da; border-radius: 4px; padding: 4px 8px; font-size: 1.1rem; cursor: pointer; transition: 0.2s;" title="View Full Schedule" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">📅</button>
             </div>
@@ -87,7 +95,7 @@ export function renderStudentSidebar(studentProfile = null) {
 
         <fieldset style="border: 2px solid var(--pirate-silver); border-radius: 8px; padding: 15px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; box-sizing: border-box;">
             <legend style="font-weight: bold; color: #444; padding: 0 8px; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px;">
-                🍽️ Menus (<span id="menu-rotation-display">${window.currentRotationDayText}</span>)
+                🍽️ Menus
             </legend>
             
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0;">
@@ -107,6 +115,57 @@ export function renderStudentSidebar(studentProfile = null) {
             </div>
         </fieldset>
     `;
+
+    // 🚀 EXACT DATABASE MATCH LOGIC: Now fetches Bell Schedules too!
+    (async () => {
+        try {
+            const today = new Date();
+            const offset = today.getTimezoneOffset() * 60000;
+            const localISODate = (new Date(today - offset)).toISOString().split('T')[0];
+            
+            // 🎯 Fetch BOTH the Calendar and the Bell Schedules at the exact same time
+            const [calSnap, bellSnap] = await Promise.all([
+                getDoc(doc(db, "system", "calendar")),
+                getDoc(doc(db, "settings", "bellSchedules"))
+            ]);
+            
+            let uiDayType = "Regular"; 
+            let dbLookupType = "Regular"; 
+
+            if (calSnap.exists()) {
+                const dbDayCode = calSnap.data()[localISODate];
+                
+                if (dbDayCode === "E") { uiDayType = "Early Out"; dbLookupType = "Early Out"; } 
+                else if (dbDayCode === "L") { uiDayType = "Late Start"; dbLookupType = "Late Start"; } 
+                else if (dbDayCode === "F") { uiDayType = "Regular"; dbLookupType = "Regular"; } 
+                else if (window.currentDayScheduleType || (window.sysInfo && window.sysInfo.scheduleType)) {
+                    const fallback = window.currentDayScheduleType || window.sysInfo.scheduleType;
+                    if (fallback.includes("Early")) { uiDayType = "Early Out"; dbLookupType = "Early Out"; }
+                    else if (fallback.includes("Late")) { uiDayType = "Late Start"; dbLookupType = "Late Start"; }
+                }
+            }
+
+            // 🧠 GLOBAL WIDGET OVERRIDE: Sync the widget's brain to the correct bell schedule!
+            if (bellSnap.exists()) {
+                const allBells = bellSnap.data();
+                if (allBells[dbLookupType]) {
+                    window.activeBellSchedule = allBells[dbLookupType]; // Overwrite generic schedule
+                    if (window.timeMetrics) {
+                        window.timeMetrics.schedule = allBells[dbLookupType]; // Overwrite time engine schedule
+                        window.timeMetrics.scheduleName = uiDayType;
+                    }
+                }
+            }
+
+            // Inject the verified data straight into the sidebar UI
+            const indicator = document.getElementById("sidebar-schedule-indicator");
+            if (indicator) {
+                indicator.innerText = `(${uiDayType} Schedule)`;
+            }
+        } catch (e) {
+            console.warn("❌ Could not fetch DB calendar/bells for sidebar:", e);
+        }
+    })();
 
     // 🚀 BIND THE BUTTON TO OUR NEW GLOBAL POP-UP FILE!
     document.getElementById("btn-open-full-schedule").addEventListener("click", () => {
@@ -136,51 +195,26 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
         return;
     }
 
-    // 1. Get base widget data (which now includes .timeString)
+    // 1. Get beautifully formatted data straight from the brain!
     const widgetData = window.ScheduleUtils.getWidgetData(timeMetrics, profile);
 
-    // 2. Synchronous Room Resolver 
-    const resolveRoomSync = (classData, periodKey) => {
-        if (!classData || !window.activeStaffList) return classData?.room || "TBA";
-        if (classData.room && classData.room !== "Unknown" && classData.room !== "TBA") return classData.room;
-
-        const rawTeacher = classData.teacher || "Unknown";
-        const searchLower = rawTeacher.toLowerCase().trim();
-        const profile = window.activeStaffList.find(staff => {
-            const lName = (staff.lastName || "").toLowerCase().trim();
-            const dName = (staff.displayName || "").toLowerCase().trim();
-            return (lName && searchLower.includes(lName)) || (dName && searchLower === dName);
-        });
-
-        if (profile) {
-            const p = String(periodKey).trim();
-            const baseP = p.replace(/\D/g, ''); 
-            if (profile.roomAssignments && profile.roomAssignments[p]) {
-                return profile.roomAssignments[p].room === "No Room" ? "TBA" : profile.roomAssignments[p].room;
-            } else if (baseP && profile.roomAssignments && profile.roomAssignments[baseP]) {
-                return profile.roomAssignments[baseP].room === "No Room" ? "TBA" : profile.roomAssignments[baseP].room;
-            }
-            return profile.mapName || profile.room || profile.roomNumber || "TBA";
-        }
-        return "TBA";
-    };
-
-    // 3. Update Globals
+    // 2. Update Globals for Hall Passes
     const activeData = widgetData.current || widgetData.next;
     if (activeData) {
-        window.currentRoom = resolveRoomSync(activeData, widgetData.currentBasePeriod || activeData.key);
+        window.currentRoom = activeData.room || "Unknown";
         window.currentOriginTeacher = activeData.teacher || "Unknown";
         window.currentPeriod = widgetData.currentBasePeriod || "Unknown";
     }
 
-    // 4. Build Row using the timeString generated by f-student-schedule.js
+    // 3. The "Dumb" UI Painter (Now with lighter grays!)
     const buildRow = (title, dataObj, bgColor, titleColor, borderColor) => {
         if (!dataObj) return "";
         
         let displayPeriod = String(dataObj.label).replace(/Period /gi, "").replace(/ Class/gi, "");
         if (dataObj.className.includes("Lunch")) displayPeriod = displayPeriod.replace(" Lunch", "") || "🍔";
 
-        const roomName = resolveRoomSync(dataObj, dataObj.rawKey || dataObj.label);
+        // 🌟 Grab the perfectly calculated data directly! No more double-filtering!
+        const roomName = dataObj.room || "TBA";
         const timeStr = dataObj.timeString || "Time varies";
 
         return `
@@ -206,12 +240,14 @@ window.updateStudentScheduleWidget = function(timeMetrics) {
 
     let html = '';
 
+    // 🎨 CURRENT: Lighter Gray (#eaeaea), Standard Red text/border
     if (widgetData.current) {
-        html += buildRow("CURRENT", widgetData.current, "#bababa", "#ef1a14", "#ef1a14");
+        html += buildRow("CURRENT", widgetData.current, "#eaeaea", "#ef1a14", "#ef1a14");
     }
 
+    // 🎨 NEXT: Even Lighter Gray (#f7f7f7), Lighter Red text/border
     if (widgetData.next) {
-        html += buildRow("NEXT", widgetData.next, "#ced0d0", "#ff7961", "#ff7961");
+        html += buildRow("NEXT", widgetData.next, "#f7f7f7", "#ff7961", "#ff7961");
     }
 
     if (!html) {
@@ -320,6 +356,18 @@ export function renderStudentWaitingScreen(pass, statusData) {
         `;
     }
 
+    // 🟢 FORMAT THE TEACHER'S NAME FOR DISPLAY
+    let displayTeacherName = pass.targetTeacher;
+    if (displayTeacherName && displayTeacherName !== "Unknown" && window.activeStaffList) {
+        // Look up this specific teacher in the global staff list
+        const teacherProfile = window.activeStaffList.find(staff => staff.displayName === pass.targetTeacher);
+        
+        // If we found them, and they have a title and last name, override the display name!
+        if (teacherProfile && teacherProfile.title && teacherProfile.lastName) {
+            displayTeacherName = `${teacherProfile.title} ${teacherProfile.lastName}`;
+        }
+    }
+
     container.style.backgroundColor = bgColor;
 
     // 🎯 NO MORE SCROLLBAR: We use overflow: hidden and min(vw, vh) to force mathematical shrinking
@@ -341,7 +389,7 @@ export function renderStudentWaitingScreen(pass, statusData) {
                 
                 <p style="color: ${textColor}; font-size: clamp(1.1rem, min(4vw, 4vh), 1.6rem); margin-bottom: 15px; word-break: break-word;">
                     Requests to go to <strong>${pass.destination}</strong>
-                    ${pass.targetTeacher && pass.targetTeacher !== "Unknown" ? `<br><span style="font-size: 0.9em;">(${pass.targetTeacher})</span>` : ""}
+                    ${displayTeacherName && displayTeacherName !== "Unknown" ? `<br><span style="font-size: 0.9em;">(${displayTeacherName})</span>` : ""}
                 </p>
 
                 ${teacherNoteHtml}
@@ -572,93 +620,6 @@ export function initializeRotationDayEngine(db, onSnapshot, doc) {
         }
     });
 }
-
-// ==========================================
-// FIREBASE MAP TEACHER OVERLAY ENGINE (Rotation Day Aware)
-// ==========================================
-
-window.liveMasterSchedule = {};
-onSnapshot(doc(db, "settings", "master_schedule"), (docSnap) => {
-    if (docSnap.exists()) {
-        window.liveMasterSchedule = docSnap.data();
-    }
-});
-
-window.showTeacherNamesOnMap = function() {
-    // 1. Identify current running school period
-    let activePeriod = currentPeriod || nextPeriod; 
-    if (window.currentTimeState) {
-        if (window.currentTimeState.isPassing && window.currentTimeState.nextPeriod) {
-            activePeriod = String(window.currentTimeState.nextPeriod);
-        } else if (window.currentTimeState.currentPeriod) {
-            activePeriod = String(window.currentTimeState.currentPeriod);
-        }
-    }
-
-    // 2. Identify the current Rotation Day (Extracting the number from "Day 2", "Day 6", etc.)
-    let currentDayNum = 1; // Default fallback
-    if (window.currentRotationDayText) {
-        // Strip out letters, leaving just the number
-        const parsed = parseInt(window.currentRotationDayText.replace(/\D/g, ''));
-        if (!isNaN(parsed)) currentDayNum = parsed;
-    }
-
-    // 3. Pull the period directory from Firebase
-    const periodMap = window.liveMasterSchedule[activePeriod];
-    if (!periodMap) return;
-
-    // 4. Inject dynamically into SVG Map Nodes
-    const mapNodes = document.querySelectorAll(".map-node");
-    mapNodes.forEach(node => {
-        const dataId = node.getAttribute("data-id") || "";
-        const matchKey = dataId.toLowerCase().replace(/^room\s+/i, '').trim();
-        
-        const assignments = periodMap[matchKey];
-
-        if (assignments && assignments.length > 0) {
-            // Find the specific teacher assigned to THIS rotation day
-            let activeTeacherAssignment = assignments.find(a => a.days.includes(currentDayNum));
-            
-            // Fallback: If for some reason the day doesn't match, pick the first teacher in the array
-            if (!activeTeacherAssignment) activeTeacherAssignment = assignments[0];
-            
-            const teacherName = activeTeacherAssignment.teacher;
-
-            const textEl = node.querySelector("text.lbl-room, text.lbl-large");
-            if (textEl) {
-                // Backup original attributes
-                if (!textEl.hasAttribute("data-orig-text")) {
-                    textEl.setAttribute("data-orig-text", textEl.textContent);
-                    textEl.setAttribute("data-orig-font", textEl.getAttribute("font-size") || "");
-                    textEl.setAttribute("data-orig-fill", textEl.getAttribute("fill") || "");
-                }
-                
-                // Swap text and styling
-                textEl.textContent = teacherName;
-                textEl.setAttribute("fill", "#0277bd"); // Pirate Blue
-                textEl.setAttribute("font-size", teacherName.length > 12 ? "10" : "13");
-            }
-        }
-    });
-};
-
-window.hideTeacherNamesOnMap = function() {
-    const mapNodes = document.querySelectorAll(".map-node");
-    mapNodes.forEach(node => {
-        const textEl = node.querySelector("text.lbl-room, text.lbl-large");
-        if (textEl && textEl.hasAttribute("data-orig-text")) {
-            textEl.textContent = textEl.getAttribute("data-orig-text");
-            const origFont = textEl.getAttribute("data-orig-font");
-            const origFill = textEl.getAttribute("data-orig-fill");
-            
-            if (origFont) textEl.setAttribute("font-size", origFont);
-            else textEl.removeAttribute("font-size");
-            
-            if (origFill) textEl.setAttribute("fill", origFill);
-            else textEl.removeAttribute("fill");
-        }
-    });
-};
 
 // Add these to js/modules/student-ui.js
 
@@ -906,4 +867,37 @@ export async function renderStudentYellowWarningScreen(pass) {
             sidebar.innerHTML = `<div style="padding: 20px; color: red;">Failed to load log.</div>`;
         }
     }
+}
+
+export function renderStaffModal() {
+    const container = document.getElementById("staff-modal-container");
+    if (!container) return;
+
+    container.innerHTML = `
+        <div id="staff-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 9999; align-items: center; justify-content: center;">
+            <div style="background: white; border-radius: 12px; width: 90%; max-width: 450px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); display: flex; flex-direction: column;">
+                
+                <div class="map-header" style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: #f5f5f5; border-bottom: 2px solid var(--pirate-silver, #ccc); border-radius: 12px 12px 0 0;">
+                    <h2 style="margin: 0; color: var(--pirate-red, #c62828); font-size: 1.5rem;">Select Staff Member</h2>
+                    <span class="close-modal" id="close-staff-modal" style="cursor: pointer; font-size: 1.5rem; font-weight: bold; color: #555;">✖</span>
+                </div>
+                
+                <div style="padding: 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 15px;">
+                    
+                    <!-- Search Input -->
+                    <input type="text" id="staff-search-input" autocomplete="off" placeholder="Start typing to filter names..." style="width: 100%; max-width: 350px; padding: 12px; font-size: 1.1rem; border: 2px solid var(--pirate-silver, #ccc); border-radius: 8px; outline: none; box-sizing: border-box;">
+                    
+                    <!-- Open List Box -->
+                    <select id="staff-dropdown-select" size="6" style="width: 100%; max-width: 350px; padding: 8px; font-size: 1.1rem; border: 2px solid var(--pirate-silver, #ccc); border-radius: 8px; background: white; cursor: pointer; outline: none; box-sizing: border-box;">
+                        <!-- Options injected dynamically -->
+                    </select>
+                    
+                    <button id="btn-confirm-staff-destination" class="primary-btn" style="padding: 12px 30px; font-size: 1.1rem; border-radius: 8px; width: 100%; max-width: 350px; margin-top: 5px;" disabled>
+                        Confirm Destination
+                    </button>
+                </div>
+                
+            </div>
+        </div>
+    `;
 }

@@ -12,12 +12,12 @@
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
 </head>
-</head>
 <body id="student-body">
     
     <header id="global-header"></header>
 
-            <script type="module" src="js/features/f-student-schedule.js"></script>
+            <script type="module" src="./js/features/f-schedule-utils.js"></script>
+            <script type="module" src="./js/features/f-schedule-popup.js"></script>
 
 
     <main id="screen-dashboard" class="kiosk-grid" style="display: none;">
@@ -41,6 +41,7 @@
 
     <div id="map-modal-container"></div>
     <div id="schedule-modal-container"></div>
+    <div id="staff-modal-container"></div>
 <div id="student-schedule-status-bar" style="padding: 12px; border-radius: 6px; text-align: center; font-size: 1.1rem; margin-bottom: 15px; font-weight: 500; transition: all 0.3s ease;">⏳ Synchronizing Time Engine...</div>
     <script type="module" src="js/main-student.js"></script>
 </body>

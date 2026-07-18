@@ -14,21 +14,38 @@ export function updateStudentUI(state) {
     const announcementWidget = document.getElementById("admin-messages-widget");
     const announcementContainer = document.getElementById("admin-messages-container");
     const mapBtn = document.getElementById("btn-open-map");
+    const staffBtn = document.getElementById("btn-open-staff");
     
-    // 1. MAP BUTTON LOGIC (Only lock visibly for LOUD lockdowns)
-    if (mapBtn) {
-        if (state.isLoud) {
-            mapBtn.innerHTML = "🛑 No Passes Are Allowed At This Moment";
+    // 1. BUTTON LOGIC (Only lock visibly for LOUD lockdowns)
+    if (state.isLoud) {
+        if (mapBtn) {
+            mapBtn.innerHTML = "🛑 Map Locked";
             mapBtn.disabled = true;
             mapBtn.style.backgroundColor = "#c62828";
             mapBtn.style.opacity = "0.8";
             mapBtn.style.cursor = "not-allowed";
-        } else {
-            mapBtn.innerHTML = "🗺️ Open School Map";
+        }
+        if (staffBtn) {
+            staffBtn.innerHTML = "🛑 Staff Locked";
+            staffBtn.disabled = true;
+            staffBtn.style.backgroundColor = "#c62828";
+            staffBtn.style.opacity = "0.8";
+            staffBtn.style.cursor = "not-allowed";
+        }
+    } else {
+        if (mapBtn) {
+            mapBtn.innerHTML = "🗺️ Map";
             mapBtn.disabled = false;
             mapBtn.style.backgroundColor = ""; 
             mapBtn.style.opacity = "1";
             mapBtn.style.cursor = "pointer";
+        }
+        if (staffBtn) {
+            staffBtn.innerHTML = "👨‍🏫 Select Staff";
+            staffBtn.disabled = false;
+            staffBtn.style.backgroundColor = ""; 
+            staffBtn.style.opacity = "1";
+            staffBtn.style.cursor = "pointer";
         }
     }
 

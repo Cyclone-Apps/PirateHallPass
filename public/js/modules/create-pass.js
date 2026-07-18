@@ -29,7 +29,7 @@ export async function createNewPass(passData) {
     }
 
     // =========================================================
-    // 🌟 NEW: SKIP CHECK-IN FLAG ASSIGNMENT
+    // 🌟 NEW: SKIP CHECK-IN FLAG ASSIGNMENT (No more Master Schedule!)
     // =========================================================
     try {
         // Default all passes to require a check-in
@@ -37,14 +37,13 @@ export async function createNewPass(passData) {
         
         let skipList = {};
         
-        // Try to pull from a live cache first to save database reads, 
-        // otherwise fetch the master schedule directly.
-        if (window.liveMasterSchedule && window.liveMasterSchedule.skipCheckInRooms) {
-            skipList = window.liveMasterSchedule.skipCheckInRooms;
+        // 🟢 FIXED: Check the new sysInfo cache first, fallback to system/settings DB
+        if (window.sysInfo && (window.sysInfo.skipCheckInRooms || window.sysInfo.noCheckInRooms)) {
+            skipList = window.sysInfo.skipCheckInRooms || window.sysInfo.noCheckInRooms;
         } else {
-            const scheduleSnap = await getDoc(doc(db, "settings", "master_schedule"));
-            if (scheduleSnap.exists()) {
-                skipList = scheduleSnap.data().skipCheckInRooms || {};
+            const settingsSnap = await getDoc(doc(db, "system", "settings"));
+            if (settingsSnap.exists()) {
+                skipList = settingsSnap.data().skipCheckInRooms || settingsSnap.data().noCheckInRooms || {};
             }
         }
 

@@ -95,6 +95,70 @@ exports.manualCalendarSync = onCall(async (request) => {
 // =======================================================
 // ⏱️ HALL PASS LOGIC
 // =======================================================
+
+// 🎯 NEW: Nightly cleanup of orphaned/forgotten passes
+exports.autoClearStalePasses = onSchedule({
+    schedule: "20 1 * * *", // 1:20 AM every day
+    timeZone: "America/Chicago" // Central Time Zone
+}, async (event) => {
+    try {
+        console.log("Starting overnight stale pass cleanup...");
+        const statusesToClear = ['pending', 'active', 'waitlist', 'pending_restricted'];
+        
+        // Define "Today" at midnight to compare against
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const passesRef = db.collection('passes');
+        const snapshot = await passesRef.where('status', 'in', statusesToClear).get();
+
+        if (snapshot.empty) {
+            console.log('✅ No stale passes found to clear.');
+            return null;
+        }
+
+        const batch = db.batch();
+        let count = 0;
+
+        snapshot.forEach(doc => {
+            const passData = doc.data();
+            
+            // Safely parse the date
+            let passDate;
+            if (passData.createdAt && typeof passData.createdAt.toDate === 'function') {
+                passDate = passData.createdAt.toDate();
+            } else if (passData.timestamp) {
+                passDate = new Date(passData.timestamp);
+            } else {
+                passDate = new Date(0); // Very old fallback
+            }
+            
+            // If the pass was created before midnight today, it's stale
+            if (passDate < startOfToday) {
+                batch.update(doc.ref, {
+                    status: 'cancelled',
+                    systemNote: 'Auto-cancelled by overnight system cleanup at 1:20 AM',
+                    autoClosedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    needsVerification: true // 🎯 NEW: Flags this so it triggers the red UI tab!
+                });
+                count++;
+            }
+        });
+
+        if (count > 0) {
+            await batch.commit();
+            console.log(`🧹 Successfully auto-cancelled ${count} stale passes.`);
+        } else {
+            console.log('✅ Passes found, but none were older than today.');
+        }
+
+        return null;
+    } catch (error) {
+        console.error("❌ Error during stale pass cleanup:", error);
+        return null;
+    }
+});
+
 exports.waitlistTimeoutSweep = onSchedule({
     schedule: "* * * * *",
     timeZone: "America/Chicago"

@@ -4,10 +4,12 @@
 // 📦 CORE IMPORTS
 // ==========================================
 import { db } from "./firebase-config.js";
-import { doc, setDoc, collection, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+// 🎯 NEW: Added onSnapshot, query, where, updateDoc, and deleteDoc for the Issues Review listener
+import { doc, setDoc, collection, getDocs, getDoc, onSnapshot, query, where, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { handleGoogleLogin, initAuthListener } from "./modules/auth-roles.js";
 import { initializeTimeEngine } from "./modules/time-engine.js";
-import { renderHeader } from "./modules/ui-widgets.js";
+// 🎯 NEW: Added renderPassList to the ui-widgets import
+import { renderHeader, renderPassList } from "./modules/ui-widgets.js";
 import { MapController } from "./modules/map-engine.js";
 
 // ==========================================
@@ -25,6 +27,72 @@ import { initStaffSync } from "./features/f-staff-sync.js";
 import { initStaffSchedule } from "./features/f-staff-schedule.js";
 
 import { injectEmergencyControlsModal } from "./features/f-lockdowns-admin.js";
+
+// ==========================================
+// 🎯 GLOBAL BUTTON ACTIONS FOR ADMIN FIX ISSUES
+// ==========================================
+window.resolveStalePass = async (passId, action) => {
+    if (action === 'deleted') {
+        if (confirm("ADMIN: Are you sure you want to delete this pass record entirely?")) {
+            await deleteDoc(doc(db, "passes", passId));
+        }
+    } else if (action === 'completed') {
+        if (confirm("ADMIN: Mark this pass as properly completed?")) {
+            await updateDoc(doc(db, "passes", passId), {
+                status: 'completed',
+                needsVerification: false // Removes the flag so it clears from the red tab!
+            });
+        }
+    }
+};
+
+// 🎯 GLOBAL BUTTON ACTION TO CLEAR FLAG/FRAUD ALERTS
+window.clearFlaggedAlert = async (passId) => {
+    if (confirm("Mark this flagged/fraudulent alert as resolved and clear it from the dashboard?")) {
+        // Turning off the bypass and needsVerification flags pushes it out of the live column query pipeline
+        await updateDoc(doc(db, "passes", passId), {
+            isBypassed: false,
+            needsVerification: false,
+            alertResolved: true // Keeps a record that an admin manually signed off on it
+        });
+    }
+};
+
+/**
+ * 🎯 Initializes the tabs for the Issues Review column on the Admin Dashboard
+ */
+function initAdminIssuesTabs() {
+    const tabFlagged = document.getElementById('tab-admin-flagged');
+    const tabIssues = document.getElementById('tab-admin-issues');
+    
+    const listFlagged = document.getElementById('list-admin-flagged');
+    const listIssues = document.getElementById('list-admin-issues');
+
+    if (!tabFlagged || !tabIssues) return;
+
+    // Click: Flagged Tab
+    tabFlagged.addEventListener('click', () => {
+        tabFlagged.style.background = '#1976d2'; 
+        tabFlagged.style.color = 'white';
+        tabIssues.style.background = '#e0e0e0'; 
+        tabIssues.style.color = '#333';
+
+        listFlagged.classList.remove('hidden');
+        listIssues.classList.add('hidden');
+    });
+
+    // Click: Fix Issues Tab
+    tabIssues.addEventListener('click', () => {
+        tabIssues.style.background = '#c62828'; 
+        tabIssues.style.color = 'white';
+        tabFlagged.style.background = '#e0e0e0'; 
+        tabFlagged.style.color = '#333';
+
+        listIssues.classList.remove('hidden');
+        listFlagged.classList.add('hidden');
+    });
+}
+
 // ==========================================
 // 🚀 APP INITIALIZATION
 // ==========================================
@@ -55,6 +123,24 @@ initAuthListener("admin", async (user, role) => {
     initStaffRoster();
     initStaffSync();
     initStaffSchedule();
+    
+    // 3. 🎯 Initialize Admin Tabs & Listeners
+    initAdminIssuesTabs();
+    
+    // 🌟 SCHOOL-WIDE FIX ISSUES LISTENER (All unverified auto-cancelled passes)
+    const qStale = query(collection(db, "passes"), where("needsVerification", "==", true));
+    onSnapshot(qStale, (snapshot) => {
+        const stalePasses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Render directly into the new admin tab container
+        renderPassList(stalePasses, 'list-admin-issues', 'admin-issues-count');
+        
+        // Make the tab pulse if there are school-wide issues
+        const tabIssues = document.getElementById('tab-admin-issues');
+        if (tabIssues) {
+            tabIssues.style.animation = stalePasses.length > 0 ? "pulseAlert 2s infinite" : "none";
+        }
+    });
 });
 
 // ==========================================

@@ -5,7 +5,8 @@ import {
     renderStudentIdleScreen, 
     renderStudentSidebar, 
     renderRecentTravelsSidebar,
-    renderMapModal, 
+    renderMapModal,
+    renderStaffModal, 
     renderStudentWaitingScreen,
     renderStudentWaitlistScreen,
     renderStudentAcceptScreen, 
@@ -18,6 +19,8 @@ import {
 import { listenToStudentPass, updatePassStatus, fetchStudentProfileByEmail } from "./modules/pass-engine.js";
 import { createNewPass } from "./modules/create-pass.js";
 import { initLockdownListener } from "./features/f-lockdowns.js";
+import { loadStaffForMap, showTeacherNamesOnMap, hideTeacherNamesOnMap, getTeachersForRoom, isNoCheckInRoom, buildStaffDropdownHTML } from "./features/f-room-names.js";
+import { finalizePassCreation } from './features/f-finalize-pass.js';
 import { 
     initializeTimeEngine, 
     fetchTodaysSchedule, 
@@ -26,10 +29,20 @@ import {
     getAdjustedNow 
 } from "./modules/time-engine.js";
 import { db } from "./firebase-config.js";
-import { doc, onSnapshot, collection, query, where, updateDoc, arrayUnion, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, getDoc, onSnapshot, collection, query, where, updateDoc, arrayUnion, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import './features/f-scheduled-pass-engine.js';
 
 window.db = db;
+
+// Map the imported functions to the global window object so the zoom button can find them
+window.showTeacherNamesOnMap = showTeacherNamesOnMap;
+window.hideTeacherNamesOnMap = hideTeacherNamesOnMap;
+window.getTeachersForRoom = getTeachersForRoom;
+window.isNoCheckInRoom = isNoCheckInRoom;
+window.buildStaffDropdownHTML = buildStaffDropdownHTML;
+
+// Immediately fetch the staff list in the background
+loadStaffForMap();
 
 let activeTimerInterval = null; 
 let elapsedSeconds = 0; 
@@ -38,7 +51,7 @@ let selectedDestination = null;
 initializeTimeEngine();
 
 // 📍 Helper: Get Corridor from Map Node
-function getCorridorForRoom(roomName) {
+export function getCorridorForRoom(roomName) {
     if (!roomName) return "Unknown";
     // Find the map node in the DOM using your exact data-id structure
     const node = document.querySelector(`.map-node[data-id="${roomName}"]`);
@@ -595,81 +608,6 @@ function startStopwatchTimer() {
 
 // Global Event Listeners
 
-// ==========================================
-// 🟢 OVERRIDE: FORCE CORRECT MAP LABELS ON ZOOM
-// ==========================================
-window.showTeacherNamesOnMap = function() {
-    const mapSvg = document.getElementById("interactive-school-map");
-    if (!mapSvg) return;
-    
-    let activePeriod = "1"; 
-    if (window.currentTimeState && window.currentTimeState.currentPeriod) {
-        activePeriod = String(window.currentTimeState.currentPeriod);
-    }
-    
-    let currentDayNum = 1; 
-    if (window.currentRotationDayText) {
-        const parsed = parseInt(window.currentRotationDayText.replace(/\D/g, ''));
-        if (!isNaN(parsed)) currentDayNum = parsed;
-    }
-
-    const scheduleData = window.liveMasterSchedule || window.currentLiveScheduleData;
-    
-    mapSvg.querySelectorAll(".map-node").forEach(node => {
-        const dataId = node.getAttribute("data-id") || "";
-        const matchKey = dataId.toLowerCase().replace(/^room\s+/i, '').trim();
-        let rawName = null;
-
-        // 1st Priority: Locked Rooms
-        if (scheduleData && scheduleData.lockedRooms && scheduleData.lockedRooms[matchKey]) {
-            rawName = scheduleData.lockedRooms[matchKey];
-        } 
-        // 2nd Priority: Normal Schedule
-        else if (scheduleData && scheduleData[activePeriod]) {
-            const assignments = scheduleData[activePeriod][matchKey];
-            if (assignments && assignments.length > 0) {
-                let activeTeacher = assignments.find(a => a.days.includes(currentDayNum));
-                if (!activeTeacher) activeTeacher = assignments[0]; 
-                rawName = activeTeacher.teacher;
-            }
-        }
-
-        if (rawName) {
-            // 🌟 TRIGGER THE BUILT-IN BYPASS: Save it to the exact DOM element your popup bypass is looking for!
-            const destInput = document.getElementById("proxy-destination-input") || 
-                              document.getElementById("input-proxy-destination") ||
-                              document.getElementById("input-destination");
-            if (destInput) destInput.dataset.teacher = rawName;
-
-            // FORMAT NAME: Strip first name
-            let cleanName = rawName.trim();
-            if (cleanName.includes(",")) {
-                cleanName = cleanName.split(",")[0].trim();
-            } else {
-                const parts = cleanName.split(/\s+/);
-                if (parts.length > 1) {
-                    const titles = ["mr.", "mrs.", "ms.", "miss", "dr.", "coach"];
-                    const firstWord = parts[0].toLowerCase();
-                    if (titles.includes(firstWord)) cleanName = parts[0] + " " + parts[parts.length - 1];
-                    else cleanName = parts[parts.length - 1];
-                }
-            }
-
-            const textEl = node.querySelector("text.lbl-room, text.lbl-large");
-            if (textEl) {
-                if (!textEl.hasAttribute("data-orig-text")) {
-                    textEl.setAttribute("data-orig-text", textEl.textContent);
-                    textEl.setAttribute("data-orig-font", textEl.getAttribute("font-size") || "");
-                    textEl.setAttribute("data-orig-fill", textEl.getAttribute("fill") || "");
-                }
-                textEl.textContent = cleanName;
-                textEl.setAttribute("fill", "#0277bd");
-                textEl.setAttribute("font-size", cleanName.length > 12 ? "10" : "13");
-            }
-        }
-    });
-};
-
 document.addEventListener("click", async (e) => {
 
     // ==========================================
@@ -717,11 +655,33 @@ document.addEventListener("click", async (e) => {
         return; 
     }
 
-    const mapModal = document.getElementById("map-modal");
-
     // --- MAP CONTROLS ---
-    if (e.target.id === "btn-open-map") mapModal.classList.remove("hidden");
-    if (e.target.id === "close-map-modal") mapModal.classList.add("hidden");
+    if (e.target.id === "btn-open-map") {
+        // 1. Check the DOM right at the moment of the click
+        let mapModal = document.getElementById("map-modal");
+
+        // 2. If it was deleted, trigger your native builder to restore it
+        if (!mapModal) {
+            console.warn("⚠️ Map modal missing! Triggering renderMapModal()...");
+            
+            if (typeof renderMapModal === "function") {
+                renderMapModal(); // Rebuilds the map inside #map-modal-container
+            }
+            
+            // Re-grab the modal now that it has been freshly injected
+            mapModal = document.getElementById("map-modal");
+        }
+        
+        // 3. Unhide it safely
+        if (mapModal) {
+            mapModal.classList.remove("hidden");
+        }
+    }
+    
+    if (e.target.id === "close-map-modal") {
+        const mapModal = document.getElementById("map-modal");
+        if (mapModal) mapModal.classList.add("hidden");
+    }
     
     // ==========================================
     // ROOM SELECTION ON MAP (With Teacher Lookup)
@@ -753,19 +713,23 @@ document.addEventListener("click", async (e) => {
 
         // 🟢 NEW: Unified Logic matching map-engine.js!
         let rawName = null;
-        const scheduleData = window.liveMasterSchedule || window.currentLiveScheduleData;
+        const staffList = window.activeStaffList || [];
 
-        // 1st Priority - Locked Room Override
-        if (scheduleData && scheduleData.lockedRooms && scheduleData.lockedRooms[matchKey]) {
-            rawName = scheduleData.lockedRooms[matchKey];
-        } 
-        // 2nd Priority - Normal Schedule Check
-        else if (scheduleData && scheduleData[activePeriod]) {
-            const assignments = scheduleData[activePeriod][matchKey];
-            if (assignments && assignments.length > 0) {
-                let activeTeacher = assignments.find(a => a.days.includes(currentDayNum));
-                if (!activeTeacher) activeTeacher = assignments[0]; 
-                rawName = activeTeacher.teacher;
+        for (const staff of staffList) {
+            let activeRoom = null;
+            
+            if (staff.roomAssignments && staff.roomAssignments[activePeriod] && staff.roomAssignments[activePeriod].room !== "No Room") {
+                activeRoom = staff.roomAssignments[activePeriod].room;
+            } else {
+                activeRoom = staff.mapName || staff.room || staff.roomNumber || null;
+            }
+
+            if (activeRoom) {
+                const cleanActiveRoom = activeRoom.toLowerCase().replace(/^room\s+/i, '').trim();
+                if (cleanActiveRoom === matchKey) {
+                    rawName = staff.lastName || staff.displayName;
+                    break;
+                }
             }
         }
 
@@ -792,15 +756,6 @@ document.addEventListener("click", async (e) => {
             teacherDisplay = ` (${cleanName})`;
         }
 
-        if (window.liveMasterSchedule && window.liveMasterSchedule[activePeriod]) {
-            const assignments = window.liveMasterSchedule[activePeriod][matchKey];
-            if (assignments && assignments.length > 0) {
-                let activeTeacher = assignments.find(a => a.days.includes(currentDayNum));
-                if (!activeTeacher) activeTeacher = assignments[0]; 
-                teacherDisplay = ` (${activeTeacher.teacher})`; 
-            }
-        }
-
         const labelElement = document.getElementById("selected-room-label");
         if (labelElement) {
             labelElement.innerText = `Destination: Room ${selectedDestination.toUpperCase()}${teacherDisplay}`;
@@ -814,6 +769,112 @@ document.addEventListener("click", async (e) => {
         window.selectedDestination = selectedDestination;
         if (teacherDisplay) {
             window.selectedDestinationTeacher = teacherDisplay.replace(/[()]/g, '').trim();
+        }
+    }
+
+    // --- STAFF SELECT CONTROLS ---
+    if (e.target.id === "btn-open-staff") {
+        let staffModal = document.getElementById("staff-modal");
+
+        if (!staffModal) {
+            if (typeof renderStaffModal === "function") renderStaffModal();
+            staffModal = document.getElementById("staff-modal");
+        }
+
+        const searchInput = document.getElementById("staff-search-input");
+        const selectDropdown = document.getElementById("staff-dropdown-select");
+        const btnConfirmStaff = document.getElementById("btn-confirm-staff-destination");
+        
+        if (searchInput && selectDropdown && window.activeStaffList) {
+            const sortedStaff = [...window.activeStaffList].sort((a, b) => a.displayName.localeCompare(b.displayName));
+            
+            // This function builds the native <select> options
+            const renderOptions = (filterText = "") => {
+                const query = filterText.toLowerCase();
+                let optionsHTML = "";
+                let hasMatches = false;
+
+                sortedStaff.forEach(staff => {
+                    const roomText = staff.room ? ` (${staff.room})` : "";
+                    
+                    // 1. Format the name: STRICTLY Title + Last Name (fallback to displayName)
+                    let formattedName = staff.displayName;
+                    if (staff.title && staff.lastName) {
+                        formattedName = `${staff.title} ${staff.lastName}`;
+                    }
+
+                    const displayValue = `${formattedName}${roomText}`;
+                    const destinationValue = staff.room ? staff.room : staff.displayName; 
+                    
+                    // 2. Search logic: Check if they typed the formal name OR their real first name!
+                    if (displayValue.toLowerCase().includes(query) || staff.displayName.toLowerCase().includes(query)) {
+                        optionsHTML += `<option value="${destinationValue}" data-teacher="${staff.displayName}" style="padding: 8px; margin-bottom: 2px;">${displayValue}</option>`;
+                        hasMatches = true;
+                    }
+                });
+
+                if (!hasMatches) {
+                    optionsHTML = `<option disabled style="padding: 8px; color: #888;">No staff found matching "${filterText}"...</option>`;
+                }
+
+                selectDropdown.innerHTML = optionsHTML;
+            };
+
+            // Reset modal on open
+            renderOptions("");
+            searchInput.value = "";
+            btnConfirmStaff.disabled = true;
+
+            // Live filter when typing
+            searchInput.oninput = (e) => {
+                renderOptions(e.target.value);
+                btnConfirmStaff.disabled = true; // Lock confirm button until they click a name in the list
+            };
+
+            // Unlock confirm button when they click a name
+            selectDropdown.onchange = () => {
+                btnConfirmStaff.disabled = false;
+            };
+        }
+
+        if (staffModal) staffModal.style.display = "flex";
+    }
+    
+    // Close Staff Modal
+    if (e.target.id === "close-staff-modal" || e.target.id === "staff-modal") {
+        const staffModal = document.getElementById("staff-modal");
+        if (staffModal) staffModal.style.display = "none";
+    }
+
+    // --- CONFIRM STAFF DESTINATION ---
+    if (e.target.id === "btn-confirm-staff-destination") {
+        const selectDropdown = document.getElementById("staff-dropdown-select");
+        
+        if (selectDropdown && selectDropdown.value && selectDropdown.selectedIndex >= 0) {
+            const selectedOption = selectDropdown.options[selectDropdown.selectedIndex];
+            
+            // Prevent crash if they somehow confirm the "No matches" text
+            if (selectedOption.disabled) return;
+
+            const destinationValue = selectDropdown.value;
+            const teacherName = selectedOption.getAttribute("data-teacher");
+
+            // Close modal
+            const staffModal = document.getElementById("staff-modal");
+            if (staffModal) staffModal.style.display = "none";
+
+            console.log(`🎯 [CONFIRM FLOW] Staff selected: ${teacherName}, Destination: ${destinationValue}`);
+
+            // Direct pass creation
+            const passType = window.currentUser?.role === "teacher" || window.currentUser?.role === "admin" ? "proxy" : "standard";
+
+            try {
+                if (typeof finalizePassCreation === "function") {
+                    finalizePassCreation(destinationValue, teacherName, passType);
+                }
+            } catch (err) {
+                console.error("❌ Error running finalizePassCreation:", err);
+            }
         }
     }
 
@@ -902,56 +963,57 @@ document.addEventListener("click", async (e) => {
     // --- 1. STUDENT CONFIRMS MAP DESTINATION ---
     // ==========================================
     if (e.target.id === "btn-confirm-destination") {
-        const dest = window.selectedDestination; // 🟢 FIXED: Added window.
-        if (!dest) return; // 🟢 FIXED: Safety check to prevent the null error
+        const dest = window.selectedDestination;
+        if (!dest) return; 
 
         const passType = window.currentUser?.role === "teacher" || window.currentUser?.role === "admin" ? "proxy" : "standard";
 
-        // 1. Check if the room is a "No Check-in" room (Restroom, Fountain, etc.)
-        const matchKey = dest.toLowerCase().replace(/^room\s+/i, '').trim();
-        const sched = window.liveMasterSchedule || window.currentLiveScheduleData || {};
-        const isNoCheckIn = sched.noCheckInRooms && sched.noCheckInRooms[matchKey];
-
-        // 2. See if there is already a teacher natively mapped to this room right now
-        let targetTeacher = "Unknown";
+        // 🟢 1. FETCH THE NO-CHECK-IN ROOMS DIRECTLY FROM FIREBASE
+        let skipRoomsMap = {};
+        try {
+            // Force a fresh fetch of the settings document right now!
+            const settingsSnap = await getDoc(doc(db, "system", "settings"));
+            if (settingsSnap.exists()) {
+                skipRoomsMap = settingsSnap.data().skipCheckInRooms || {};
+            }
+        } catch (error) {
+            console.warn("⚠️ Couldn't fetch settings natively, falling back to sysInfo...", error);
+            skipRoomsMap = window.sysInfo?.skipCheckInRooms || {};
+        }
         
-        // 🌟 ULTIMATE FIX: Look at the highlighted room on the map and grab the attached name!
-        const selectedMapNode = document.querySelector(".map-node.selected");
-        if (selectedMapNode && selectedMapNode.dataset.officialTeacher) {
-            targetTeacher = selectedMapNode.dataset.officialTeacher;
-            console.log("Successfully grabbed teacher directly from the map node:", targetTeacher);
+        let isNoCheckIn = false;
+        
+        // Force lowercase comparison so "108 Fountain" matches "108 fountain"
+        const destLower = dest.toLowerCase();
+
+        if (skipRoomsMap[destLower] === true) {
+            isNoCheckIn = true;
+        } else if (typeof isNoCheckInRoom === "function") {
+            isNoCheckIn = isNoCheckInRoom(dest, window.sysInfo);
         }
 
-        // 3. THE POPUP: If no teacher is found and it requires one!
+        // 🐛 DEBUG CONSOLE LOGS 
+        console.log("=== 🕵️‍♂️ DESTINATION DEBUG ===");
+        console.log("1. Exact Clicked Dest:", `"${dest}"`);
+        console.log("2. Lowercase Dest (for DB matching):", `"${destLower}"`);
+        console.log("3. FRESH Database skipCheckInRooms:", skipRoomsMap);
+        console.log("4. Did it trigger isNoCheckIn?", isNoCheckIn);
+        console.log("===============================");
+
+        // 🟢 2. Determine who is assigned to this room right now
+        let targetTeacher = "Unknown";
+        const teachers = getTeachersForRoom(dest);
+        
+        if (teachers.length === 1) {
+            targetTeacher = teachers[0].displayName;
+            console.log(`🎯 [CONFIRM FLOW] Found single teacher: ${targetTeacher}`);
+        }
+
+        // 🟢 3. THE POPUP: If no teacher (or multiple) is found and it requires one!
         if (targetTeacher === "Unknown" && !isNoCheckIn) {
-            // ... (the rest of your popup code stays exactly the same)
             
-            // Build the staff dropdown
-            let staffOptions = `<option value="No Receiving Teacher" style="font-weight: bold; color: #d32f2f;">-- No Receiving Teacher --</option>`;
-            if (window.activeStaffList) {
-                window.activeStaffList.forEach(staff => {
-                    staffOptions += `<option value="${staff.displayName}">${staff.displayName}</option>`;
-                });
-            }
-
-            // 🔥 THE BYPASS: Did the map already tell us who the teacher is?
-            const destInput = document.getElementById("proxy-destination-input") || 
-                              document.getElementById("input-proxy-destination") ||
-                              document.getElementById("input-destination"); // Catch both proxy and student flows
-            
-            let preSelectedTeacher = destInput ? destInput.dataset.teacher : null;
-
-            // If the map found a specific teacher (and it's not "Unknown"), skip the popup entirely!
-            if (preSelectedTeacher && preSelectedTeacher !== "Unknown" && preSelectedTeacher.trim() !== "") {
-                console.log("Skipping popup! Map already provided teacher:", preSelectedTeacher);
-                
-                // If it's a proxy pass, we might just need to set the value. 
-                // If it's the final step, call the finalization function.
-                if (typeof finalizePassCreation === "function") {
-                    await finalizePassCreation(dest, preSelectedTeacher, passType);
-                    return; // Stop running this function, do NOT create the popup overlay!
-                }
-            }
+            // Build dropdown using our feature-file helper!
+            const staffOptions = buildStaffDropdownHTML(dest);
 
             // Create Popup Overlay
             const overlay = document.createElement("div");
@@ -988,240 +1050,13 @@ document.addEventListener("click", async (e) => {
                 await finalizePassCreation(dest, targetTeacher, passType);
             });
 
-            return; // Stop here and wait for the popup
+            return; // Wait for popup
         } 
         
-        // If it's a restroom or already had a teacher, proceed normally!
+        // If it's a no-check-in room or already has a single teacher, bypass!
         if (isNoCheckIn) targetTeacher = "No Receiving Teacher";
         await finalizePassCreation(dest, targetTeacher, passType);
     }
-
-    // =======================================================
-    // 🧠 HELPER: EMERGENCY STRING FALLBACKS (Only used if DB lookup fails)
-    // =======================================================
-    function fallbackFormatName(rawName) {
-        if (!rawName || rawName === "Unknown" || rawName === "No Receiving Teacher") return rawName;
-        let cleanName = rawName.trim();
-        if (cleanName.includes(",")) return cleanName.split(",")[0].trim();
-        
-        const parts = cleanName.split(/\s+/);
-        if (parts.length > 1) {
-            const titles = ["mr.", "mrs.", "ms.", "miss", "dr.", "coach"];
-            const firstWord = parts[0].toLowerCase();
-            if (titles.includes(firstWord)) {
-                return firstWord.charAt(0).toUpperCase() + firstWord.slice(1) + " " + parts[parts.length - 1];
-            }
-            return parts[parts.length - 1];
-        }
-        return cleanName;
-    }
-
-    function fallbackLastName(rawName) {
-        if (!rawName || rawName === "Unknown" || rawName === "No Receiving Teacher") return rawName;
-        let cleanName = rawName.trim();
-        if (cleanName.includes(",")) return cleanName.split(",")[0].trim();
-        const parts = cleanName.split(/\s+/);
-        return parts[parts.length - 1]; 
-    }
-
-    // =======================================================
-// 🧠 HELPER: DATABASE TEACHER LOOKUP
-// =======================================================
-async function getTeacherProfileFromDB(searchName) {
-    if (!searchName || searchName === "Unknown" || searchName === "No Receiving Teacher") return null;
-    
-    try {
-        const usersRef = collection(db, "users");
-        let snapshot;
-        
-        // 1. Try matching by displayName first (e.g., "Brian Orr")
-        let q = query(usersRef, where("displayName", "==", searchName));
-        snapshot = await getDocs(q);
-        
-        // 2. If no match, try matching strictly by lastName (e.g., "Orr")
-        if (snapshot.empty) {
-            q = query(usersRef, where("lastName", "==", searchName));
-            snapshot = await getDocs(q);
-        }
-        
-        // 3. Smart Fallback: If it's a title format (e.g., "Mr. Orr" or "Coach Orr"),
-        //    isolate the last word and run an exact check against lastName.
-        if (snapshot.empty && searchName.includes(" ")) {
-            const isolatedLastName = searchName.trim().split(" ").pop();
-            if (isolatedLastName) {
-                q = query(usersRef, where("lastName", "==", isolatedLastName));
-                snapshot = await getDocs(q);
-            }
-        }
-
-        if (!snapshot.empty) {
-            const docSnap = snapshot.docs[0];
-            return { id: docSnap.id, ...docSnap.data() }; // Return profile with ID bound
-        }
-    } catch (error) {
-        console.warn("⚠️ DB Teacher Lookup failed, using fallbacks.", error);
-    }
-    return null;
-}
-
-    // =======================================================
-// 🚀 FINAL PASS BUILDER & DISPATCHER
-// =======================================================
-async function finalizePassCreation(dest, targetTeacher, passType) {
-    document.getElementById("btn-confirm-destination").innerText = "Creating...";
-    document.getElementById("btn-confirm-destination").disabled = true;
-
-    const isProxyActive = passType === "proxy";
-    const proxyTeacherName = isProxyActive ? (window.currentUser?.displayName || "Teacher") : "";
-    
-    // --- 1. IDENTIFY THE STUDENT ---
-    const safeStudentId = window.currentStudentProfile?.id || window.currentUser?.uid || "unknown";
-    const studentName = window.currentStudentProfile?.displayName || window.currentUser?.displayName || "Student";
-    const studentEmail = window.currentStudentProfile?.email || window.currentUser?.email || "unknown@student.com";
-
-    // --- 2. IDENTIFY THE TIME & PERIOD ---
-    const currentPeriod = window.currentTimeState?.currentPeriod || "Unknown";
-    const activeBasePeriod = window.currentTimeState?.activeBasePeriod || currentPeriod; // Grab base period for splits
-
-    // --- 3. IDENTIFY THE ORIGIN (Clever Schedule Engine) ---
-    let originRoom = "Unknown";
-    let rawOriginTeacher = "Unknown";
-
-    if (window.currentStudentProfile && window.currentStudentProfile.schedule && currentPeriod !== "Unknown") {
-        const sched = window.currentStudentProfile.schedule;
-        let currentClass = null;
-
-        if (Array.isArray(sched)) {
-            currentClass = sched.find(c => String(c.period) === String(currentPeriod));
-        } else if (typeof sched === 'object') {
-            currentClass = sched[currentPeriod] || Object.values(sched).find(c => String(c?.period) === String(currentPeriod));
-        }
-        
-        if (currentClass) {
-            originRoom = currentClass.room || currentClass.ROOM || "Unknown";
-            rawOriginTeacher = currentClass.teacher || currentClass.TEACHER || "Unknown";
-        }
-    }
-
-    // 🍔 LUNCH & WIN TIME ORIGIN OVERRIDE 
-    if (currentPeriod.toLowerCase().includes("lunch")) {
-        originRoom = "Cafeteria";
-        rawOriginTeacher = "Lunch Staff";
-    } else if (currentPeriod === "WIN Time" && !originRoom) {
-        originRoom = "TBA";
-        rawOriginTeacher = "WIN Time";
-    }
-
-    // --- 4. SECURE DATABASE LOOKUPS FOR EXACT NAMES ---
-    // Fetch official profiles from the 'users' collection
-    const originTeacherProfile = await getTeacherProfileFromDB(rawOriginTeacher);
-    const destTeacherProfile = await getTeacherProfileFromDB(targetTeacher);
-
-    // 🚀 DYNAMIC ROOM ROUTING ENGINE (Overrides incoming 'dest')
-    if (destTeacherProfile && destTeacherProfile.roomAssignments) {
-        // 1. Try exact match (e.g. "WIN Time" or "6A Class")
-        if (destTeacherProfile.roomAssignments[currentPeriod]) {
-            dest = destTeacherProfile.roomAssignments[currentPeriod].room;
-        } 
-        // 2. Fallback to base period (e.g. "Period 6")
-        else if (destTeacherProfile.roomAssignments[activeBasePeriod]) {
-            dest = destTeacherProfile.roomAssignments[activeBasePeriod].room;
-        }
-    }
-    
-    // Absolute fallback if no track info found
-    if (!dest || dest === "TBA" || dest === "No Room") {
-        dest = destTeacherProfile?.mapName || destTeacherProfile?.room || destTeacherProfile?.roomNumber || "TBA";
-    }
-    if (dest === "No Room") dest = "TBA";
-
-    // Build Origin Names (Prefer DB -> Fallback to String formatting)
-    const finalOriginTeacher = originTeacherProfile?.displayName || fallbackFormatName(rawOriginTeacher);
-    const originTeacherLastName = originTeacherProfile?.lastName || fallbackLastName(rawOriginTeacher);
-
-    // Build Destination Names (Prefer DB -> Fallback to String formatting)
-    const finalDestinationTeacher = destTeacherProfile?.displayName || fallbackFormatName(targetTeacher);
-    const destTeacherLastName = destTeacherProfile?.lastName || fallbackLastName(targetTeacher);
-
-    // --- 5. BUILD THE HARDCODED PAYLOAD ---
-    const passData = {
-        studentId: safeStudentId, 
-        studentName: studentName,
-        studentDisplayName: studentName,
-        studentEmail: studentEmail,
-        
-        // 📍 Destination Data
-        destination: dest, // 👈 Now dynamically overridden!
-        destinationRoom: dest,
-        destinationTeacher: finalDestinationTeacher, 
-        destTeacherLastName: destTeacherLastName, 
-        targetTeacher: finalDestinationTeacher, 
-        
-        // 📍 Origin & Time Data
-        origin: originRoom, 
-        originRoom: originRoom,
-        originTeacher: finalOriginTeacher, 
-        originTeacherLastName: originTeacherLastName, 
-        period: currentPeriod, 
-        
-        type: passType,
-        initiatedBy: isProxyActive ? "teacher_proxy" : "student",
-        senderName: isProxyActive ? proxyTeacherName : studentName, 
-        
-        destCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(dest) : "Unknown",
-        originCorridor: typeof getCorridorForRoom === "function" ? getCorridorForRoom(originRoom) : "Unknown",
-        
-        // 🚦 State Controls
-        status: passType === "tardy" ? "active" : "pending", 
-        uiLocation: passType === "scheduled" ? "message_center" : "pass_section", 
-        restrictionLevel: "none",
-        restrictionType: "",
-        restrictionReason: "",
-        waitlistPosition: 0,
-        recentTravels: []
-    };
-
-    // --- 6. SEND TO THE PASS ENGINE ---
-    const result = await createNewPass(passData);
-
-    if (result.success) {
-        document.getElementById("map-modal").classList.add("hidden");
-        document.getElementById("map-modal-container").innerHTML = '';
-    } else {
-        // 1. Hide the map modal immediately
-        document.getElementById("map-modal").classList.add("hidden");
-        document.getElementById("map-modal-container").innerHTML = '';
-
-        // 2. Inject the custom restriction screen
-        const container = document.getElementById("kiosk-main-widget");
-        if (container) {
-            container.innerHTML = `
-                <div style="background-color: #fff1f1; border: 4px solid #c62828; border-radius: 12px; padding: 40px 20px; text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-                    <h1 style="color: #c62828; font-size: 3rem; margin-bottom: 20px; font-weight: 900; line-height: 1.1;">
-                        <span style="display: inline-block; transform: translateY(5px);">🛑</span> Request<br>temporarily<br>denied.
-                    </h1>
-                    <p style="color: #333; font-size: 1.5rem; margin-bottom: 40px;">
-                        ${result.message}
-                    </p>
-                    <button id="btn-cancel-denied-request" style="background-color: #c62828; color: white; border: none; font-size: 1.5rem; padding: 15px 40px; border-radius: 8px; width: 80%; cursor: pointer; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
-                        ❌ Cancel Request
-                    </button>
-                </div>
-            `;
-
-            // 3. Bind the cancel button to return to the normal screen
-            document.getElementById("btn-cancel-denied-request").addEventListener("click", () => {
-                import("./student-ui.js").then(module => {
-                    if (typeof module.renderStudentIdleScreen === "function") {
-                        module.renderStudentIdleScreen();
-                    } else {
-                        location.reload(); 
-                    }
-                }).catch(() => location.reload()); 
-            });
-        }
-    }
-}
 
     // ==========================================
     // --- 2. TEACHER APPROVAL HANDOFF CONTROLS ---
@@ -1268,3 +1103,164 @@ async function finalizePassCreation(dest, targetTeacher, passType) {
         }
     }
 });
+
+// =======================================================
+// 🧠 HELPER: EMERGENCY STRING FALLBACKS (Now safely outside!)
+// =======================================================
+export function fallbackFormatName(rawName) {
+    if (!rawName || rawName === "Unknown" || rawName === "No Receiving Teacher") return rawName;
+    let cleanName = rawName.trim();
+    if (cleanName.includes(",")) return cleanName.split(",")[0].trim();
+    
+    const parts = cleanName.split(/\s+/);
+    if (parts.length > 1) {
+        const titles = ["mr.", "mrs.", "ms.", "miss", "dr.", "coach"];
+        const firstWord = parts[0].toLowerCase();
+        if (titles.includes(firstWord)) {
+            return firstWord.charAt(0).toUpperCase() + firstWord.slice(1) + " " + parts[parts.length - 1];
+        }
+        return parts[parts.length - 1];
+    }
+    return cleanName;
+}
+
+export function fallbackLastName(rawName) {
+    if (!rawName || rawName === "Unknown" || rawName === "No Receiving Teacher") return rawName;
+    let cleanName = rawName.trim();
+    if (cleanName.includes(",")) return cleanName.split(",")[0].trim();
+    const parts = cleanName.split(/\s+/);
+    return parts[parts.length - 1]; 
+}
+
+// =======================================================
+// 🧠 HELPER: DATABASE TEACHER LOOKUP
+// =======================================================
+export async function getTeacherProfileFromDB(searchName) {
+    if (!searchName || searchName === "Unknown" || searchName === "No Receiving Teacher") return null;
+    
+    try {
+        const usersRef = collection(db, "users");
+        let snapshot;
+        
+        // 1. Try matching by displayName first (e.g., "Brian Orr")
+        let q = query(usersRef, where("displayName", "==", searchName));
+        snapshot = await getDocs(q);
+        
+        // 2. If no match, try matching strictly by lastName (e.g., "Orr")
+        if (snapshot.empty) {
+            q = query(usersRef, where("lastName", "==", searchName));
+            snapshot = await getDocs(q);
+        }
+        
+        // 3. Smart Fallback: If it's a title format (e.g., "Mr. Orr" or "Coach Orr"),
+        //    isolate the last word and run an exact check against lastName.
+        if (snapshot.empty && searchName.includes(" ")) {
+            const isolatedLastName = searchName.trim().split(" ").pop();
+            if (isolatedLastName) {
+                q = query(usersRef, where("lastName", "==", isolatedLastName));
+                snapshot = await getDocs(q);
+            }
+        }
+
+        if (!snapshot.empty) {
+            const docSnap = snapshot.docs[0];
+            return { id: docSnap.id, ...docSnap.data() }; // Return profile with ID bound
+        }
+    } catch (error) {
+        console.warn("⚠️ DB Teacher Lookup failed, using fallbacks.", error);
+    }
+    return null;
+}
+
+// ==========================================
+// 🟢 MAP OVERLAY: Swap Room Numbers for Teacher Names (WITH DEBUG)
+// ==========================================
+window.showTeacherNamesOnMap = function() {
+    console.log("\n🔍 [MAP OVERLAY] Zoom button clicked! Injecting names...");
+    
+    const mapSvg = document.getElementById("interactive-school-map");
+    if (!mapSvg) {
+        console.error("❌ [MAP OVERLAY] Could not find the SVG map element.");
+        return;
+    }
+    
+    // 1. Get current period
+    let p = "1"; 
+    if (window.currentTimeState && window.currentTimeState.currentPeriod) {
+        p = String(window.currentTimeState.currentPeriod).trim();
+    }
+    const baseP = p.replace(/\D/g, '') || "1";
+    
+    console.log(`👉 [MAP OVERLAY] Active Period: ${p} (Base: ${baseP})`);
+    
+    const staffList = window.activeStaffList || [];
+    if (staffList.length === 0) {
+        console.error("❌ [MAP OVERLAY] FAILED: window.activeStaffList is empty!");
+        return;
+    }
+
+    let matchCount = 0;
+
+    // 2. Loop through every room on the map
+    mapSvg.querySelectorAll(".map-node").forEach(node => {
+        const dataId = node.getAttribute("data-id") || "";
+        const matchKey = dataId.toLowerCase().replace(/^room\s+/i, '').trim();
+        if (!matchKey) return;
+
+        let rawName = null;
+
+        // 3. Search the active staff list for a match
+        for (const staff of staffList) {
+            let activeRoom = null;
+            
+            if (staff.roomAssignments) {
+                if (staff.roomAssignments[p] && staff.roomAssignments[p].room !== "No Room") {
+                    activeRoom = staff.roomAssignments[p].room;
+                } else if (staff.roomAssignments[baseP] && staff.roomAssignments[baseP].room !== "No Room") {
+                    activeRoom = staff.roomAssignments[baseP].room;
+                }
+            } else {
+                activeRoom = staff.room || staff.roomNumber || null;
+            }
+
+            if (activeRoom) {
+                const cleanActiveRoom = activeRoom.toLowerCase().replace(/^room\s+/i, '').trim();
+                if (cleanActiveRoom === matchKey) {
+                    rawName = staff.mapName && staff.mapName.trim() !== "" ? staff.mapName : (staff.lastName || staff.displayName);
+                    matchCount++;
+                    break; // Stop looking, we found the teacher for this room!
+                }
+            }
+        }
+
+        // 4. If we found a teacher, update the map text!
+        if (rawName) {
+            let cleanName = rawName.trim();
+            if (cleanName.includes(",")) {
+                cleanName = cleanName.split(",")[0].trim();
+            } else {
+                const parts = cleanName.split(/\s+/);
+                if (parts.length > 1) {
+                    const titles = ["mr.", "mrs.", "ms.", "miss", "dr.", "coach"];
+                    const firstWord = parts[0].toLowerCase();
+                    if (titles.includes(firstWord)) cleanName = parts[0] + " " + parts[parts.length - 1];
+                    else cleanName = parts[parts.length - 1];
+                }
+            }
+
+            const textEl = node.querySelector("text.lbl-room, text.lbl-large");
+            if (textEl) {
+                if (!textEl.hasAttribute("data-orig-text")) {
+                    textEl.setAttribute("data-orig-text", textEl.textContent);
+                    textEl.setAttribute("data-orig-font", textEl.getAttribute("font-size") || "");
+                    textEl.setAttribute("data-orig-fill", textEl.getAttribute("fill") || "");
+                }
+                textEl.textContent = cleanName;
+                textEl.setAttribute("fill", "#0277bd");
+                textEl.setAttribute("font-size", cleanName.length > 12 ? "10" : "13");
+            }
+        }
+    });
+    
+    console.log(`✅ [MAP OVERLAY] Finished! Successfully replaced ${matchCount} room labels.`);
+};

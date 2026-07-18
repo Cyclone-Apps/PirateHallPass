@@ -12,6 +12,8 @@ import { initSendPassFeature } from './features/f-send-pass.js';
 import { initTeacherHistoryControls, updateTeacherHistoryData } from "./features/f-teacher-history.js";
 import { getAdjustedNow } from "./modules/time-engine.js";
 import { checkMissingRoomsWarning } from "./features/f-staff-rooms.js";
+import { renderRetroPassModal } from "./features/f-retro-pass.js";
+import { initFixIssuesTab, processStuckPasses } from './features/f-edit-pass.js';
 
 window.cancelPass = cancelScheduledPass;
 
@@ -153,10 +155,14 @@ initAuthListener("teacher", async (user, role) => {
         }
     };
 
+    // 🎯 INITIALIZE FIX ISSUES TAB
+    initFixIssuesTab();
+
     // Hook up real-time Firestore listeners to UI components
     listenToPendingPasses((passes) => {
-        // 🌟 Checks Origin, Target, AND Sender (Fixes the Proxy pass missing from teacher screen)
         const myName = user.displayName;
+        
+        // 🌟 Filter to only show passes where this teacher is involved
         const myPendingPasses = passes.filter(pass => 
             pass.targetTeacher === myName || 
             pass.originTeacher === myName ||
@@ -164,10 +170,38 @@ initAuthListener("teacher", async (user, role) => {
         );
         
         renderPassList(myPendingPasses, "list-pending-passes", "pending-count");
+        
+        // 🧹 REMOVED: legacy client-side date filters and updateIssuesTab()
     });
 
+    // 🌟 UNVERIFIED STALE PASSES (Feeds the Fix Issues Tab)
+    const qStale = query(collection(db, "passes"), where("needsVerification", "==", true));
+    onSnapshot(qStale, (snapshot) => {
+        const stalePasses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // 🔍 LOG 1: Did we find the passes?
+        console.log(`[STALE LISTENER] Found ${stalePasses.length} passes needing verification.`);
+        if (stalePasses.length > 0) {
+            console.log(`[STALE LISTENER] First pass target teacher is:`, stalePasses[0].targetTeacher);
+        }
+
+        // 🔍 LOG 2: Is the function actually loaded?
+        console.log(`[STALE LISTENER] Is processStuckPasses available?`, typeof processStuckPasses);
+
+        if (typeof processStuckPasses === "function") {
+            processStuckPasses(stalePasses, window.currentUser || user);
+        } else {
+            console.error("🚨 ERROR: processStuckPasses is not defined in main-teacher.js! Missing import?");
+        }
+    });
+    
     // 🌟 ACTIVE PASSES: Unfiltered. Visible to all teachers for hallway monitoring!
-    listenToActivePasses((passes) => renderPassList(passes, "list-active-passes", "active-count"));
+    listenToActivePasses((passes) => {
+        // Render all active passes seamlessly
+        renderPassList(passes, "list-active-passes", "active-count");
+        
+        // 🧹 REMOVED: legacy client-side date filters and updateIssuesTab()
+    });
 
     // =======================================================
     // 🌟 NEW: SCHEDULED / SENT PASSES (3rd Column)
@@ -322,7 +356,11 @@ document.addEventListener("change", (e) => {
 
 // Global Event Delegation for buttons
 document.addEventListener("click", async (e) => {
-    
+    // 🕰️ Open Retroactive Pass Modal
+    if (e.target.id === "btn-open-retro-pass" || e.target.closest("#btn-open-retro-pass")) {
+        e.preventDefault();
+        renderRetroPassModal();
+    }
     // --- PASS ACTION BUTTONS ---
 const btn = e.target.closest(".card-btn");
 if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
@@ -342,11 +380,11 @@ if (btn && btn.id !== "btn-submit-proxy-pass" && btn.id !== "btn-submit-pass") {
         }
         
         // 🌟 2. CHECK-IN TIMELINE INTERCEPTS
-        if (newStatus === "arrived") {
-            newStatus = currentStatus; 
+        if (action === "arrived") {
+            action = currentStatus; 
             extraData.arrivedAt = true; // 🎯 FIX: Changed from getAdjustedNow()
-        } else if (newStatus === "departed") {
-            newStatus = currentStatus; 
+        } else if (action === "departed") {
+            action = currentStatus; 
             extraData.departedAt = true; // 🎯 FIX: Changed from getAdjustedNow()
         }
         
