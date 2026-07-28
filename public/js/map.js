@@ -163,6 +163,16 @@ document.addEventListener("click", (e) => {
         return; 
     }
 
+    // 🛑 NEW: Check if the room is disabled for students
+    if (window.globalDisabledRoomsMap && window.globalDisabledRoomsMap[targetDestination.toLowerCase()]) {
+        // Check if the current user is NOT staff/admin (i.e. is a student)
+        const userRole = window.currentUserRole || (window.currentUser ? window.currentUser.role : "student");
+        if (userRole !== "admin" && userRole !== "teacher" && userRole !== "staff") {
+            alert(`🚫 ${targetDestination} is currently unavailable for selection.`);
+            return; // Stop processing the click for students!
+        }
+    }
+
     let targetUpdated = false;
 
     // 1. Handle Proxy Search Modal Input

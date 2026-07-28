@@ -113,6 +113,7 @@ if (btnLogin) {
 initAuthListener("admin", async (user, role) => {
     // 1. Set Global User State & Render Nav
     window.currentUser = user;
+    window.userRole = role; // 🎯 THE MAGIC FIX GOES HERE!
     renderHeader(user, role);
 
     // 2. Boot up all Admin Sub-Systems
@@ -220,65 +221,128 @@ document.addEventListener("click", (e) => {
         }
     }
 
-    // 4. Open the Map to set Room Limits (The old logic moved here!)
-    if (e.target.closest("#btn-open-capacity-map")) {
-        e.preventDefault();
-        
-        // Hide the intermediate menu
-        document.getElementById("location-settings-modal").classList.add("hidden");
-        
-        // Show the map popout
-        const mapModal = document.getElementById("map-popout-modal");
-        if (!mapModal) return;
-        mapModal.classList.remove("hidden");
-        mapModal.style.zIndex = "10000";
-        
-        const modalTitle = mapModal.querySelector("h2");
-        if (modalTitle) modalTitle.innerText = "🚦 Click Room to Set Capacity Limit";
+    // Helper function to create a custom 3-button prompt for capacities
+function showCustomCapacityPrompt(roomName, currentLimit) {
+    return new Promise((resolve) => {
+        // Create the background overlay
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10001;';
 
-        // Fetch existing limits FIRST before drawing the map
-        const fetchAndRenderMap = async () => {
-            const limitsSnap = await getDocs(collection(db, "location_limits"));
-            const currentLimits = {};
-            limitsSnap.forEach(document => {
-                currentLimits[document.id] = document.data().maxCapacity;
-            });
+        const limitText = currentLimit !== undefined && currentLimit !== "None" ? currentLimit : "None";
 
-            const mapContainer = document.getElementById("full-map-container");
-            mapContainer.innerHTML = ""; 
+        // Build the custom modal UI
+        modal.innerHTML = `
+            <div style="background: white; padding: 20px; border-radius: 8px; width: 350px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                <h3 style="margin-top: 0; color: #1a1a1a;">Set Capacity for ${roomName}</h3>
+                <p style="margin-bottom: 15px; color: #555;">Currently: <strong>${limitText}</strong></p>
+                <input type="number" id="capacity-input" placeholder="Enter max capacity (e.g., 2)" style="width: 90%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 20px; font-size: 16px;">
+                <div style="display: flex; justify-content: space-between; gap: 5px;">
+                    <button id="btn-cap-cancel" style="padding: 8px 12px; background: #ccc; color: #1a1a1a; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Cancel</button>
+                    <button id="btn-cap-clear" style="padding: 8px 12px; background: #c62828; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">🗑️ Clear Limit</button>
+                    <button id="btn-cap-save" style="padding: 8px 12px; background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Save</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
 
-            window.currentCapacityMap = new MapController({
-                containerId: "full-map-container",
-                mode: "admin_capacity",
-                capacityLimits: currentLimits, 
-                onRoomSelect: async (selection) => {
-                    const existingLimit = currentLimits[selection.room] !== undefined ? currentLimits[selection.room] : "None";
-                    const limitStr = prompt(`Set maximum capacity for ${selection.room}:\n(Currently: ${existingLimit} | Enter 0 to close room, leave blank to cancel)`);
+        // Auto-focus the input box
+        const input = document.getElementById('capacity-input');
+        input.focus();
+
+        const cleanup = () => document.body.removeChild(modal);
+
+        // 1. Cancel Button
+        document.getElementById('btn-cap-cancel').addEventListener('click', () => {
+            cleanup();
+            resolve(null);
+        });
+
+        // 2. Clear Button
+        document.getElementById('btn-cap-clear').addEventListener('click', () => {
+            cleanup();
+            resolve('CLEAR');
+        });
+
+        // 3. Save Button
+        document.getElementById('btn-cap-save').addEventListener('click', () => {
+            cleanup();
+            resolve(input.value);
+        });
+    });
+}
+
+// 4. Open the Map to set Room Limits
+if (e.target.closest("#btn-open-capacity-map")) {
+    e.preventDefault();
+    
+    // Hide the intermediate menu
+    document.getElementById("location-settings-modal").classList.add("hidden");
+    
+    // Show the map popout
+    const mapModal = document.getElementById("map-popout-modal");
+    if (!mapModal) return;
+    mapModal.classList.remove("hidden");
+    mapModal.style.zIndex = "10000";
+    
+    const modalTitle = mapModal.querySelector("h2");
+    if (modalTitle) modalTitle.innerText = "🚦 Click Room to Set Capacity Limit";
+
+    // Fetch existing limits FIRST before drawing the map
+    const fetchAndRenderMap = async () => {
+        const limitsSnap = await getDocs(collection(db, "location_limits"));
+        const currentLimits = {};
+        limitsSnap.forEach(document => {
+            currentLimits[document.id] = document.data().maxCapacity;
+        });
+
+        const mapContainer = document.getElementById("full-map-container");
+        mapContainer.innerHTML = ""; 
+
+        window.currentCapacityMap = new MapController({
+            containerId: "full-map-container",
+            mode: "admin_capacity",
+            capacityLimits: currentLimits, 
+            onRoomSelect: async (selection) => {
+                const existingLimit = currentLimits[selection.room] !== undefined ? currentLimits[selection.room] : "None";
+                
+                // 🌟 Trigger the new custom modal
+                const result = await showCustomCapacityPrompt(selection.room, existingLimit);
+                
+                if (result === null) return; // User clicked Cancel
+                
+                try {
+                    const limitRef = doc(db, "location_limits", selection.room);
                     
-                    if (limitStr !== null && limitStr.trim() !== "") {
-                        const maxCapacity = parseInt(limitStr, 10);
-                        
+                    if (result === 'CLEAR') {
+                        // 🗑️ Delete the restriction entirely
+                        await deleteDoc(limitRef);
+                        delete currentLimits[selection.room];
+                    } else {
+                        // 💾 Save the new number limit
+                        const maxCapacity = parseInt(result, 10);
                         if (!isNaN(maxCapacity)) {
-                            try {
-                                const limitRef = doc(db, "location_limits", selection.room);
-                                await setDoc(limitRef, { maxCapacity: maxCapacity });
-                                
-                                currentLimits[selection.room] = maxCapacity;
-                                window.currentCapacityMap.capacityLimits = currentLimits;
-                                window.currentCapacityMap.applyHighlights();
-                            } catch (error) {
-                                console.error("Error setting limit:", error);
-                                alert("Failed to save location limit.");
-                            }
+                            await setDoc(limitRef, { maxCapacity: maxCapacity });
+                            currentLimits[selection.room] = maxCapacity;
                         } else {
                             alert("Please enter a valid number.");
+                            return;
                         }
                     }
+
+                    // Refresh the map UI
+                    window.currentCapacityMap.capacityLimits = currentLimits;
+                    window.currentCapacityMap.applyHighlights();
+
+                } catch (error) {
+                    console.error("Error setting limit:", error);
+                    alert("Failed to save location limit.");
                 }
-            });
-        };
-        fetchAndRenderMap();
-    }
+            }
+        });
+    };
+    fetchAndRenderMap();
+}
 
     // Admin Restrictions Map Popout
     const triggerBtn = e.target.closest("#btn-open-map-popout");

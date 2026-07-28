@@ -59,6 +59,79 @@ export function initAdminHistory() {
             document.getElementById("filter-history-room").value = "";
             applyAdminHistoryFilters();
         }
+
+        // 4. Edit Pass from Admin History
+        if (e.target.closest('.btn-admin-edit-pass')) {
+            const btn = e.target.closest('.btn-admin-edit-pass');
+            const passId = btn.getAttribute("data-id");
+            
+            // Call the exact same global edit function your active pass cards use
+            if (typeof window.handleEditPass === "function") {
+                window.handleEditPass(passId);
+            } else {
+                console.error("⚠️ window.handleEditPass is missing! Ensure it is loaded globally.");
+            }
+        }
+
+        // 5. Delete Pass from Admin History
+        if (e.target.closest('.btn-admin-delete-pass')) {
+            const btn = e.target.closest('.btn-admin-delete-pass');
+            const passId = btn.getAttribute("data-id");
+            
+            // Use the exact same safety prompt from your standard UI
+            if (confirm('Are you sure you want to permanently delete this pass?')) {
+                
+                // We'll delete it exactly like your window.resolveStalePass function does
+                import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js").then(async ({ doc, deleteDoc, getFirestore }) => {
+                    // Try to use the local DB, fallback to a fresh getFirestore() call if needed
+                    const firestoreDb = typeof db !== 'undefined' ? db : getFirestore();
+                    try {
+                        await deleteDoc(doc(firestoreDb, "passes", passId));
+                        
+                        // Immediately wipe the card from the UI so it looks snappy
+                        const passCard = btn.closest('div[style*="background: white"]');
+                        if (passCard) passCard.remove();
+                        
+                    } catch (err) {
+                        console.error("🔥 Error deleting pass from admin history:", err);
+                        alert("Failed to delete pass. Check console.");
+                    }
+                });
+            }
+        }
+
+        // 6. Refresh Admin History Data
+        if (e.target.closest('#btn-refresh-admin-history')) {
+            const refreshBtn = e.target.closest('#btn-refresh-admin-history');
+            
+            // 🌀 Spin the button so the user knows it is working
+            refreshBtn.style.transform = "rotate(360deg)";
+            setTimeout(() => { refreshBtn.style.transform = "rotate(0deg)"; }, 300);
+
+            // ⏳ Show loading state
+            document.getElementById("admin-history-results-count").innerText = "⏳ Fetching latest passes...";
+            document.getElementById("admin-history-list").innerHTML = "";
+
+            try {
+                // 📡 Fetch fresh data from the database
+                allAdminHistory = await fetchAdminPassHistory();
+                
+                // 🗂️ Sort them newest to oldest
+                allAdminHistory.sort((a, b) => {
+                    const timeA = a.returnedAt?.toDate?.() || a.createdAt?.toDate?.() || new Date(0);
+                    const timeB = b.returnedAt?.toDate?.() || b.createdAt?.toDate?.() || new Date(0);
+                    return timeB - timeA;
+                });
+
+                // 🎯 Re-apply any typed filters and render the cards
+                applyAdminHistoryFilters();
+
+            } catch (err) {
+                console.error("🔥 Error refreshing admin history:", err);
+                document.getElementById("admin-history-results-count").innerText = "⚠️ Error loading passes.";
+            }
+        }
+
     });
 
     // 🟢 Real-Time Input Query Filtering
@@ -243,7 +316,13 @@ function renderAdminHistoryPasses(passes, containerId) {
         card.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 12px;">
                 <span style="font-size: 1.1rem; color: #1a1a1a;">🧑‍🎓 ${pass.studentDisplayName || pass.studentName || "Unknown"}</span>
-                <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee; padding: 2px 6px; border-radius: 4px;">${pass.type || "Pass"}</span>
+                
+                <!-- 🎯 NEW: Flex container for badge + action buttons -->
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span class="badge" style="text-transform: uppercase; font-size: 0.75rem; background: #eee; padding: 2px 6px; border-radius: 4px;">${pass.type || "Pass"}</span>
+                    <button class="btn-admin-edit-pass" data-id="${pass.id}" title="Edit Pass" style="background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 0; transition: transform 0.2s;">✏️</button>
+                    <button class="btn-admin-delete-pass" data-id="${pass.id}" title="Delete Pass" style="background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 0; transition: transform 0.2s;">🗑️</button>
+                </div>
             </div>
             
             ${fraudNoteHTML}

@@ -6,9 +6,12 @@ import {
     signOut, 
     onAuthStateChanged 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { doc, getDoc, setDoc, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, getDoc, setDoc, collection, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const provider = new GoogleAuthProvider();
+
+// Create a global container for our active memory
+window.restrictionCache = {};
 
 // Logs the user in with Google (Using Popup)
 export async function handleGoogleLogin() {
@@ -42,6 +45,10 @@ export function initAuthListener(requiredRole, onAuthenticated) {
         const btn = document.getElementById("btn-google-login");
 
         if (user) {
+            
+            // 🌟 START THE BACKGROUND LISTENER HERE!
+            initRestrictionListener();
+
             // ==========================================
             // 🎓 STUDENT LOGIN BYPASS & SPOOF MODE
             // ==========================================
@@ -186,6 +193,11 @@ async function launchSpoofModal(onAuthenticated, loginScreen, dashboardScreen) {
         const inputVal = document.getElementById("spoof-student-input").value;
         if (!inputVal) return alert("Please select or type a student first!");
 
+        // 🌟 NEW: Clear all local and session storage before logging in
+        localStorage.clear();
+        sessionStorage.clear();
+        console.log("🧹 Cleared local and session storage for a clean spoof session.");
+
         // Extract the name and email from the input string: "John Doe (jdoe@postville...)"
         let spoofName = inputVal.split("(")[0].trim();
         let spoofEmail = inputVal.includes("(") ? inputVal.split("(")[1].replace(")", "").trim() : "spoof@postville.k12.ia.us";
@@ -293,5 +305,30 @@ async function launchTeacherSpoofModal(onAuthenticated, loginScreen, dashboardSc
     document.getElementById("btn-spoof-teacher-cancel").addEventListener("click", () => {
         document.body.removeChild(modal);
         handleLogout(); 
+    });
+}
+
+// ==========================================
+// 🚨 BACKGROUND RESTRICTION LISTENER
+// ==========================================
+function initRestrictionListener() {
+    const usersRef = collection(db, "users");
+    
+    // onSnapshot listens silently in the background for any database changes
+    onSnapshot(usersRef, (snapshot) => {
+        const tempCache = {};
+        snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            // Only save users who actually have restrictions to keep memory tiny
+            if (data.restrictions && data.restrictions.noContactPeers && data.restrictions.noContactPeers.length > 0) {
+                tempCache[docSnap.id] = data.restrictions.noContactPeers;
+            }
+        });
+        
+        // Update the live memory instantly
+        window.restrictionCache = tempCache;
+        console.log("✅ [RESTRICTION CACHE] Silently updated in background. Total restricted users:", Object.keys(tempCache).length);
+    }, (error) => {
+        console.error("⚠️ [RESTRICTION CACHE] Listener failed:", error);
     });
 }

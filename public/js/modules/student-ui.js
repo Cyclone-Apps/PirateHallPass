@@ -1,6 +1,6 @@
 // js/modules/student-ui.js
 import { schoolMapSVG } from "../map.js"; 
-import { doc, getDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, getDoc, onSnapshot, collection, query, where, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "../firebase-config.js";
 import { getAdjustedNow } from "./time-engine.js";
 
@@ -51,6 +51,16 @@ export function renderStudentIdleScreen() {
             <p style="color: #666; margin-bottom: 30px;">Select a destination to request a hall pass.</p>
             ${buttonHTML}
             <p style="margin-top: 20px; font-size: 0.9rem; color: #888;">Your teacher must approve the request before you leave.</p>
+            <!-- 🟢 Pre-Fetch Readiness Checkmarks Container -->
+<div id="sync-status-indicator" style="
+    text-align: left; 
+    font-size: 1rem; 
+    margin-top: 10px; 
+    display: flex; 
+    align-items: center; 
+    gap: 4px; 
+    min-height: 24px;
+" title="Background Data Sync Status"></div>
         </div>
     `;
     
@@ -311,6 +321,45 @@ export function renderStudentWaitingScreen(pass, statusData) {
     let buttonsHtml = '';
     let extraInfoHtml = '';
 
+    // 🎯 Determine if this pass has a scheduled time
+    const isScheduled = pass.scheduledWhen || pass.scheduledDate || pass.senderName;
+    
+    // 🎯 NEW: Verify if a TEACHER actually sent this pass (not the student)
+    const isTeacherSent = pass.isProxy === true || 
+                          (pass.senderId && pass.senderId !== pass.studentId) || 
+                          (pass.senderName && pass.senderName !== pass.studentDisplayName && pass.senderName !== pass.studentName);
+
+    // 🕒 Calculate the Intended Time String for the Warning
+    let timeStr = "";
+    if (pass.scheduledPeriod && pass.scheduledPeriod !== "None") {
+        timeStr = ` during ${pass.scheduledPeriod} period`;
+    } else if (pass.scheduledTime) {
+        const [hourStr, minStr] = pass.scheduledTime.split(':');
+        if (hourStr && minStr) {
+            let h = parseInt(hourStr, 10);
+            const ampm = h >= 12 ? 'pm' : 'am';
+            h = h % 12 || 12;
+            timeStr = ` at ${h}:${minStr} ${ampm}`;
+        }
+    }
+
+    // 🚨 Build the Blinking Warning HTML if it's scheduled and has a time
+    let timeWarningHtml = '';
+    if (isScheduled && timeStr) {
+        timeWarningHtml = `
+            <style>
+                @keyframes blink-warning {
+                    0% { opacity: 1; }
+                    50% { opacity: 0.3; }
+                    100% { opacity: 1; }
+                }
+            </style>
+            <div style="font-size: clamp(1.1rem, 3vh, 1.3rem); color: #d32f2f; font-weight: bold; text-align: center; padding: 10px; margin-top: 10px; animation: blink-warning 2s infinite;">
+                ⚠️ Intended for use${timeStr}
+            </div>
+        `;
+    }
+
     if (statusData.statusLevel === 'red') {
         bgColor = "#f8d7da"; textColor = "#721c24"; titleColor = "#721c24";
         
@@ -333,6 +382,17 @@ export function renderStudentWaitingScreen(pass, statusData) {
                 ❌ Cancel Request
             </button>
         `;
+
+        // 🛑 FIX: Only show Save for Later if a TEACHER sent it
+        if (isTeacherSent) {
+            buttonsHtml += `
+            <div style="margin-top: 10px;">
+                <button id="btn-save-for-later" data-id="${pass.id}" style="width: 100%; max-width: 300px; padding: 12px; font-size: 1.1rem; background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                    🔙 Nevermind, Save for Later
+                </button>
+            </div>`;
+        }
+
     } else {
         bgColor = statusData.statusLevel === 'yellow' ? "#fff3cd" : "#d4edda"; 
         textColor = statusData.statusLevel === 'yellow' ? "#856404" : "#155724"; 
@@ -344,6 +404,16 @@ export function renderStudentWaitingScreen(pass, statusData) {
                 <button id="btn-teacher-reject" data-id="${pass.id}" class="danger-btn" style="flex: 1; font-size: 1.3rem; padding: 15px;">❌ Reject</button>
             </div>
         `;
+
+        // 🛑 FIX: Only show Save for Later if a TEACHER sent it
+        if (isTeacherSent) {
+            buttonsHtml += `
+            <div style="width: 100%; max-width: 500px; margin: 10px auto 0 auto;">
+                <button id="btn-save-for-later" data-id="${pass.id}" style="width: 100%; padding: 12px; font-size: 1.1rem; background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                    🔙 Nevermind, Save for Later
+                </button>
+            </div>`;
+        }
     }
 
     let teacherNoteHtml = '';
@@ -359,10 +429,7 @@ export function renderStudentWaitingScreen(pass, statusData) {
     // 🟢 FORMAT THE TEACHER'S NAME FOR DISPLAY
     let displayTeacherName = pass.targetTeacher;
     if (displayTeacherName && displayTeacherName !== "Unknown" && window.activeStaffList) {
-        // Look up this specific teacher in the global staff list
         const teacherProfile = window.activeStaffList.find(staff => staff.displayName === pass.targetTeacher);
-        
-        // If we found them, and they have a title and last name, override the display name!
         if (teacherProfile && teacherProfile.title && teacherProfile.lastName) {
             displayTeacherName = `${teacherProfile.title} ${teacherProfile.lastName}`;
         }
@@ -370,7 +437,6 @@ export function renderStudentWaitingScreen(pass, statusData) {
 
     container.style.backgroundColor = bgColor;
 
-    // 🎯 NO MORE SCROLLBAR: We use overflow: hidden and min(vw, vh) to force mathematical shrinking
     container.innerHTML = `
         <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; padding: 10px; overflow: hidden;">
             
@@ -394,6 +460,7 @@ export function renderStudentWaitingScreen(pass, statusData) {
 
                 ${teacherNoteHtml}
                 ${extraInfoHtml}
+                ${timeWarningHtml}
             </div>
 
             <div style="flex-shrink: 0; text-align: center; padding-top: 5px;">
@@ -702,6 +769,29 @@ export function renderStudentBlindRestrictionScreen(pass) {
             </button>
         </div>
     `;
+
+    // 🌟 NEW: Attach the click listener to delete the restricted pass
+    const cancelBtn = document.getElementById("btn-cancel-restricted");
+    if (cancelBtn) {
+        cancelBtn.addEventListener("click", async () => {
+            // Give the user visual feedback that it's working
+            cancelBtn.innerText = "Canceling...";
+            cancelBtn.disabled = true;
+
+            try {
+                // Delete the pass from the database
+                await deleteDoc(doc(db, "passes", pass.id));
+                console.log(`✅ [RESTRICTION] Restricted pass ${pass.id} deleted successfully.`);
+                
+                // Note: We don't need to manually change the screen here! 
+                // Your real-time listener will see the deletion and automatically load the Idle Screen.
+            } catch (error) {
+                console.error("❌ [RESTRICTION] Error deleting restricted pass:", error);
+                alert("Failed to cancel. Please refresh the page.");
+                location.reload();
+            }
+        });
+    }
 }
 
 /**
@@ -887,10 +977,10 @@ export function renderStaffModal() {
                     <!-- Search Input -->
                     <input type="text" id="staff-search-input" autocomplete="off" placeholder="Start typing to filter names..." style="width: 100%; max-width: 350px; padding: 12px; font-size: 1.1rem; border: 2px solid var(--pirate-silver, #ccc); border-radius: 8px; outline: none; box-sizing: border-box;">
                     
-                    <!-- Open List Box -->
-                    <select id="staff-dropdown-select" size="6" style="width: 100%; max-width: 350px; padding: 8px; font-size: 1.1rem; border: 2px solid var(--pirate-silver, #ccc); border-radius: 8px; background: white; cursor: pointer; outline: none; box-sizing: border-box;">
-                        <!-- Options injected dynamically -->
-                    </select>
+                    <!-- 🌟 NEW: Custom Scrollable Div (Bypasses iOS Native Overrides) -->
+                    <div id="staff-custom-list" style="width: 100%; max-width: 350px; height: 200px; overflow-y: auto; border: 2px solid var(--pirate-silver, #ccc); border-radius: 8px; background: white; text-align: left; padding: 5px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px;">
+                        <!-- Custom clickable staff buttons injected dynamically here -->
+                    </div>
                     
                     <button id="btn-confirm-staff-destination" class="primary-btn" style="padding: 12px 30px; font-size: 1.1rem; border-radius: 8px; width: 100%; max-width: 350px; margin-top: 5px;" disabled>
                         Confirm Destination

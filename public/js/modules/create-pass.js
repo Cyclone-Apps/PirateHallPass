@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocs, query, where, addDoc, collection } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, getDoc, getDocs, query, where, addDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { evaluateLockdownState } from "../features/f-lockdowns.js";
 import { getSpoofSafeTimestamp, getAdjustedNow } from "./time-engine.js";
 
@@ -8,225 +8,236 @@ import { db } from "../firebase-config.js";
 // Recreate the reference to the passes collection
 const passesRef = collection(db, "passes");
 
+// =========================================================
+// 📡 SILENT BACKGROUND RADAR (Eliminates 10-second cold starts!)
+// =========================================================
+window.activeHallwayPasses = []; 
+try {
+    const radarQ = query(passesRef, where("status", "in", ["active", "active_bypassed"]));
+    onSnapshot(radarQ, (snapshot) => {
+        const livePasses = [];
+        snapshot.forEach(doc => livePasses.push(doc.data()));
+        window.activeHallwayPasses = livePasses;
+        console.log(`📡 [RADAR] Silently updated: ${livePasses.length} active passes currently in hallway.`);
+        
+        // 🟢 TRIGGER CHECKMARK: Radar is connected and active passes are loaded!
+        if (typeof markDataReady === "function") {
+            markDataReady("radar");
+        }
+    });
+} catch (error) {
+    console.error("📡 [RADAR] Failed to start:", error);
+}
+
 /**
  * Creates a brand new pass in the database (With Restriction, Cooldown & Waitlist Gatekeepers)
  */
 export async function createNewPass(passData) {
+    // 🟢 1. TURN ON THE GIF!
+    // Start the spinner immediately before any Firebase or routing checks occur
+    if (typeof window.showLoading === 'function') window.showLoading();
+    else if (typeof showLoading === 'function') showLoading();
+
+    try {
+        // =========================================================
+        // 🛑 0. GATEKEEPER 0: LOCKDOWN CHECK
+        // =========================================================
+        const lockdownStatus = evaluateLockdownState();
+        if (!lockdownStatus.allowed) {
+            console.warn("Pass creation blocked:", lockdownStatus.message);
+            
+            // Return a clean failure object instead of throwing a hard error
+            return { 
+                success: false, 
+                message: lockdownStatus.message,
+                error: lockdownStatus.message // Including both keys just to be safe!
+            };
+        }
 
     // =========================================================
-    // 🛑 0. GATEKEEPER 0: LOCKDOWN CHECK
-    // =========================================================
-    const lockdownStatus = evaluateLockdownState();
-    if (!lockdownStatus.allowed) {
-        console.warn("Pass creation blocked:", lockdownStatus.message);
-        
-        // Return a clean failure object instead of throwing a hard error
-        return { 
-            success: false, 
-            message: lockdownStatus.message,
-            error: lockdownStatus.message // Including both keys just to be safe!
-        };
-    }
-
-    // =========================================================
-    // 🌟 NEW: SKIP CHECK-IN FLAG ASSIGNMENT (No more Master Schedule!)
+    // 🌟 SKIP CHECK-IN FLAG ASSIGNMENT (No more Master Schedule!)
     // =========================================================
     try {
-        // Default all passes to require a check-in
-        passData.requiresCheckIn = true; 
+        console.log("🛠️ [CREATE PASS] Incoming passData.isNoCheckIn:", passData.isNoCheckIn);
         
-        let skipList = {};
-        
-        // 🟢 FIXED: Check the new sysInfo cache first, fallback to system/settings DB
-        if (window.sysInfo && (window.sysInfo.skipCheckInRooms || window.sysInfo.noCheckInRooms)) {
-            skipList = window.sysInfo.skipCheckInRooms || window.sysInfo.noCheckInRooms;
+        // 1. If the UI already flagged it as a no-check-in room, trust it!
+        if (passData.isNoCheckIn === true) {
+            console.log("🛠️ [CREATE PASS] UI says this is a skip room. Setting requiresCheckIn to FALSE.");
+            passData.requiresCheckIn = false;
         } else {
-            const settingsSnap = await getDoc(doc(db, "system", "settings"));
-            if (settingsSnap.exists()) {
-                skipList = settingsSnap.data().skipCheckInRooms || settingsSnap.data().noCheckInRooms || {};
+            console.log("🛠️ [CREATE PASS] UI didn't flag it. Trying fallback calculation...");
+            passData.requiresCheckIn = true; 
+            
+            let skipList = {};
+            if (window.sysInfo && (window.sysInfo.skipCheckInRooms || window.sysInfo.noCheckInRooms)) {
+                skipList = window.sysInfo.skipCheckInRooms || window.sysInfo.noCheckInRooms;
+            }
+
+            const exactMatch = passData.destination;
+            const lowerMatch = (passData.destination || "").toLowerCase().trim();
+
+            if (skipList[exactMatch] || skipList[lowerMatch]) {
+                console.log(`🛠️ [CREATE PASS] Fallback matched ${exactMatch}! Setting requiresCheckIn to FALSE.`);
+                passData.requiresCheckIn = false;
+                passData.isNoCheckIn = true; 
+            } else {
+                console.log("🛠️ [CREATE PASS] Fallback found no match. Normal room. Requires check-in.");
             }
         }
-
-        // Check for exact match first, then fallback to lowercase just in case
-        const exactMatch = passData.destination;
-        const lowerMatch = (passData.destination || "").toLowerCase().trim();
-
-        if (skipList[exactMatch] || skipList[lowerMatch]) {
-            passData.requiresCheckIn = false;
-        }
+        
+        console.log("🛠️ [CREATE PASS] FINAL FLAGS BEFORE FIREBASE -> requiresCheckIn:", passData.requiresCheckIn, "| isNoCheckIn:", passData.isNoCheckIn);
+        
     } catch (err) {
         console.error("Error evaluating skipCheckIn status:", err);
-        // Failsafe: if something breaks, it defaults to true (normal behavior)
     }
 
-    // 📍 1. Define your Hallway Routing Dictionary 
-    const hallwayRoutes = {
-        "Outside": ["Main Entrance", "Auditorium Lobby"], 
-        "Main Entrance": ["Outside", "100 Hallway"],
-        "100 Hallway": ["Main Entrance", "Main Vertical Hall"],
-        "Main Vertical Hall": ["100 Hallway", "Cross Corridor Block", "300 Hallway", "Fine Arts Corridor"],
-        "Cross Corridor Block": ["Main Vertical Hall", "Gym Lobby"],
-        "Gym Lobby": ["Cross Corridor Block", "Gym Vertical Hall"],
-        "Gym Vertical Hall": ["Gym Lobby", "Fine Arts Corridor"],
-        "300 Hallway": ["Main Vertical Hall", "Exit Hall 300s"],
-        "Exit Hall 300s": ["300 Hallway"],
-        "Fine Arts Corridor": ["Main Vertical Hall", "Gym Vertical Hall", "Auditorium Lobby"],
-        "Auditorium Lobby": ["Fine Arts Corridor", "Outside"],
-        "Unknown": [] 
-    };
+        // 📍 1. Define your Hallway Routing Dictionary 
+        const hallwayRoutes = {
+            "Outside": ["Main Entrance", "Auditorium Lobby"], 
+            "Main Entrance": ["Outside", "100 Hallway"],
+            "100 Hallway": ["Main Entrance", "Main Vertical Hall"],
+            "Main Vertical Hall": ["100 Hallway", "Cross Corridor Block", "300 Hallway", "Fine Arts Corridor"],
+            "Cross Corridor Block": ["Main Vertical Hall", "Gym Lobby"],
+            "Gym Lobby": ["Cross Corridor Block", "Gym Vertical Hall"],
+            "Gym Vertical Hall": ["Gym Lobby", "Fine Arts Corridor"],
+            "300 Hallway": ["Main Vertical Hall", "Exit Hall 300s"],
+            "Exit Hall 300s": ["300 Hallway"],
+            "Fine Arts Corridor": ["Main Vertical Hall", "Gym Vertical Hall", "Auditorium Lobby"],
+            "Auditorium Lobby": ["Fine Arts Corridor", "Outside"],
+            "Unknown": [] 
+        };
 
-    // 📍 2. Bulletproof Room-to-Corridor Dictionary
-    const roomToCorridor = {
-        "Room 112": "100 Hallway", "Room 110": "100 Hallway", "Room 108": "100 Hallway", "Room 106": "100 Hallway", "Room 104": "100 Hallway", "Room 102": "100 Hallway", "Room 100B": "100 Hallway", "Room 100": "100 Hallway", "HS Office": "100 Hallway", "Main Entrance": "100 Hallway", "Room 107": "100 Hallway", "Room 103": "100 Hallway", "Room 101": "100 Hallway", "Custodial": "100 Hallway", "Girls Restroom 100s": "100 Hallway", "Mechanical": "100 Hallway", "Boys Restroom 100s": "100 Hallway", "Room 109": "100 Hallway", "Room 105": "100 Hallway",
-        
-        "Room 200": "Main Vertical Hall", "Room 202": "Main Vertical Hall", "Mechanical 2": "Main Vertical Hall", "District Office": "Main Vertical Hall", "Room 201A": "Main Vertical Hall", "Room 201": "Main Vertical Hall", "Restroom 200s": "Main Vertical Hall", "Girls Locker Room": "Main Vertical Hall", "LR Office": "Main Vertical Hall", "Boys Locker Room": "Main Vertical Hall", "Trainer's Office": "Main Vertical Hall",
-        
-        "Gym Lobby": "Cross Corridor Block", "Main Gym": "Cross Corridor Block",
-        
-        "Room 312": "300 Hallway", "Room 310": "300 Hallway", "Room 308": "300 Hallway", "Room 306": "300 Hallway", "Room 304": "300 Hallway", "Room 302": "300 Hallway", "Room 300C": "300 Hallway", "Room 300B": "300 Hallway", "Room 300A": "300 Hallway", "Mechanical 3": "300 Hallway", "Room 313": "300 Hallway", "Room 311": "300 Hallway", "Room 309": "300 Hallway", "Room 307": "300 Hallway", "Room 305": "300 Hallway", "Room 303": "300 Hallway", "Room 301": "300 Hallway", "Guidance": "300 Hallway",
-        
-        "Band Room": "Fine Arts Corridor", "Vocal Music": "Fine Arts Corridor", "NICC": "Fine Arts Corridor", "Room 400": "Fine Arts Corridor", "Room 401": "Fine Arts Corridor", "Auditorium": "Fine Arts Corridor", "Auditorium Lobby": "Fine Arts Corridor", "Auditorium RR": "Fine Arts Corridor",
-        
-        "Elementary Office/Other": "Outside", "Nurse": "Outside", "Library": "Outside"
-    };
+        // 📍 2. Bulletproof Room-to-Corridor Dictionary
+        const roomToCorridor = {
+            "Room 112": "100 Hallway", "Room 110": "100 Hallway", "Room 108": "100 Hallway", "Room 106": "100 Hallway", "Room 104": "100 Hallway", "Room 102": "100 Hallway", "Room 100B": "100 Hallway", "Room 100": "100 Hallway", "HS Office": "100 Hallway", "Main Entrance": "100 Hallway", "Room 107": "100 Hallway", "Room 103": "100 Hallway", "Room 101": "100 Hallway", "Custodial": "100 Hallway", "Girls Restroom 100s": "100 Hallway", "Mechanical": "100 Hallway", "Boys Restroom 100s": "100 Hallway", "Room 109": "100 Hallway", "Room 105": "100 Hallway",
+            
+            "Room 200": "Main Vertical Hall", "Room 202": "Main Vertical Hall", "Mechanical 2": "Main Vertical Hall", "District Office": "Main Vertical Hall", "Room 201A": "Main Vertical Hall", "Room 201": "Main Vertical Hall", "Restroom 200s": "Main Vertical Hall", "Girls Locker Room": "Main Vertical Hall", "LR Office": "Main Vertical Hall", "Boys Locker Room": "Main Vertical Hall", "Trainer's Office": "Main Vertical Hall",
+            
+            "Gym Lobby": "Cross Corridor Block", "Main Gym": "Cross Corridor Block",
+            
+            "Room 312": "300 Hallway", "Room 310": "300 Hallway", "Room 308": "300 Hallway", "Room 306": "300 Hallway", "Room 304": "300 Hallway", "Room 302": "300 Hallway", "Room 300C": "300 Hallway", "Room 300B": "300 Hallway", "Room 300A": "300 Hallway", "Mechanical 3": "300 Hallway", "Room 313": "300 Hallway", "Room 311": "300 Hallway", "Room 309": "300 Hallway", "Room 307": "300 Hallway", "Room 305": "300 Hallway", "Room 303": "300 Hallway", "Room 301": "300 Hallway", "Guidance": "300 Hallway",
+            
+            "Band Room": "Fine Arts Corridor", "Vocal Music": "Fine Arts Corridor", "NICC": "Fine Arts Corridor", "Room 400": "Fine Arts Corridor", "Room 401": "Fine Arts Corridor", "Auditorium": "Fine Arts Corridor", "Auditorium Lobby": "Fine Arts Corridor", "Auditorium RR": "Fine Arts Corridor",
+            
+            "Elementary Office/Other": "Outside", "Nurse": "Outside", "Library": "Outside"
+        };
 
-    // Forgiving lookup: Checks exact matches first, then uses Smart Keyword & Number Routing!
-    function resolveCorridor(roomName) {
-        if (!roomName) return "Unknown";
-        
-        const rawStr = String(roomName).toLowerCase().trim();
-        const searchStr = rawStr.replace(/^(room|rm)\s*/i, "").trim();
+        // Forgiving lookup: Checks exact matches first, then uses Smart Keyword & Number Routing!
+        function resolveCorridor(roomName) {
+            if (!roomName) return "Unknown";
+            
+            const rawStr = String(roomName).toLowerCase().trim();
+            const searchStr = rawStr.replace(/^(room|rm)\s*/i, "").trim();
 
-        // 1. Check exact dictionary match first
-        for (const [key, value] of Object.entries(roomToCorridor)) {
-            const cleanKey = key.toLowerCase().replace(/^(room|rm)\s*/i, "").trim();
-            if (cleanKey === searchStr) {
-                return value;
-            }
-        }
-
-        // 2. SMART KEYWORD ROUTING (Overrides numbers if they exist, like "138 Band")
-        if (rawStr.includes("band") || rawStr.includes("vocal") || rawStr.includes("choir")) {
-            return "Fine Arts Corridor";
-        }
-        if (rawStr.includes("gym")) {
-            return "Cross Corridor Block";
-        }
-
-        // 3. SMART NUMBER ROUTING (Extracts the first number it finds, e.g. "138" -> 100 Hallway)
-        const match = searchStr.match(/\d+/);
-        if (match) {
-            const roomNum = parseInt(match[0], 10);
-            if (roomNum >= 100 && roomNum < 200) return "100 Hallway";
-            if (roomNum >= 200 && roomNum < 300) return "Main Vertical Hall";
-            if (roomNum >= 300 && roomNum < 400) return "300 Hallway";
-            if (roomNum >= 400 && roomNum < 500) return "Fine Arts Corridor";
-        }
-
-        return "Unknown";
-    }
-
-    // 📍 3. Shortest-Path Router (Breadth-First Search)
-    function getShortestPath(start, end) {
-        if (start === end) return [start];
-        if (!hallwayRoutes[start] || !hallwayRoutes[end]) return null;
-
-        const queue = [[start]];
-        const visited = new Set([start]);
-
-        while (queue.length > 0) {
-            const path = queue.shift();
-            const current = path[path.length - 1];
-
-            for (const neighbor of (hallwayRoutes[current] || [])) {
-                if (neighbor === end) return [...path, neighbor];
-                if (!visited.has(neighbor)) {
-                    visited.add(neighbor);
-                    queue.push([...path, neighbor]);
+            // 1. Check exact dictionary match first
+            for (const [key, value] of Object.entries(roomToCorridor)) {
+                const cleanKey = key.toLowerCase().replace(/^(room|rm)\s*/i, "").trim();
+                if (cleanKey === searchStr) {
+                    return value;
                 }
             }
+
+            // 2. SMART KEYWORD ROUTING (Overrides numbers if they exist, like "138 Band")
+            if (rawStr.includes("band") || rawStr.includes("vocal") || rawStr.includes("choir")) {
+                return "Fine Arts Corridor";
+            }
+            if (rawStr.includes("gym")) {
+                return "Cross Corridor Block";
+            }
+
+            // 3. SMART NUMBER ROUTING (Extracts the first number it finds, e.g. "138" -> 100 Hallway)
+            const match = searchStr.match(/\d+/);
+            if (match) {
+                const roomNum = parseInt(match[0], 10);
+                if (roomNum >= 100 && roomNum < 200) return "100 Hallway";
+                if (roomNum >= 200 && roomNum < 300) return "Main Vertical Hall";
+                if (roomNum >= 300 && roomNum < 400) return "300 Hallway";
+                if (roomNum >= 400 && roomNum < 500) return "Fine Arts Corridor";
+            }
+
+            return "Unknown";
         }
-        return null;
-    }
 
-    // 📍 4. Pre-Flight Check: Hallway Lockdown
-    const lockedCorridors = window.lockedCorridors || []; 
+        // 📍 3. Shortest-Path Router (Breadth-First Search)
+        function getShortestPath(start, end) {
+            if (start === end) return [start];
+            if (!hallwayRoutes[start] || !hallwayRoutes[end]) return null;
 
-    if (lockedCorridors.length > 0) {
-        const origin = resolveCorridor(passData.origin);
-        const dest = resolveCorridor(passData.destination);
-        
-        // Save these corrected values so the database is accurate
-        passData.originCorridor = origin;
-        passData.destCorridor = dest;
-        
-        // Calculate the physical route they must walk
-        const calculatedRoute = getShortestPath(origin, dest) || [origin, dest];
-        
-        // Check if any corridor in their route is currently locked down
-        const blockedCorridor = calculatedRoute.find(corridor => lockedCorridors.includes(corridor));
-        
-        if (blockedCorridor) {
-            // Conflict found! Block the pass.
-            await addDoc(passesRef, {
-                ...passData,
-                status: "pending_restricted",
-                restrictionType: "area_lockdown", 
-                lockedAreaName: blockedCorridor, 
-                debugCalculatedRoute: calculatedRoute, // Added for debugging in Firebase
-                createdAt: getSpoofSafeTimestamp()
-            });
+            const queue = [[start]];
+            const visited = new Set([start]);
+
+            while (queue.length > 0) {
+                const path = queue.shift();
+                const current = path[path.length - 1];
+
+                for (const neighbor of (hallwayRoutes[current] || [])) {
+                    if (neighbor === end) return [...path, neighbor];
+                    if (!visited.has(neighbor)) {
+                        visited.add(neighbor);
+                        queue.push([...path, neighbor]);
+                    }
+                }
+            }
+            return null;
+        }
+
+        // 📍 4. Pre-Flight Check: Hallway Lockdown
+        const lockedCorridors = window.lockedCorridors || []; 
+
+        if (lockedCorridors.length > 0) {
+            const origin = resolveCorridor(passData.origin);
+            const dest = resolveCorridor(passData.destination);
             
-            return { success: true, status: "blocked_blind" }; 
+            // Save these corrected values so the database is accurate
+            passData.originCorridor = origin;
+            passData.destCorridor = dest;
+            
+            // Calculate the physical route they must walk
+            const calculatedRoute = getShortestPath(origin, dest) || [origin, dest];
+            
+            // Check if any corridor in their route is currently locked down
+            const blockedCorridor = calculatedRoute.find(corridor => lockedCorridors.includes(corridor));
+            
+            if (blockedCorridor) {
+                // Conflict found! Block the pass.
+                await addDoc(passesRef, {
+                    ...passData,
+                    status: "pending_restricted",
+                    restrictionType: "area_lockdown", 
+                    lockedAreaName: blockedCorridor, 
+                    debugCalculatedRoute: calculatedRoute, // Added for debugging in Firebase
+                    createdAt: getSpoofSafeTimestamp()
+                });
+                
+                return { success: true, status: "blocked_blind" }; 
+            }
         }
-    }
-    
-    try {
+        
         // =========================================================
         // 🚨 1. PAIRING RESTRICTION GATEKEEPER (Red Screen)
         // =========================================================
         if (passData.studentId) {
             console.log(`🛑 [RESTRICTION ENGINE] Starting check for Requester: ${passData.studentDisplayName}`);
             
-            // 🎯 DIRECT RESOLVER: Targets the exact database structure from your screenshot
-            const getRestrictionsByEmail = async (emailStr) => {
-                let list = [];
-                if (!emailStr) return list;
-                
-                try {
-                    // Look up the user's document directly using their email as the Document ID
-                    const userDocRef = doc(db, "users", emailStr);
-                    const userDocSnap = await getDoc(userDocRef);
-                    
-                    if (userDocSnap.exists()) {
-                        const data = userDocSnap.data();
-                        
-                        // Drill down exactly into data.restrictions.noContactPeers
-                        if (data.restrictions && data.restrictions.noContactPeers) {
-                            console.log(`   📂 [DB QUERY] Found noContactPeers for ${emailStr}:`, data.restrictions.noContactPeers);
-                            list.push(...data.restrictions.noContactPeers);
-                        } else {
-                            console.log(`   📂 [DB QUERY] No restriction array found for ${emailStr}.`);
-                        }
-                    }
-                } catch (e) {
-                    console.warn(`⚠️ [DB QUERY] Error searching for ${emailStr}:`, e);
-                }
-                return [...new Set(list)]; // Return unique values
+            // 🎯 DIRECT RESOLVER: INSTANT MEMORY LOOKUP (No Database Required!)
+            const getRestrictionsByEmail = (emailStr) => {
+                if (!emailStr) return [];
+                // Instantly return the cached list, or an empty array if they have none
+                return window.restrictionCache?.[emailStr] || []; 
             };
 
             const requesterEmail = passData.studentEmail || passData.studentId;
-            let noContactList = await getRestrictionsByEmail(requesterEmail);
-            console.log(`🛑 [RESTRICTION ENGINE] No-Contact List after DB check:`, noContactList);
-
-            const activeQ = query(passesRef, where("status", "in", ["active", "active_bypassed"]));
-            const activeSnaps = await getDocs(activeQ);
             
-            console.log(`🛑 [RESTRICTION ENGINE] Found ${activeSnaps.size} active passes in the hallway.`);
+            // Notice we removed the "await" keyword here because it is instant now!
+            let noContactList = getRestrictionsByEmail(requesterEmail);
+            console.log(`🛑 [RESTRICTION ENGINE] No-Contact List after memory check:`, noContactList);
 
-            for (const activeDoc of activeSnaps.docs) {
-                const activePass = activeDoc.data();
-                console.log(`   🧑‍🎓 [HALLWAY CHECK] Looking at active pass for: ${activePass.studentDisplayName}`);
+            // ⚡ INSTANT MEMORY CHECK (Bypasses the internet entirely!)
+            const activePasses = window.activeHallwayPasses || [];
+            
+            console.log(`🛑 [RESTRICTION ENGINE] Found ${activePasses.length} active passes via Radar.`);
+
+            for (const activePass of activePasses) {
                 
                 const activeIdentifiers = [activePass.studentId, activePass.studentEmail, activePass.studentDisplayName].filter(Boolean).map(id => String(id).toLowerCase());
                 const currentIdentifiers = [passData.studentId, passData.studentEmail, passData.studentDisplayName].filter(Boolean).map(id => String(id).toLowerCase());
@@ -245,8 +256,9 @@ export async function createNewPass(passData) {
                 // CHECK B (BI-DIRECTIONAL): Is the requester on the active student's restricted list?
                 if (!isConflict) {
                     const activeEmail = activePass.studentEmail || activePass.studentId;
-                    const hallwayNoContact = await getRestrictionsByEmail(activeEmail);
-                    console.log(`   🛑 [HALLWAY CHECK] Active student's list:`, hallwayNoContact);
+                    
+                    // Notice we removed the "await" keyword here too!
+                    const hallwayNoContact = getRestrictionsByEmail(activeEmail);
                     
                     if (hallwayNoContact.some(peerStr => {
                         const peerLower = String(peerStr).toLowerCase();
@@ -343,19 +355,18 @@ export async function createNewPass(passData) {
         // 🚦 3. LOCATION CAPACITY GATEKEEPER 
         // =========================================================
         if (passData.destination) {
-            const limitRef = doc(db, "location_limits", passData.destination);
+            // 🧹 SANITIZE THE ROOM NAME: Replace any forward slashes with dashes so Firebase doesn't crash!
+            const safeLocationId = passData.destination.replace(/\//g, "-");
+
+            // Now use the safe version to check the database
+            const limitRef = doc(db, "location_limits", safeLocationId);
             const limitSnap = await getDoc(limitRef);
             
             if (limitSnap.exists()) {
                 const maxCapacity = limitSnap.data().maxCapacity;
 
-                const activeQ = query(
-                    passesRef, 
-                    where("destination", "==", passData.destination), 
-                    where("status", "in", ["active", "active_bypassed"]) 
-                );
-                const activeSnaps = await getDocs(activeQ);
-                const currentCount = activeSnaps.size;
+                // ⚡ INSTANT CAPACITY CHECK via Radar
+                const currentCount = (window.activeHallwayPasses || []).filter(p => p.destination === passData.destination).length;
 
                 if (currentCount >= maxCapacity) {
                     const waitlistQ = query(passesRef, where("destination", "==", passData.destination), where("status", "==", "waitlist"));
@@ -389,11 +400,23 @@ export async function createNewPass(passData) {
             createdAt: getSpoofSafeTimestamp()
         });
         
+        // 🟢 2. THE CRASH FIX (Safe Map-Modal closing)
+        const mapModal = document.getElementById("map-modal");
+        if (mapModal) {
+            mapModal.classList.add("hidden");
+        }
+
         return { success: true, status: finalStatus };
         
     } catch (error) {
         console.error("Error creating pass:", error);
         alert("Failed to create pass. Check console.");
         return { success: false, error: error };
+    } finally {
+        // 🟢 3. TURN OFF THE GIF!
+        // This 'finally' block ensures that no matter what happens above 
+        // (success, waitlisted, blocked, or error), the spinner will turn off.
+        if (typeof window.hideLoading === 'function') window.hideLoading();
+        else if (typeof hideLoading === 'function') hideLoading();
     }
 }

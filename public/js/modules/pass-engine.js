@@ -16,6 +16,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getSpoofSafeTimestamp } from "./time-engine.js";
 
+// 🛑 Global Kill Switch for Zombie Listeners
+export let activeStudentPassListener = null;
+
 const passesRef = collection(db, "passes");
 
 /**
@@ -129,6 +132,10 @@ export function listenToWaitlist(roomId, callback) {
  * Updates the status of a pass (e.g., active, returned, rejected)
  */
 export async function updatePassStatus(passId, newStatus, extraFields = {}) {
+    // 🟢 1. TURN ON THE GIF (Using our new 400ms delay!)
+    if (typeof window.showLoading === 'function') window.showLoading(400);
+    else if (typeof showLoading === 'function') showLoading(400);
+
     try {
         const passDoc = doc(db, "passes", passId);
         
@@ -175,15 +182,30 @@ export async function updatePassStatus(passId, newStatus, extraFields = {}) {
         // Ensure no undefined values sneak into Firebase causing a 400 Error
         Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
 
-        await updateDoc(passDoc, updateData);
-        console.log(`Pass ${passId} updated to: ${newStatus}`);
-
+        // ==========================================
+        // 🚀 OPTIMIZATION: PARALLEL EXECUTION
+        // ==========================================
+        // We prep the update request, but DO NOT "await" it yet!
+        const updatePromise = updateDoc(passDoc, updateData);
+        
+        // We prep the room release task as a second promise
+        let releasePromise = Promise.resolve(); // Resolves instantly if not needed
+        
         if ((newStatus === "returned" || newStatus === "returned_bypassed" || newStatus === "rejected" || newStatus === "cancelled") && passData && passData.destination) {
-            await processRoomRelease(passData.destination);
+            releasePromise = processRoomRelease(passData.destination);
         }
+
+        // ⚡ FIRE BOTH AT THE EXACT SAME TIME!
+        await Promise.all([updatePromise, releasePromise]);
+        
+        console.log(`Pass ${passId} updated to: ${newStatus} (Batch Executed)`);
 
     } catch (error) {
         console.error("Failed to update pass:", error);
+    } finally {
+        // 🟢 2. TURN OFF THE GIF!
+        if (typeof window.hideLoading === 'function') window.hideLoading();
+        else if (typeof hideLoading === 'function') hideLoading();
     }
 }
 
@@ -218,12 +240,37 @@ export async function processRoomRelease(roomId) {
  * Listens for a specific student's active, pending, or restricted passes
  */
 export function listenToStudentPass(studentId, callback) {
+    // 🛑 KILL SWITCH: If a listener is already running, shut it down before making a new one!
+    if (activeStudentPassListener) {
+        console.log("🛑 MAIN ENGINE: Killing previous zombie listener to save database reads...");
+        activeStudentPassListener();
+    }
+
     console.log(`🎧 MAIN ENGINE: Listening for passes belonging to ID: ${studentId}`);
     
-    // 🔒 Strictly queries by studentId
-    const q = query(passesRef, where("studentId", "==", studentId));
+    // 🚀 OPTIMIZATION: Only ask Firebase for passes that are currently in play!
+    const q = query(
+        passesRef, 
+        where("studentId", "==", studentId),
+        where("status", "in", [
+            "active", 
+            "active_bypassed", 
+            "pending", 
+            "pending_student", 
+            "pending_restricted",
+            "pending_warning", 
+            "scheduled",
+            "waitlist",
+            "message_center" // Keeping this just in case they have unread messages!
+        ])
+    );
     
-    return onSnapshot(q, (snapshot) => {
+    // 🟢 Save this specific connection to our global variable
+    activeStudentPassListener = onSnapshot(q, (snapshot) => {
+        // 🟢 1. TURN ON THE GIF!
+        if (typeof window.showLoading === 'function') window.showLoading();
+        else if (typeof showLoading === 'function') showLoading();
+
         console.log(`📦 MAIN ENGINE: Found ${snapshot.size} total passes for this ID in Firebase.`);
         let currentPass = null;
         
@@ -256,10 +303,29 @@ export function listenToStudentPass(studentId, callback) {
         });
         
         if (!currentPass) console.log("   ⚠️ RESULT: No valid active passes found. Loading Idle Screen.");
-        callback(currentPass); 
+        
+        // 🚀 PERFORMANCE FIX: Yield the main thread!
+        // Pushing this to a setTimeout allows Firebase to instantly trigger 
+        // other listeners (like your Radar) before getting bogged down building the UI.
+        setTimeout(() => {
+            // This is the line that actually tells the UI to update
+            callback(currentPass); 
+
+            // 🟢 2. TURN OFF THE GIF!
+            // We moved this inside the setTimeout so the loading screen 
+            // stays up until the UI has actually finished rendering.
+            if (typeof window.hideLoading === 'function') window.hideLoading();
+            else if (typeof hideLoading === 'function') hideLoading();
+        }, 0);
+
     }, (error) => {
         console.error("Error listening to student pass:", error);
+        if (typeof window.hideLoading === 'function') window.hideLoading();
+        else if (typeof hideLoading === 'function') hideLoading();
     });
+
+    // Return the unsubscribe function just in case we need to call it manually from elsewhere
+    return activeStudentPassListener;
 }
 
 /**
@@ -286,7 +352,16 @@ export async function fetchStudentProfileByEmail(email) {
  * Fetches the entire student roster for the Autocomplete UI
  */
 export async function fetchAllStudents() {
+    // 🟢 1. Check if we already have the roster saved in this session!
+    const cachedStudents = sessionStorage.getItem("cachedStudentRoster");
+    if (cachedStudents) {
+        console.log("⚡ [CACHE HIT] Loaded student roster instantly from local memory!");
+        return JSON.parse(cachedStudents); // Convert string back to an array
+    }
+
     try {
+        console.log("☁️ [CACHE MISS] Downloading entire student roster from Firebase...");
+        
         // 🎯 MIGRATION FIX: Point to unified "users" collection and filter by role
         const usersRef = collection(db, "users");
         const q = query(usersRef, where("role", "==", "student"));
@@ -331,7 +406,13 @@ export async function fetchAllStudents() {
             }
         });
         
-        return students.sort((a, b) => a.displayName.localeCompare(b.displayName));
+        const finalSortedList = students.sort((a, b) => a.displayName.localeCompare(b.displayName));
+        
+        // 🟢 2. Save the final list to local memory so we don't have to download it again!
+        sessionStorage.setItem("cachedStudentRoster", JSON.stringify(finalSortedList));
+        
+        return finalSortedList;
+
     } catch (error) {
         console.error("Error fetching all students:", error);
         return [];

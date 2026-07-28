@@ -22,8 +22,8 @@ export async function renderMapRoomSettingsModal() {
             </div>
             
             <div style="padding: 15px 20px; background: #fff3cd; color: #856404; font-size: 0.95rem; border-bottom: 1px solid #ffeeba;">
-                <strong>Legend:</strong> Checking a box allows students to select that room without a teacher's check-in/approval. 
-                Names in <span style="color: red; font-weight: bold;">Red</span> mean the teacher unchecked "Available (Accepts Passes)" for that period.
+                <strong>Legend:</strong> Checking <strong>Skip Check-in</strong> allows students to bypass teacher approval. Checking <strong>Disabled</strong> prevents students from selecting the room on the map. 
+                Names in <span style="color: red; font-weight: bold;">Red</span> mean the teacher unchecked "Available" for that period.
             </div>
 
             <div id="map-room-table-container" style="padding: 0 20px 20px 20px; margin-top: 10px; overflow-y: auto; flex-grow: 1; position: relative;">
@@ -38,10 +38,11 @@ export async function renderMapRoomSettingsModal() {
     };
 
     try {
-        // 2. Fetch system settings (for skipCheckInRooms)
+        // 2. Fetch system settings (for skipCheckInRooms AND disabledRooms)
         const settingsRef = doc(db, "system", "settings");
         const settingsSnap = await getDoc(settingsRef);
         const skipRoomsMap = settingsSnap.exists() ? (settingsSnap.data().skipCheckInRooms || {}) : {};
+        const disabledRoomsMap = settingsSnap.exists() ? (settingsSnap.data().disabledRooms || {}) : {}; // 🆕 Fetch Disabled Data
 
         // 3. Extract Rooms from SVG Map
         if (!schoolMapSVG) throw new Error("schoolMapSVG is missing.");
@@ -59,7 +60,7 @@ export async function renderMapRoomSettingsModal() {
 
         // 4. Fetch Teacher Assignments
         const usersSnap = await getDocs(collection(db, "users"));
-        const roomAssignmentsMap = {}; // Structure: { "Room 101": { "1": [{name, available}], "2": [] } }
+        const roomAssignmentsMap = {}; 
         
         roomsList.forEach(room => {
             roomAssignmentsMap[room] = { 1:[], 2:[], 3:[], 4:[], 5:[], 6:[], 7:[], 8:[], 9:[] };
@@ -68,13 +69,11 @@ export async function renderMapRoomSettingsModal() {
         usersSnap.forEach(docSnap => {
             const data = docSnap.data();
             if (data.role === "teacher" && data.roomAssignments) {
-                // Use title + lastName if available, fallback to lastName, fallback to displayName
                 const displayName = (data.title && data.lastName) ? `${data.title} ${data.lastName}` : (data.lastName || data.displayName);
                 
                 for (let p = 1; p <= 9; p++) {
                     const periodData = data.roomAssignments[String(p)];
                     if (periodData && periodData.room) {
-                        // Find the map room that matches
                         const assignedRoom = roomsList.find(r => r.toLowerCase().includes(periodData.room.toLowerCase()) || periodData.room.toLowerCase().includes(r.toLowerCase()));
                         if (assignedRoom) {
                             roomAssignmentsMap[assignedRoom][p].push({
@@ -94,6 +93,7 @@ export async function renderMapRoomSettingsModal() {
                     <tr>
                         <th style="padding: 10px; background: #e0e0e0; position: sticky; top: 0; z-index: 10; border-bottom: 2px solid #aaa; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Room</th>
                         <th style="padding: 10px; background: #e0e0e0; position: sticky; top: 0; z-index: 10; border-bottom: 2px solid #aaa; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Skip Check-in<br><span style="font-size: 0.8em; font-weight: normal;">(Bypass Pass)</span></th>
+                        <th style="padding: 10px; background: #e0e0e0; position: sticky; top: 0; z-index: 10; border-bottom: 2px solid #aaa; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Disabled<br><span style="font-size: 0.8em; font-weight: normal;">(Hide from Students)</span></th>
                         ${[1,2,3,4,5,6,7,8,9].map(p => `<th style="padding: 10px; background: #e0e0e0; position: sticky; top: 0; z-index: 10; border-bottom: 2px solid #aaa; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">P${p}</th>`).join('')}
                     </tr>
                 </thead>
@@ -101,12 +101,16 @@ export async function renderMapRoomSettingsModal() {
         `;
 
         roomsList.forEach(room => {
-            const isChecked = skipRoomsMap[room.toLowerCase()] ? "checked" : "";
+            const isCheckedSkip = skipRoomsMap[room.toLowerCase()] ? "checked" : "";
+            const isCheckedDisabled = disabledRoomsMap[room.toLowerCase()] ? "checked" : ""; // 🆕 Check Disabled Status
             
             tableHTML += `<tr>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd; font-weight: bold; background: #fafafa; border-right: 1px solid #ddd;">${room}</td>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd; border-right: 1px solid #ddd;">
-                    <input type="checkbox" class="skip-room-toggle" data-room="${room}" ${isChecked} style="transform: scale(1.5); cursor: pointer;">
+                    <input type="checkbox" class="skip-room-toggle" data-room="${room}" ${isCheckedSkip} style="transform: scale(1.5); cursor: pointer;">
+                </td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd; border-right: 1px solid #ddd; background: #fff5f5;">
+                    <input type="checkbox" class="disable-room-toggle" data-room="${room}" ${isCheckedDisabled} style="transform: scale(1.5); cursor: pointer;">
                 </td>
             `;
             
@@ -129,27 +133,42 @@ export async function renderMapRoomSettingsModal() {
         tableHTML += `</tbody></table>`;
         document.getElementById("map-room-table-container").innerHTML = tableHTML;
 
-        // 6. Attach Checkbox Listeners for instant DB updates
+        // 6a. Attach Checkbox Listeners for Skip Check-in
         document.querySelectorAll(".skip-room-toggle").forEach(checkbox => {
             checkbox.addEventListener("change", async (e) => {
                 const roomName = e.target.getAttribute("data-room").toLowerCase();
                 const isSkip = e.target.checked;
                 
                 try {
-                    // Update the local setting object first for the payload
                     skipRoomsMap[roomName] = isSkip;
-                    
-                    // Push updated map to Firebase
                     await updateDoc(doc(db, "system", "settings"), {
                         skipCheckInRooms: skipRoomsMap
                     });
-                    
                     console.log(`✅ Room ${roomName} skip check-in set to ${isSkip}`);
                 } catch (err) {
                     console.error("❌ Failed to update skip check-in setting:", err);
                     alert("Failed to save setting. Check console.");
-                    // Revert the checkbox visually if it failed
                     e.target.checked = !isSkip; 
+                }
+            });
+        });
+
+        // 6b. 🆕 Attach Checkbox Listeners for Disabled Rooms
+        document.querySelectorAll(".disable-room-toggle").forEach(checkbox => {
+            checkbox.addEventListener("change", async (e) => {
+                const roomName = e.target.getAttribute("data-room").toLowerCase();
+                const isDisabled = e.target.checked;
+                
+                try {
+                    disabledRoomsMap[roomName] = isDisabled;
+                    await updateDoc(doc(db, "system", "settings"), {
+                        disabledRooms: disabledRoomsMap
+                    });
+                    console.log(`✅ Room ${roomName} disabled status set to ${isDisabled}`);
+                } catch (err) {
+                    console.error("❌ Failed to update disabled setting:", err);
+                    alert("Failed to save setting. Check console.");
+                    e.target.checked = !isDisabled; 
                 }
             });
         });

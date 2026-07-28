@@ -27,6 +27,11 @@ export async function loadStaffForMap() {
 
         window.activeStaffList = allStaff;
         console.log(`✅ [MAP SETUP] Successfully loaded ${allStaff.length} staff & admin members for map matching!`);
+        
+        // 🟢 TRIGGER THE CHECKMARK: Staff list is officially downloaded!
+        if (typeof markDataReady === "function") {
+            markDataReady("staff");
+        }
     } catch (error) {
         console.error("❌ [MAP SETUP] Error loading staff/admin list:", error);
     }

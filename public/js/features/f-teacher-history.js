@@ -123,7 +123,7 @@ function renderHistoryTab() {
 }
 
 // 🟢 CUSTOM RENDERER FOR HISTORY PASSES
-function renderHistoryPasses(passes, containerId) {
+export function renderHistoryPasses(passes, containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = "";
@@ -140,7 +140,6 @@ function renderHistoryPasses(passes, containerId) {
         const origEndObj = pass.originalReturnedAt?.toDate?.();
         
         const formatTime = (dateObj) => dateObj ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Unknown";
-        const inputFormat = (dateObj) => dateObj ? dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "";
         
         const startTimeStr = formatTime(startObj);
         const endTimeStr = formatTime(endObj);
@@ -207,15 +206,7 @@ function renderHistoryPasses(passes, containerId) {
                 ⏱️ <strong>${startTimeDisplay} - ${endTimeDisplay}</strong> <span style="color: #d32f2f; font-weight: bold; margin-left: 5px;">${durationStr}</span>
             </div>
             <div style="display: flex; gap: 8px;">
-                <button class="btn-edit-history" 
-                    data-id="${pass.id}" 
-                    data-dest="${pass.destination}" 
-                    data-start-val="${inputFormat(startObj)}" 
-                    data-end-val="${inputFormat(endObj)}"
-                    data-start-ms="${startObj ? startObj.getTime() : ''}"
-                    data-end-ms="${endObj ? endObj.getTime() : ''}"
-                    data-orig-start-ms="${origStartObj ? origStartObj.getTime() : ''}"
-                    data-orig-end-ms="${origEndObj ? origEndObj.getTime() : ''}"
+                <button onclick="window.handleEditPass('${pass.id}')"
                     style="background: #fb8c00; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; width: 100%;">
                     ✏️ Edit / Flag Pass
                 </button>

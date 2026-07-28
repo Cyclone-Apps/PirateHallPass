@@ -182,4 +182,28 @@ document.addEventListener('click', (e) => {
             }
         }
     }
+    
+    // 4. Save for Later (Revert to Scheduled)
+    if (e.target.id === "btn-save-for-later") {
+        const passId = e.target.getAttribute("data-id");
+        if (!passId) return;
+        
+        e.target.innerText = "Saving...";
+        e.target.disabled = true;
+        
+        import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js").then(async ({doc, updateDoc}) => {
+            const firestoreDb = typeof db !== 'undefined' ? db : window.db;
+            try {
+                // Revert status to scheduled and push it back to the sidebar
+                await updateDoc(doc(firestoreDb, "passes", passId), {
+                    status: "scheduled",
+                    uiLocation: "message_center"
+                });
+                console.log(`🔙 Scheduled Pass ${passId} reverted to message_center.`);
+            } catch (err) {
+                console.error("Error saving pass for later:", err);
+                e.target.innerText = "Error";
+            }
+        });
+    }
 });

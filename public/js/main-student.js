@@ -50,6 +50,58 @@ let selectedDestination = null;
 
 initializeTimeEngine();
 
+/**
+ * 🟢 Appends a checkmark to the bottom-left of the main card when a background sync finishes
+ */
+export function markDataReady(syncKey) {
+    const container = document.getElementById("sync-status-indicator");
+    if (!container) return;
+
+    // Prevent duplicate checkmarks for the same data type
+    if (container.querySelector(`[data-sync="${syncKey}"]`)) return;
+
+    const span = document.createElement("span");
+    span.dataset.sync = syncKey;
+    span.innerText = "✔️";
+    span.title = `Ready: ${syncKey}`;
+    span.style.cssText = "line-height: 1; display: inline-block;";
+    
+    container.appendChild(span);
+}
+
+// ==========================================
+// --- GLOBAL LOADING SPINNER FUNCTIONS ---
+// ==========================================
+let loadingTimeout = null;
+
+window.showLoading = (delay = 400) => {
+    // 1. Clear any pending timer so we don't duplicate timeouts
+    if (loadingTimeout) clearTimeout(loadingTimeout);
+
+    // 2. Start a 0.4-second countdown timer
+    loadingTimeout = setTimeout(() => {
+        const overlay = document.getElementById("loading-overlay");
+        if (overlay) {
+            overlay.classList.remove("hidden");
+        } else {
+            console.warn("Spinner HTML ('loading-overlay') not found on this page.");
+        }
+        loadingTimeout = null;
+    }, delay); // Defaults to 400ms (0.4 seconds)
+};
+
+window.hideLoading = () => {
+    // 1. KILL THE TIMER! If Firebase finishes fast, the GIF will NEVER show.
+    if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+        loadingTimeout = null;
+    }
+
+    // 2. Hide the overlay if the timer already completed and showed it
+    const overlay = document.getElementById("loading-overlay");
+    if (overlay) overlay.classList.add("hidden");
+};
+
 // 📍 Helper: Get Corridor from Map Node
 export function getCorridorForRoom(roomName) {
     if (!roomName) return "Unknown";
@@ -774,26 +826,40 @@ document.addEventListener("click", async (e) => {
 
     // --- STAFF SELECT CONTROLS ---
     if (e.target.id === "btn-open-staff") {
+        console.log("🛠️ [STAFF MODAL] Button clicked! Initializing...");
+        
         let staffModal = document.getElementById("staff-modal");
 
         if (!staffModal) {
+            console.log("🛠️ [STAFF MODAL] Modal not found in DOM, rendering now...");
             if (typeof renderStaffModal === "function") renderStaffModal();
             staffModal = document.getElementById("staff-modal");
         }
 
         const searchInput = document.getElementById("staff-search-input");
-        const selectDropdown = document.getElementById("staff-dropdown-select");
+        const customList = document.getElementById("staff-custom-list");
         const btnConfirmStaff = document.getElementById("btn-confirm-staff-destination");
         
-        if (searchInput && selectDropdown && window.activeStaffList) {
+        console.log("🛠️ [STAFF MODAL] UI Elements Found -> Search:", !!searchInput, "| List:", !!customList, "| Button:", !!btnConfirmStaff);
+        console.log("🛠️ [STAFF MODAL] window.activeStaffList data:", window.activeStaffList);
+
+        if (searchInput && customList && window.activeStaffList) {
+            console.log(`🛠️ [STAFF MODAL] Success! Found ${window.activeStaffList.length} staff members. Rendering list...`);
+            
+            // 🌟 THIS IS THE MISSING LINE! Make sure it is right here:
             const sortedStaff = [...window.activeStaffList].sort((a, b) => a.displayName.localeCompare(b.displayName));
             
-            // This function builds the native <select> options
+            // This function builds our new custom clickable <div> rows
             const renderOptions = (filterText = "") => {
                 const query = filterText.toLowerCase();
-                let optionsHTML = "";
+                customList.innerHTML = ""; // Clear out old list
                 let hasMatches = false;
+                
+                // Clear out any previously saved selections
+                customList.dataset.selectedValue = "";
+                customList.dataset.selectedTeacher = "";
 
+                // Now it won't crash when it hits this line!
                 sortedStaff.forEach(staff => {
                     const roomText = staff.room ? ` (${staff.room})` : "";
                     
@@ -808,16 +874,45 @@ document.addEventListener("click", async (e) => {
                     
                     // 2. Search logic: Check if they typed the formal name OR their real first name!
                     if (displayValue.toLowerCase().includes(query) || staff.displayName.toLowerCase().includes(query)) {
-                        optionsHTML += `<option value="${destinationValue}" data-teacher="${staff.displayName}" style="padding: 8px; margin-bottom: 2px;">${displayValue}</option>`;
                         hasMatches = true;
+                        
+                        // Build a custom clickable row
+                        const row = document.createElement("div");
+                        row.style.cssText = "padding: 10px; margin-bottom: 2px; cursor: pointer; border-radius: 4px; transition: background 0.2s;";
+                        row.textContent = displayValue;
+                        
+                        // Handle the click event for this specific row
+                        row.onclick = () => {
+                            // Reset all rows back to white
+                            Array.from(customList.children).forEach(child => {
+                                child.style.background = "transparent";
+                                child.style.fontWeight = "normal";
+                                child.style.color = "black";
+                            });
+                            
+                            // Highlight the clicked row so the student knows it is selected
+                            row.style.background = "#1976d2";
+                            row.style.fontWeight = "bold";
+                            row.style.color = "white";
+                            
+                            // Save the selection data to the main container
+                            customList.dataset.selectedValue = destinationValue;
+                            customList.dataset.selectedTeacher = staff.displayName;
+                            
+                            // Unlock the confirm button
+                            btnConfirmStaff.disabled = false;
+                        };
+                        
+                        customList.appendChild(row);
                     }
                 });
 
                 if (!hasMatches) {
-                    optionsHTML = `<option disabled style="padding: 8px; color: #888;">No staff found matching "${filterText}"...</option>`;
+                    const noMatchDiv = document.createElement("div");
+                    noMatchDiv.style.cssText = "padding: 10px; color: #888; text-align: center; font-style: italic;";
+                    noMatchDiv.textContent = `No staff found matching "${filterText}"...`;
+                    customList.appendChild(noMatchDiv);
                 }
-
-                selectDropdown.innerHTML = optionsHTML;
             };
 
             // Reset modal on open
@@ -828,12 +923,7 @@ document.addEventListener("click", async (e) => {
             // Live filter when typing
             searchInput.oninput = (e) => {
                 renderOptions(e.target.value);
-                btnConfirmStaff.disabled = true; // Lock confirm button until they click a name in the list
-            };
-
-            // Unlock confirm button when they click a name
-            selectDropdown.onchange = () => {
-                btnConfirmStaff.disabled = false;
+                btnConfirmStaff.disabled = true; // Lock confirm button until they click a name in the filtered list
             };
         }
 
@@ -848,16 +938,13 @@ document.addEventListener("click", async (e) => {
 
     // --- CONFIRM STAFF DESTINATION ---
     if (e.target.id === "btn-confirm-staff-destination") {
-        const selectDropdown = document.getElementById("staff-dropdown-select");
+        const customList = document.getElementById("staff-custom-list");
         
-        if (selectDropdown && selectDropdown.value && selectDropdown.selectedIndex >= 0) {
-            const selectedOption = selectDropdown.options[selectDropdown.selectedIndex];
+        // Pull the saved selection data directly from our custom container
+        if (customList && customList.dataset.selectedValue) {
             
-            // Prevent crash if they somehow confirm the "No matches" text
-            if (selectedOption.disabled) return;
-
-            const destinationValue = selectDropdown.value;
-            const teacherName = selectedOption.getAttribute("data-teacher");
+            const destinationValue = customList.dataset.selectedValue;
+            const teacherName = customList.dataset.selectedTeacher;
 
             // Close modal
             const staffModal = document.getElementById("staff-modal");
@@ -966,25 +1053,76 @@ document.addEventListener("click", async (e) => {
         const dest = window.selectedDestination;
         if (!dest) return; 
 
+        // 🟢 1. TURN ON THE GIF!
+        // Do this immediately so the UI shows the spinner before the app freezes
+        showLoading();
+
         const passType = window.currentUser?.role === "teacher" || window.currentUser?.role === "admin" ? "proxy" : "standard";
 
-        // 🟢 1. FETCH THE NO-CHECK-IN ROOMS DIRECTLY FROM FIREBASE
-        let skipRoomsMap = {};
-        try {
-            // Force a fresh fetch of the settings document right now!
-            const settingsSnap = await getDoc(doc(db, "system", "settings"));
-            if (settingsSnap.exists()) {
-                skipRoomsMap = settingsSnap.data().skipCheckInRooms || {};
+        // ⚡ SMART FETCH: Check memory first. If empty, fetch from Firebase ONCE and cache it!
+        if (!window.sysInfo) window.sysInfo = {};
+        let skipRoomsMap = window.sysInfo.skipCheckInRooms;
+
+        // 🛑 NEW: Ensure global map is synced with memory if it already exists
+        window.globalDisabledRoomsMap = window.sysInfo.disabledRooms || {};
+
+        if (!skipRoomsMap || Object.keys(skipRoomsMap).length === 0) {
+            console.log("☁️ Bypass rooms not in memory! Fetching from Firebase...");
+            try {
+                const settingsSnap = await getDoc(doc(db, "system", "settings"));
+                if (settingsSnap.exists()) {
+                    skipRoomsMap = settingsSnap.data().skipCheckInRooms || {};
+                    window.sysInfo.skipCheckInRooms = skipRoomsMap; // Save it so we never fetch again!
+                    
+                    // 🛑 NEW: Save Disabled Rooms to memory and the global map variable
+                    const disabledRooms = settingsSnap.data().disabledRooms || {};
+                    window.sysInfo.disabledRooms = disabledRooms;
+                    window.globalDisabledRoomsMap = disabledRooms;
+
+                    markDataReady("settings");
+                } else {
+                    skipRoomsMap = {};
+                    window.globalDisabledRoomsMap = {};
+                }
+            } catch (error) {
+                console.warn("⚠️ Couldn't fetch settings natively.", error);
+                skipRoomsMap = {};
+                window.globalDisabledRoomsMap = {};
             }
-        } catch (error) {
-            console.warn("⚠️ Couldn't fetch settings natively, falling back to sysInfo...", error);
-            skipRoomsMap = window.sysInfo?.skipCheckInRooms || {};
         }
         
         let isNoCheckIn = false;
         
         // Force lowercase comparison so "108 Fountain" matches "108 fountain"
         const destLower = dest.toLowerCase();
+
+        // ==========================================
+        // 🛑 NEW: HARD STOPS FOR INVALID DESTINATIONS
+        // ==========================================
+        
+        // 1. Block structural areas (Hallways, Corridors, etc.)
+        if (
+            destLower.includes("hallway") || 
+            destLower.includes("hall") || 
+            destLower.includes("corridor") ||
+            destLower.includes("block")
+        ) {
+            hideLoading(); // Turn off the spinner
+            alert(`🚫 You may not select ${dest} as a destination.`);
+            return; // Halt pass creation immediately
+        }
+
+        // 2. Block disabled rooms (Defense in depth in case they bypassed the map!)
+        if (window.sysInfo.disabledRooms && window.sysInfo.disabledRooms[destLower]) {
+            const userRole = window.currentUser?.role || "student";
+            if (userRole !== "admin" && userRole !== "teacher" && userRole !== "staff") {
+                hideLoading(); // Turn off the spinner
+                alert(`🚫 ${dest} is currently unavailable for selection.`);
+                return; // Halt pass creation immediately
+            }
+        }
+        // ==========================================
+
 
         if (skipRoomsMap[destLower] === true) {
             isNoCheckIn = true;
@@ -1000,7 +1138,11 @@ document.addEventListener("click", async (e) => {
         console.log("4. Did it trigger isNoCheckIn?", isNoCheckIn);
         console.log("===============================");
 
-        // 🟢 2. Determine who is assigned to this room right now
+        // 🟢 2. TURN OFF THE GIF!
+        // The slow database check is finished, we can hide the spinner now
+        hideLoading();
+
+        // 🟢 Determine who is assigned to this room right now
         let targetTeacher = "Unknown";
         const teachers = getTeachersForRoom(dest);
         
@@ -1009,7 +1151,7 @@ document.addEventListener("click", async (e) => {
             console.log(`🎯 [CONFIRM FLOW] Found single teacher: ${targetTeacher}`);
         }
 
-        // 🟢 3. THE POPUP: If no teacher (or multiple) is found and it requires one!
+        // 🟢 THE POPUP: If no teacher (or multiple) is found and it requires one!
         if (targetTeacher === "Unknown" && !isNoCheckIn) {
             
             // Build dropdown using our feature-file helper!
@@ -1044,10 +1186,20 @@ document.addEventListener("click", async (e) => {
             });
 
             // Handle Popup Confirm
-            document.getElementById("popup-btn-confirm").addEventListener("click", async () => {
+            document.getElementById("popup-btn-confirm").addEventListener("click", async (e) => {
+                // 🛑 INSTANT UI FREEZE: Stop double-clicks on the popup!
+                const confirmBtn = e.target;
+                confirmBtn.disabled = true;
+                confirmBtn.innerText = "Processing...";
+                confirmBtn.style.opacity = "0.5";
+
                 targetTeacher = document.getElementById("popup-staff-select").value;
                 document.body.removeChild(overlay);
-                await finalizePassCreation(dest, targetTeacher, passType);
+
+                // 🟢 Turn GIF back on while the pass officially finalizes!
+                showLoading();
+                await finalizePassCreation(dest, targetTeacher, passType, isNoCheckIn);
+                hideLoading();
             });
 
             return; // Wait for popup
@@ -1055,7 +1207,11 @@ document.addEventListener("click", async (e) => {
         
         // If it's a no-check-in room or already has a single teacher, bypass!
         if (isNoCheckIn) targetTeacher = "No Receiving Teacher";
-        await finalizePassCreation(dest, targetTeacher, passType);
+        
+        // 🟢 OPTIONAL BONUS: Turn GIF back on here as well!
+        showLoading();
+        await finalizePassCreation(dest, targetTeacher, passType, isNoCheckIn);
+        hideLoading();
     }
 
     // ==========================================
@@ -1064,12 +1220,29 @@ document.addEventListener("click", async (e) => {
     if (e.target && e.target.id === "btn-teacher-approve") {
         const passId = e.target.getAttribute("data-id");
         if (passId) {
+            // 🛑 Lock down APPROVE button
             e.target.innerText = "⏳ Approving...";
             e.target.disabled = true;
+            e.target.style.opacity = "0.5";
+
+            // 🛑 Lock down REJECT button to prevent cross-clicks
+            const rejectBtn = document.getElementById("btn-teacher-reject");
+            if (rejectBtn) {
+                rejectBtn.disabled = true;
+                rejectBtn.style.opacity = "0.5";
+            }
+
             updatePassStatus(passId, "active").catch(err => {
                 console.error(err);
+                // 🔙 Revert if database update fails
                 e.target.innerText = "✅ Approve";
                 e.target.disabled = false;
+                e.target.style.opacity = "1";
+
+                if (rejectBtn) {
+                    rejectBtn.disabled = false;
+                    rejectBtn.style.opacity = "1";
+                }
             });
         }
     }
@@ -1077,12 +1250,29 @@ document.addEventListener("click", async (e) => {
     if (e.target && e.target.id === "btn-teacher-reject") {
         const passId = e.target.getAttribute("data-id");
         if (passId) {
+            // 🛑 Lock down REJECT button
             e.target.innerText = "⏳ Rejecting...";
             e.target.disabled = true;
+            e.target.style.opacity = "0.5";
+
+            // 🛑 Lock down APPROVE button to prevent cross-clicks
+            const approveBtn = document.getElementById("btn-teacher-approve");
+            if (approveBtn) {
+                approveBtn.disabled = true;
+                approveBtn.style.opacity = "0.5";
+            }
+
             updatePassStatus(passId, "rejected").catch(err => {
                 console.error(err);
+                // 🔙 Revert if database update fails
                 e.target.innerText = "❌ Reject";
                 e.target.disabled = false;
+                e.target.style.opacity = "1";
+
+                if (approveBtn) {
+                    approveBtn.disabled = false;
+                    approveBtn.style.opacity = "1";
+                }
             });
         }
     }
@@ -1093,12 +1283,17 @@ document.addEventListener("click", async (e) => {
     if (e.target && e.target.id === "btn-teacher-return") {
         const passId = e.target.getAttribute("data-id");
         if (passId) {
+            // 🛑 Lock down RETURN button
             e.target.innerText = "⏳ Ending Pass...";
             e.target.disabled = true;
+            e.target.style.opacity = "0.5";
+
             updatePassStatus(passId, "returned").catch(err => {
                 console.error(err);
+                // 🔙 Revert if database update fails
                 e.target.innerText = "🛑 End Pass (Student Returned)";
                 e.target.disabled = false;
+                e.target.style.opacity = "1";
             });
         }
     }
@@ -1264,3 +1459,95 @@ window.showTeacherNamesOnMap = function() {
     
     console.log(`✅ [MAP OVERLAY] Finished! Successfully replaced ${matchCount} room labels.`);
 };
+
+// =======================================================
+// 🌙 iPAD OPTIMIZED SLEEP MODE (9-Minute Timeout)
+// =======================================================
+
+// Import the kill switch
+import { activeStudentPassListener } from './modules/pass-engine.js'; 
+
+let idleTimer;
+const IDLE_TIMEOUT_MS = 9 * 60 * 1000; // 9 minutes in milliseconds
+
+function putAppToSleep() {
+    // 🛑 The "Active Pass" Bouncer
+    // Using querySelector to find the class from student-ui.js
+    const activePassUI = document.querySelector(".active-pass-container"); 
+    if (activePassUI && !activePassUI.classList.contains("hidden")) {
+        console.log("🛡️ SLEEP MODE BLOCKED: Student has an active pass!");
+        resetIdleTimer(); // Reset the clock and let them keep walking
+        return; 
+    }
+
+    console.log("🌙 SLEEP MODE: 9 minutes of inactivity reached. Shutting down database connections.");
+
+    // 1. Sever the Firebase connection to stop data drain
+    if (typeof activeStudentPassListener === 'function') {
+        activeStudentPassListener();
+    }
+
+    // 2. Build the Sleep Screen Overlay
+    const overlay = document.createElement("div");
+    overlay.id = "sleep-mode-overlay";
+    overlay.style.cssText = `
+        position: fixed; 
+        top: 0; left: 0; 
+        width: 100vw; height: 100vh; 
+        background: rgba(15, 23, 42, 0.95); 
+        z-index: 99999; 
+        display: flex; 
+        flex-direction: column; 
+        justify-content: center; 
+        align-items: center;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+    `;
+    
+    overlay.innerHTML = `
+        <div style="text-align: center; padding: 40px;">
+            <h1 style="color: white; font-size: 4rem; margin-bottom: 20px;">💤</h1>
+            <h2 style="color: white; font-size: 2rem; margin-bottom: 10px; font-weight: bold;">App Paused</h2>
+            <p style="color: #cbd5e1; font-size: 1.2rem; margin-bottom: 40px;">Your session went to sleep to save battery.</p>
+            <button id="btn-wake-up" style="
+                background: #3b82f6; 
+                color: white; 
+                border: none; 
+                padding: 15px 40px; 
+                font-size: 1.5rem; 
+                border-radius: 12px; 
+                font-weight: bold; 
+                box-shadow: 0 10px 15px rgba(0,0,0,0.3);
+                cursor: pointer;
+            ">
+                Tap to Wake Up
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(overlay);
+
+    // 3. Handle the Wake Up (Soft reload for iOS stability)
+    document.getElementById("btn-wake-up").addEventListener("click", () => {
+        document.getElementById("btn-wake-up").innerText = "Waking up...";
+        window.location.reload();
+    });
+}
+
+function resetIdleTimer() {
+    // If the app is already asleep, don't restart the timer
+    if (document.getElementById("sleep-mode-overlay")) return;
+
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(putAppToSleep, IDLE_TIMEOUT_MS);
+}
+
+// 🟢 iPad/Touch Friendly Event Listeners
+const activityEvents = ['touchstart', 'click', 'mousemove', 'scroll', 'keydown'];
+
+activityEvents.forEach(event => {
+    document.addEventListener(event, resetIdleTimer, { passive: true });
+});
+
+// Start the timer when the script first loads
+resetIdleTimer();

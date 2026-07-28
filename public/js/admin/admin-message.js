@@ -307,20 +307,15 @@ async function handleSendMessage() {
             alert("Please select at least one teacher.");
             return;
         }
-        // Grab the link if they typed one
-    const linkInput = document.getElementById("msg-link");
-    const linkValue = linkInput && linkInput.value.trim() !== "" ? linkInput.value.trim() : null;
-
-    // 🛑 CRITICAL FIX: We must force 'grades' to be 'specific' so the student listener picks up the array of emails
-    const finalAudience = (audienceType === 'specific-students' || audienceType === 'specific-teachers' || audienceType === 'grades') ? 'specific' : audienceType;
     }
 
     // Grab the link if they typed one
     const linkInput = document.getElementById("msg-link");
     const linkValue = linkInput && linkInput.value.trim() !== "" ? linkInput.value.trim() : null;
 
-    // 🛑 CRITICAL: We must force the payload audience back to 'specific' so the database listener works correctly
-    const finalAudience = (audienceType === 'specific-students' || audienceType === 'specific-teachers') ? 'specific' : audienceType;
+    // 🛑 CRITICAL: We must force the payload audience to 'specific' so the database listener works correctly 
+    // for all cases that use target arrays (students, teachers, AND grades).
+    const finalAudience = (audienceType === 'specific-students' || audienceType === 'specific-teachers' || audienceType === 'grades') ? 'specific' : audienceType;
 
     const payload = {
         audience: finalAudience,

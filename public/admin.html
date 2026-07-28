@@ -458,18 +458,19 @@
     </div>
 
     <div id="add-teacher-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-        <div style="background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-            <h3 style="margin-top: 0; color: #0277bd;">➕ Add Teacher Manually</h3>
-            <div style="display: flex; flex-direction: column; gap: 15px;">
-                <input type="text" id="new-teacher-name" placeholder="Display Name (e.g. Ms. Britt)" style="padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
-                <input type="email" id="new-teacher-email" placeholder="Email Address" style="padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button id="btn-save-new-teacher" style="flex: 1; background: #0277bd; color: white; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Save Teacher</button>
-                    <button id="btn-cancel-new-teacher" style="flex: 1; background: #ccc; color: #333; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Cancel</button>
-                </div>
+    <div style="background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <h3 style="margin-top: 0; color: #0277bd;">➕ Add Teacher Manually</h3>
+        <div style="display: flex; flex-direction: column; gap: 15px;">
+            <input type="text" id="new-teacher-fname" placeholder="First Name (e.g. John)" style="padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="text" id="new-teacher-lname" placeholder="Last Name (e.g. Doe)" style="padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="email" id="new-teacher-email" placeholder="Email Address" style="padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button id="btn-save-new-teacher" style="flex: 1; background: #0277bd; color: white; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Save Teacher</button>
+                <button id="btn-cancel-new-teacher" style="flex: 1; background: #ccc; color: #333; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Cancel</button>
             </div>
         </div>
     </div>
+</div>
 
     <!-- ========================================== -->
     <!-- SEND STUDENT A PASS (PROXY) MODAL          -->
@@ -519,7 +520,14 @@
             </div>
             
             <div style="flex: 1; padding: 20px; overflow-y: auto; background: #f4f6f8;">
-                <div id="admin-history-results-count" style="margin-bottom: 15px; font-weight: bold; color: #555; font-size: 1.1rem;">Select a date or apply filters to load history.</div>
+                
+                <!-- 👇 NEW FLEX CONTAINER AND REFRESH BUTTON 👇 -->
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                    <div id="admin-history-results-count" style="font-weight: bold; color: #555; font-size: 1.1rem;">Select a date or apply filters to load history.</div>
+                    <button id="btn-refresh-admin-history" style="background: none; border: none; cursor: pointer; font-size: 1.2rem; transition: transform 0.3s; padding: 0;" title="Refresh History">🔄</button>
+                </div>
+                <!-- 👆 END NEW SECTION 👆 -->
+
                 <div id="admin-history-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 15px; align-content: flex-start;">
                     </div>
             </div>

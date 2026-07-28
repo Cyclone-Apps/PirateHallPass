@@ -7,7 +7,7 @@ import { createNewPass } from "../modules/create-pass.js";
 import { fallbackFormatName, fallbackLastName, getCorridorForRoom, getTeacherProfileFromDB } from '../main-student.js';
 
 
-export async function finalizePassCreation(dest, targetTeacher, passType) {
+export async function finalizePassCreation(dest, targetTeacher, passType, isNoCheckIn = false) {
     // Safely update Map Confirm Button
     const mapBtn = document.getElementById("btn-confirm-destination");
     if (mapBtn) {
@@ -108,9 +108,26 @@ export async function finalizePassCreation(dest, targetTeacher, passType) {
         matchedOriginProfile = null;
     }
 
-    // --- 4. SECURE DATABASE LOOKUPS FOR EXACT NAMES ---
-    const originTeacherProfile = matchedOriginProfile || await getTeacherProfileFromDB(rawOriginTeacher);
-    const destTeacherProfile = await getTeacherProfileFromDB(targetTeacher);
+    // --- 4. SECURE LOOKUPS FOR EXACT NAMES (NOW INSTANT VIA LOCAL CACHE) ---
+    
+    let originTeacherProfile = matchedOriginProfile;
+    
+    // If we didn't already find the origin teacher via Clever, instantly check our local memory
+    if (!originTeacherProfile && rawOriginTeacher && window.activeStaffList) {
+        originTeacherProfile = window.activeStaffList.find(t => 
+            t.displayName === rawOriginTeacher || 
+            `${t.title} ${t.lastName}` === rawOriginTeacher
+        );
+    }
+
+    // Instantly find the destination teacher in our local memory
+    let destTeacherProfile = null;
+    if (targetTeacher && window.activeStaffList) {
+        destTeacherProfile = window.activeStaffList.find(t => 
+            t.displayName === targetTeacher || 
+            `${t.title} ${t.lastName}` === targetTeacher
+        );
+    }
 
     // 🚀 DYNAMIC ROOM ROUTING ENGINE (Overrides incoming 'dest')
     if (destTeacherProfile && destTeacherProfile.roomAssignments) {
@@ -154,6 +171,7 @@ export async function finalizePassCreation(dest, targetTeacher, passType) {
         period: currentPeriod, 
         
         type: passType,
+        isNoCheckIn: isNoCheckIn, // 🟢 THIS IS THE MISSING PIECE!
         initiatedBy: isProxyActive ? "teacher_proxy" : "student",
         senderName: isProxyActive ? proxyTeacherName : studentName, 
         
@@ -168,6 +186,13 @@ export async function finalizePassCreation(dest, targetTeacher, passType) {
         waitlistPosition: 0,
         recentTravels: []
     };
+
+    // 🟢 THE SCRUBBER: Firebase HATES "undefined". This removes any undefined fields safely!
+    Object.keys(passData).forEach(key => {
+        if (passData[key] === undefined) {
+            delete passData[key]; 
+        }
+    });
 
     console.log("📤 [FINAL PAYLOAD] Ready to dispatch pass creation:", passData);
 
